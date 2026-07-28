@@ -14,7 +14,7 @@ Verified on 2026-07-28 in the local WSL environment:
 ## Automated tests
 
 ```text
-90 passed, 1 optional real-checkpoint test skipped
+106 passed, 2 optional real-checkpoint tests skipped
 ruff check: passed
 ruff format --check: passed
 compileall: passed
@@ -27,6 +27,14 @@ order, cancellation, deadlines, seed isolation, state replacement, and metrics
 retain their previous behavior. Adapter tests enforce the B=1
 preprocess/collate/unbatch cardinality contract, including tuple-of-camera
 payloads.
+
+The OpenVLA-OFT tests additionally cover action-bin masking and
+de-tokenization, RLinf-style BOS/prompt/image preprocessing, the exact causal
+logit slice, zero-content action queries, `SingleForwardPlan` packaging, and a
+complete CPU Adapter → Engine → Torch backend request using injected tiny
+components. Loader regressions cover requested-dtype shard assignment,
+materialization of non-persistent Llama rotary buffers after meta
+initialization, and explicit rejection of unsupported multi-image checkpoints.
 
 The opt-in checkpoint test was also executed separately. LeRobot loaded and
 remapped all 812 checkpoint keys, the adapter verified sentinel weights across
@@ -42,6 +50,68 @@ Run that opt-in regression with:
 EMBODIED_RUNTIME_PI05_CHECKPOINT=/path/to/pi05_base \
   pytest -q tests/models/test_pi05_adapter.py::test_real_local_checkpoint_loads_and_matches_reference
 ```
+
+## OpenVLA-OFT structural verification
+
+The checkpoint index and configuration for the RLinf-compatible
+`Haozhan72/Openvla-oft-SFT-libero-goal-traj1` family were inspected without
+downloading the 15,082,474,368-byte weight payload. Under timm 0.9.16 and the
+installed Transformers 5.3.0, the reference constructor produced a fused
+2,176-wide, 256-patch vision tower and a 32-layer, 4,096-wide Llama. The
+checkpoint-to-module key comparison was exact:
+
+| Component | Module keys | Checkpoint keys | Missing | Unexpected |
+| --- | ---: | ---: | ---: | ---: |
+| Vision backbone | 685 | 685 | 0 | 0 |
+| Projector | 6 | 6 | 0 | 0 |
+| Language model | 291 | 291 | 0 | 0 |
+
+The combined reference graph has 7,541,237,184 parameters. The loader keeps
+the 7B Llama on the meta device until safetensor shards are assigned, while
+constructing timm's smaller vision leaf directly in BF16 because timm 0.9 uses
+`Tensor.item()` during initialization and cannot be built wholly on meta.
+
+The table above is a structural and contract validation. Run the opt-in
+package-load check with:
+
+```bash
+EMBODIED_RUNTIME_OPENVLA_OFT_CHECKPOINT=/path/to/openvla-oft \
+  pytest -q \
+  tests/models/test_openvla_oft_adapter.py::test_real_local_checkpoint_builds_a_single_forward_package
+```
+
+## Real OpenVLA-OFT checkpoint smoke run
+
+The RLinf-compatible
+`Haozhan72/Openvla-oft-SFT-libero-goal-traj1` checkpoint at snapshot
+`d20e1d447dfd87c0daa121b0739e2a379f7fe334` was loaded offline from all four
+safetensor shards. The shard index and headers contained the same 982 tensor
+keys and declared 15,082,474,368 bytes of tensor payload.
+
+One deterministic synthetic 224×224 RGB image and the prompt
+`pick up the red block` exercised the real tokenizer, fused DINOv2/SigLIP
+preprocessing, Prismatic projector, 7B Llama forward, and categorical action
+head on the RTX 5080:
+
+| Metric | Result |
+| --- | ---: |
+| CPU checkpoint load | 10.453 s |
+| Accelerate dispatch | 2.991 s |
+| Preprocessing | 0.004 s |
+| Model forward | 2.970 s |
+| Peak CUDA memory allocated | 9,892.38 MiB |
+| Peak CUDA memory reserved | 10,022.00 MiB |
+| Action output | `(1, 8, 7)` |
+| Action-token output | `(1, 56)` |
+
+The GPU had only about 13.4 GiB free, less than the approximately 14.05 GiB
+BF16 tensor payload before activations. For this correctness smoke run,
+Accelerate kept Llama layers 20–31 in CPU storage and staged them to CUDA for
+execution. This validates the real model adapter and reference graph, but it
+does not claim that the current `TorchCudaBackend` supports offload:
+`TorchCudaBackend.load()` still moves the complete runtime module to one
+device. A production offload policy belongs in the backend rather than in the
+OpenVLA-OFT adapter.
 
 ## Real π0.5 vertical slice
 

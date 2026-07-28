@@ -16,12 +16,18 @@ The principal adaptation map is:
 | --- | --- |
 | `src/embodied_runtime/models/vla/pi05/modeling_pi05.py` | `vvla/policies/pi05/modeling_pi05.py` |
 | `src/embodied_runtime/models/vla/pi05/processing_pi05.py` | `vvla/policies/pi05/processor_pi05.py` |
+| `src/embodied_runtime/models/vla/openvla_oft/head.py` | `vvla/policies/openvla_oft/head.py` |
+| `src/embodied_runtime/models/vla/openvla_oft/modeling_openvla_oft.py` | `vvla/policies/openvla_oft/modeling_openvla_oft.py` |
+| `src/embodied_runtime/models/vla/openvla_oft/processing_openvla_oft.py` | `vvla/policies/openvla_oft/processor_openvla_oft.py` |
+| `src/embodied_runtime/models/vla/openvla_oft/vision_prismatic.py` | `vvla/policies/openvla_oft/vision_prismatic.py` |
 | `src/embodied_runtime/engine/execution_engine.py` | design ideas from `vvla/engine/core.py` and `async_engine.py` |
 | `src/embodied_runtime/backends/torch_cuda/operators/attention.py` | `vvla/layers/attention.py` |
 
 Files containing a material adaptation identify the relevant upstream file in
 their module docstring or comments. The implementation has been reorganized
 around new model-package, execution-engine, and hardware-backend contracts.
+The OpenVLA-OFT processor's BOS relocation additionally follows RLinf's
+Apache-2.0 `rlinf/models/embodiment/prismatic/processing_prismatic.py`.
 
 The optional π0.5 adapter interoperates with LeRobot 0.5.1. LeRobot is licensed
 under Apache-2.0 and its π0.5 implementation includes attribution to Physical

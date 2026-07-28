@@ -47,6 +47,7 @@ Model semantics and execution pattern are deliberately independent:
 | Concrete adapter | Semantic family | Execution plan |
 | --- | --- | --- |
 | `Pi05Adapter` | VLA | `IterativeFlowPlan` |
+| `OpenVLAOFTAdapter` | VLA | `SingleForwardPlan` |
 | `ToyFlowAdapter` | VLA fixture | `IterativeFlowPlan` |
 | `ToySingleForwardAdapter` | VLA fixture | `SingleForwardPlan` |
 
@@ -60,7 +61,22 @@ BaseModelAdapter
         ^
 VLAAdapterBase
         ^
-Pi05Adapter / ToyFlowAdapter / ToySingleForwardAdapter
+Pi05Adapter / OpenVLAOFTAdapter / ToyFlowAdapter / ToySingleForwardAdapter
+```
+
+OpenVLA-OFT follows the same family base but selects a different plan:
+
+```text
+OpenVLA-OFT checkpoint
+        |
+        v
+OpenVLAOFTAdapter (Group 1)
+        |  ModelPackage: forward + SingleForwardPlan
+        v
+ExecutionEngine / SingleForwardRunner (Group 3)
+        |
+        v
+TorchCudaBackend (Group 4)
 ```
 
 The cardinality contract is explicit:
@@ -147,6 +163,12 @@ flow outside the graph.
 - Only single-forward and iterative-flow plans have runners today.
   Autoregressive and stateful-rollout plans will be added with their first real
   model rather than specified speculatively.
+- The first OpenVLA-OFT slice submits one complete causal forward and decodes
+  actions greedily. Prefix-KV splitting, rollout log-probability output, and
+  CUDA Graph capture remain later engine/backend work rather than model-ID
+  branches in the shared runtime. Its processor accepts one RGB camera;
+  multi-image checkpoint configurations fail at package construction rather
+  than reaching the vision tower with an invalid channel count.
 - A loaded in-memory Torch model has one active device session. Multi-device
   replicas must be built as separate packages until immutable/shareable
   artifacts are introduced. The first successful load also fixes that module

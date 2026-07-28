@@ -18,6 +18,13 @@ pi05 = [
   "lerobot[pi]==0.5.1",
   "safetensors>=0.4.3,<1",
 ]
+openvla_oft = [
+  "huggingface-hub>=0.30",
+  "safetensors>=0.4.3,<1",
+  "timm>=0.9.10,<1.0.0",
+  "torchvision",
+  "transformers>=5,<6",
+]
 dev = [
   "pytest>=8",
   "ruff>=0.12",
@@ -33,6 +40,7 @@ where = ["src"]
 testpaths = ["tests"]
 addopts = "-ra --import-mode=importlib"
 markers = [
+  "openvla_oft: tests that require a real OpenVLA-OFT checkpoint",
   "pi05: tests that require a real LeRobot π0.5 checkpoint",
 ]
 

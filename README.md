@@ -1,8 +1,8 @@
 # Embodied runtime prototype
 
 This repository is a provisional prototype; the product name has intentionally
-not been decided. Its first vertical slice runs a π0.5 model package through a
-hardware-neutral execution engine and a Torch/CUDA backend.
+not been decided. Its first vertical slices run π0.5 and OpenVLA-OFT model
+packages through a hardware-neutral execution engine and a Torch/CUDA backend.
 
 The neutral Python namespace is `embodied_runtime`; VLA is one model family
 under `embodied_runtime.models.vla`, not the boundary of the runtime.
@@ -24,6 +24,8 @@ The initial implementation concentrates on Groups 1, 3, and 4:
 
 - `models/vla/pi05`: builds a staged π0.5 package (`encode_prefix`,
   `init_state`, `denoise_step`, `finalize`) and owns reference parity.
+- `models/vla/openvla_oft`: builds a full-forward categorical-action package
+  and supplies the image/text preprocessing and action-token semantics.
 - `models/base.py`: defines the optional adapter base and the explicit
   `preprocess_one → collate → unbatch → postprocess_one` cardinality boundary.
 - `engine`: selects a runner from the package's `ExecutionPlan`, then owns
@@ -33,8 +35,8 @@ The initial implementation concentrates on Groups 1, 3, and 4:
 
 Two plans are implemented: `SingleForwardPlan` and `IterativeFlowPlan`.
 Model-family semantics and execution pattern are independent: π0.5 is a VLA
-using iterative flow, while the tiny single-forward VLA fixture proves that
-neither adapters nor the engine are tied to flow matching.
+using iterative flow, while OpenVLA-OFT is a real VLA using one causal forward
+and a categorical action-token head.
 
 `distributed`, `robots`, and the RLinf integration start as explicit interface
 boundaries and will be filled by their owning groups.
@@ -49,8 +51,15 @@ python -m pip install -e '.[dev,torch,pi05]'
 pytest
 ```
 
-The checkpoint is loaded from a user-provided local path or Hugging Face ID.
-This repository does not contain model weights.
+For OpenVLA-OFT, install its isolated model extra instead:
+
+```bash
+python -m pip install -e '.[dev,torch,openvla_oft]'
+```
+
+Checkpoints are loaded from user-provided local paths or Hugging Face IDs. This
+repository does not contain model weights, and both real-model commands are
+offline by default.
 
 The dependency-free contracts and core runtime target Python 3.11+. The
 `pi05` extra requires Python 3.12+ because that is LeRobot 0.5.1's declared
@@ -79,6 +88,24 @@ python examples/pi05_synthetic.py \
   --num-steps 10 \
   --cuda-graph
 ```
+
+Run a synthetic-image OpenVLA-OFT smoke test:
+
+```bash
+python examples/openvla_oft_synthetic.py \
+  --checkpoint /path/to/openvla-oft-checkpoint \
+  --prompt "pick up the red block" \
+  --device cuda:0
+```
+
+The current OpenVLA-OFT slice uses deterministic greedy decoding around one
+complete causal-model forward. It establishes the model/engine/backend
+contract, but does not yet implement prefix-KV splitting, rollout
+log-probability output, or CUDA Graph capture. The reference BF16 checkpoint
+is roughly 15.1 GB before activations, so a 16 GB GPU has very little headroom;
+this first correctness path should be validated on a larger GPU until a
+quantized or memory-optimized backend is added. This slice also accepts exactly
+one RGB camera; multi-camera checkpoint layouts are rejected explicitly.
 
 `preserve` retains π0.5's package-defined mixed precision. Explicitly casting
 the whole model to FP16 or BF16 is exposed only as an experiment because the
