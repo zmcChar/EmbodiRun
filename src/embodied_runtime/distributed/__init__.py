@@ -6,6 +6,24 @@ stack.
 """
 
 from .discovery import NodeRole, RuntimeEndpoint
+from .failover import (
+    AsyncFailoverCoordinator,
+    FailoverConfig,
+    FailoverDecision,
+    FailoverMode,
+    FallbackReason,
+    ResultSource,
+)
 from .routing import EndpointRouter
 
-__all__ = ["EndpointRouter", "NodeRole", "RuntimeEndpoint"]
+__all__ = [
+    "AsyncFailoverCoordinator",
+    "EndpointRouter",
+    "FailoverConfig",
+    "FailoverDecision",
+    "FailoverMode",
+    "FallbackReason",
+    "NodeRole",
+    "ResultSource",
+    "RuntimeEndpoint",
+]

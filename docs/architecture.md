@@ -129,6 +129,39 @@ RLinf / other trainer / MaaS
 endpoint. `robots` maps model-independent actions into a physical control
 interface.
 
+## Asynchronous cloud/edge failover
+
+The first cross-runtime policy is result-level preemption. It is deliberately
+outside `ExecutionEngine`: engine priority orders work within one endpoint,
+whereas failover chooses which endpoint owns the output at a control decision
+point.
+
+```text
+tick N observation
+      |
+      +----> edge Engine ---- await ----> edge result N -----+
+      |                                                       |
+      +----> dummy/remote link -> cloud Engine                 |
+                    background only                           |
+                            |                                 v
+                            +-> latest fresh cloud result -> selector -> action
+```
+
+The selector never waits for cloud. Edge inference remains hot even while a
+cloud result has output authority. Only one cloud request may be in flight, and
+an in-flight timeout prevents a hung request from occupying that slot forever.
+Cloud results are guarded by both a TTL measured from submission and a maximum
+sequence lag. Disconnect or connection-epoch change immediately invalidates
+cached authority, preventing an old response from taking over after
+reconnection.
+
+`AsyncFailoverCoordinator` accepts distinct edge and cloud request payloads.
+This keeps model-specific preprocessing outside the policy and allows two
+different adapters to produce the same normalized action contract. The current
+mode is configurable as `async_cloud_preferred` or `edge_only`; hierarchical
+guidance is intended as a separate composition policy rather than another
+branch inside the failover selector.
+
 ## CUDA Graph boundary
 
 Explicit CUDA Graph capture is private to `backends/torch_cuda`. A caller

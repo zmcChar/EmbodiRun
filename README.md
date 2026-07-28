@@ -78,6 +78,19 @@ Run the same boundary with a non-flow plan:
 python examples/toy_single_forward_local.py --device cpu
 ```
 
+Run two local engines as asynchronous edge/cloud runtimes behind a controllable
+dummy link:
+
+```bash
+python examples/cloud_edge_failover.py \
+  --config configs/cloud_edge_failover.toml
+```
+
+The edge engine executes on every control tick and is never blocked by cloud
+completion. A fresh cloud result can take output authority at a later tick.
+The example disconnects and reconnects the dummy link according to the TOML
+schedule; changing `failover.mode` to `edge_only` disables cloud submission.
+
 Run a tokenizer-free real-weight π0.5 smoke test:
 
 ```bash
