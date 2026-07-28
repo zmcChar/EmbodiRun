@@ -1,0 +1,17 @@
+# Provisional local π0.5 composition. The checkpoint path is supplied at run time.
+[model]
+family = "pi05"
+num_steps = 10
+
+[engine]
+max_pending_requests = 32
+memory_budget_fraction = 0.90
+
+[backend]
+name = "torch_cuda"
+device = "cuda:0"
+mode = "eager"
+cuda_graph_entrypoints = ["denoise_step"]
+cuda_graph_dynamic_scalar_inputs = { denoise_step = ["time"] }
+# No dtype override: preserve π0.5's package-defined mixed precision
+# (BF16 transformer weights with FP32 vision/norm paths).
