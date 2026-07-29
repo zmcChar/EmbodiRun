@@ -22,6 +22,14 @@ from .model import (
 from .plan import ExecutionPlan, FlowRecipe, IterativeFlowPlan, SingleForwardPlan
 from .resource import DeviceInfo, MemoryStats, ResourceRequirements
 from .robot import RobotAction, RobotAdapter, RobotObservation
+from .task import (
+    PlanEnvelope,
+    PlanFeedback,
+    PlanRequest,
+    PlanStep,
+    PlanStepStatus,
+    TaskGoal,
+)
 from .transport import Envelope
 from .types import Metadata, Shape, TensorTree
 
@@ -47,6 +55,11 @@ __all__ = [
     "ModelPackage",
     "ModelPackageError",
     "ModelSpec",
+    "PlanEnvelope",
+    "PlanFeedback",
+    "PlanRequest",
+    "PlanStep",
+    "PlanStepStatus",
     "RawRequest",
     "RequestCancelledError",
     "RequestDeadlineExceededError",
@@ -59,6 +72,7 @@ __all__ = [
     "Shape",
     "SingleForwardPlan",
     "SupportReport",
+    "TaskGoal",
     "TensorTree",
     "UnsupportedBackendError",
 ]

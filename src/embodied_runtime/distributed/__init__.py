@@ -15,17 +15,21 @@ from .failover import (
     ResultFuser,
     ResultSource,
 )
+from .planning import AsyncPlanCoordinator, AsyncPlannerEndpoint, PlanManager
 from .routing import EndpointRouter
 from .session import RobotSessionIdentity
 
 __all__ = [
     "AsyncFailoverCoordinator",
+    "AsyncPlanCoordinator",
+    "AsyncPlannerEndpoint",
     "EndpointRouter",
     "FailoverConfig",
     "FailoverDecision",
     "FailoverMode",
     "FallbackReason",
     "NodeRole",
+    "PlanManager",
     "ResultFuser",
     "ResultSource",
     "RobotSessionIdentity",
