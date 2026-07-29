@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from embodied_runtime.contracts import InferenceRequest, InferenceResult
+from embodied_runtime.integrations.serving import InferenceProvider
 from embodied_runtime.integrations.serving.gr00t import (
     HfLocalGr00tProvider,
     VllmOmniGr00tProvider,
@@ -93,6 +94,9 @@ async def test_hf_provider_preprocesses_raw_request_and_preserves_engine_metadat
     adapter = Gr00tN17Adapter()
     engine = _FakeLocalEngine()
     provider = HfLocalGr00tProvider(adapter, engine)  # type: ignore[arg-type]
+    assert isinstance(provider, InferenceProvider)
+    assert provider.capabilities.name == "hf"
+    assert not provider.capabilities.is_remote
 
     result = await provider.infer_async(
         InferenceRequest(
@@ -128,6 +132,10 @@ async def test_vllm_provider_uses_adapter_on_both_sides_of_openpi() -> None:
     adapter = Gr00tN17Adapter()
     endpoint = _FakeOpenPiEndpoint()
     provider = VllmOmniGr00tProvider(adapter, endpoint)  # type: ignore[arg-type]
+    assert isinstance(provider, InferenceProvider)
+    assert provider.capabilities.name == "vllm-omni"
+    assert provider.capabilities.is_remote
+    assert provider.capabilities.transport == "openpi_websocket"
     request = InferenceRequest(
         request_id="gr00t-request",
         payload=synthetic_droid_request("pick up the cup", image_height=8, image_width=8),

@@ -1,9 +1,10 @@
 # Embodied runtime prototype
 
 This repository is a provisional prototype; the product name has intentionally
-not been decided. Its first vertical slices run π0.5, SmolVLA, OpenVLA-OFT, and
-GR00T N1.7 model packages through a hardware-neutral execution engine and a
-Torch/CUDA backend.
+not been decided. Its first vertical slices expose π0.5, SmolVLA, OpenVLA-OFT,
+and GR00T N1.7 through a common inference-provider boundary. A Provider may
+compose a local hardware Backend or call an external serving framework such as
+vLLM-Omni.
 
 The neutral Python namespace is `embodied_runtime`; VLA is one model family
 under `embodied_runtime.models.vla`, not the boundary of the runtime.
@@ -11,14 +12,16 @@ under `embodied_runtime.models.vla`, not the boundary of the runtime.
 ## Five-group boundary
 
 ```text
-models          model semantics and portable execution recipe
-      \                         ModelPackage
-       +------------------------------+
-                                      v
-distributed --> registration --> engine --> BackendSession --> backends
-                                      |
-                                      v
-                                   robots
+models ── ModelPackage ──┐
+                        v
+                 inference provider
+                    /         \
+      local provider           external provider
+      engine → Backend         vLLM-Omni / MaaS
+                    \         /
+                     distributed
+                          |
+                        robots
 ```
 
 The initial implementation concentrates on Groups 1, 3, and 4:
@@ -35,8 +38,12 @@ The initial implementation concentrates on Groups 1, 3, and 4:
   also fronts native vLLM-Omni serving over OpenPI.
 - `models/base.py`: defines the optional adapter base and the explicit
   `preprocess_one → collate → unbatch → postprocess_one` cardinality boundary.
-- `engine`: selects a runner from the package's `ExecutionPlan`, then owns
-  request lifecycle, cancellation, cooperative safe points, and memory policy.
+- `integrations/serving`: defines the common Provider capabilities, lazy
+  Provider factories, a Backend-injected local Provider, and external serving
+  integrations.
+- `engine`: remains an internal local-Provider primitive. It selects a runner
+  from the package's `ExecutionPlan`, then owns request lifecycle,
+  cancellation, cooperative safe points, and memory policy.
 - `backends/torch_cuda`: probes devices and compiles, loads, and executes
   package entrypoints and state-update primitives without importing π0.5.
 

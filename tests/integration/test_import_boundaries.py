@@ -55,3 +55,18 @@ def test_concrete_domains_do_not_import_each_other(domain: str) -> None:
                 violations.append(f"{path.relative_to(SOURCE_ROOT)} imports {imported}")
 
     assert not violations, "cross-domain imports found:\n" + "\n".join(violations)
+
+
+def test_vllm_omni_provider_does_not_import_local_execution_or_backends() -> None:
+    path = PACKAGE_ROOT / "integrations" / "serving" / "gr00t" / "vllm_omni.py"
+    forbidden = (
+        "embodied_runtime.backends",
+        "embodied_runtime.engine",
+        "embodied_runtime.integrations.serving.local",
+    )
+    violations = [
+        imported
+        for imported in sorted(_resolved_imports(path))
+        if any(imported == prefix or imported.startswith(prefix + ".") for prefix in forbidden)
+    ]
+    assert not violations, f"vLLM-Omni provider imports local execution code: {violations}"

@@ -1,5 +1,40 @@
 # Prototype architecture
 
+## Inference-provider boundary
+
+Group 3 exposes one minimal interface for complete inference endpoints:
+
+```text
+ProviderCapabilities
+infer_async(InferenceRequest) -> InferenceResult
+aclose()
+```
+
+It deliberately does not duplicate scheduling, hardware execution, or
+framework-specific session operations:
+
+```text
+                         ┌─ LocalBackendProvider
+ModelAdapter / request ──┤       ↓
+                         │  ExecutionEngine → BackendRegistry → BackendSession
+                         │
+                         └─ external Provider
+                                 ↓
+                            vLLM-Omni / MaaS
+```
+
+`LocalBackendProvider` receives a fourth-group `BackendRegistry`; it never
+constructs a CUDA backend internally. `VllmOmniGr00tProvider` instead connects
+to an existing OpenPI service and never imports or invokes a local Backend.
+Provider factories are lazy so listing an option does not load weights or open
+a connection. Group 2 separately owns runtime-node identity, addresses,
+leases, and routing.
+
+Operations such as OpenPI `connect` and `reset` are concrete-provider
+extensions rather than requirements on every local, remote, or MaaS Provider.
+Starting and supervising an external `vllm serve` process is likewise outside
+the Provider protocol.
+
 ## Concrete vertical slice
 
 ```text

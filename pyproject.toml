@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "embodied-runtime-prototype"
 version = "0.1.0"
-description = "Provisional prototype for model, engine, and heterogeneous backend contracts"
+description = "Provisional prototype for inference providers and heterogeneous deployment"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }

@@ -10,10 +10,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from embodied_runtime.contracts import InferenceRequest
-from embodied_runtime.integrations.serving.gr00t import (
-    HfLocalGr00tProvider,
-    VllmOmniGr00tProvider,
-)
+from embodied_runtime.integrations.serving import InferenceProvider, ProviderRegistry
 from embodied_runtime.models.vla.gr00t_n17 import (
     DEFAULT_CHECKPOINT,
     Gr00tN17Adapter,
@@ -54,31 +51,62 @@ async def run_gr00t_n17(
     """Run one synthetic DROID observation and return a machine-readable summary."""
 
     adapter = Gr00tN17Adapter()
-    setup_started = time.perf_counter()
-    if provider_name == "hf":
-        provider = HfLocalGr00tProvider.from_checkpoint(
+
+    def create_hf() -> InferenceProvider:
+        from embodied_runtime.integrations.serving.gr00t.hf_local import (
+            HfLocalGr00tProvider,
+        )
+
+        return HfLocalGr00tProvider.from_checkpoint(
             checkpoint,
             device=device,
             mode=mode,
             local_files_only=local_files_only,
             adapter=adapter,
         )
-        server_metadata: Mapping[str, Any] = {}
-    elif provider_name == "vllm-omni":
+
+    def create_vllm_omni() -> InferenceProvider:
+        from embodied_runtime.integrations.serving.gr00t.vllm_omni import (
+            VllmOmniGr00tProvider,
+        )
+
         if checkpoint != DEFAULT_CHECKPOINT:
             raise ValueError(
                 "--checkpoint configures only the local HF provider; launch the "
                 "vLLM-Omni service with the intended checkpoint instead"
             )
-        provider = VllmOmniGr00tProvider.from_url(
+        return VllmOmniGr00tProvider.from_url(
             url,
             session_id=session_id,
             timeout_s=timeout_s,
             adapter=adapter,
         )
-        server_metadata = await provider.connect()
-    else:
-        raise ValueError(f"unknown GR00T provider: {provider_name!r}")
+
+    registry = ProviderRegistry(
+        (
+            ("hf", create_hf),
+            ("vllm-omni", create_vllm_omni),
+        )
+    )
+    setup_started = time.perf_counter()
+    try:
+        provider = registry.create(provider_name)
+    except KeyError as error:
+        raise ValueError(f"unknown GR00T provider: {provider_name!r}") from error
+
+    server_metadata: Mapping[str, Any] = {}
+    if provider.capabilities.is_remote:
+        connect = getattr(provider, "connect", None)
+        if not callable(connect):
+            await provider.aclose()
+            raise TypeError(
+                f"remote provider {provider.capabilities.name!r} has no connect operation"
+            )
+        try:
+            server_metadata = await connect()
+        except Exception:
+            await provider.aclose()
+            raise
     setup_time_s = time.perf_counter() - setup_started
 
     request = InferenceRequest(
@@ -99,7 +127,7 @@ async def run_gr00t_n17(
         action_shapes = {str(name): _shape(value) for name, value in actions.items()}
         action_preview = {str(name): _preview(value) for name, value in actions.items()}
         reported_model = adapter.describe().model_id
-        if provider_name != "hf":
+        if provider.capabilities.is_remote:
             reported_model = str(
                 server_metadata.get("model_path")
                 or server_metadata.get("model")
@@ -112,7 +140,9 @@ async def run_gr00t_n17(
             "provider_runtime": result.metadata["provider_runtime"],
             "model_id": reported_model,
             "requested_checkpoint": checkpoint,
-            "device": result.metadata.get("device_id") if provider_name == "hf" else "remote",
+            "device": (
+                "remote" if provider.capabilities.is_remote else result.metadata.get("device_id")
+            ),
             "request_id": result.request_id,
             "setup_time_s": setup_time_s,
             "inference_time_s": result.execution_time_s,
