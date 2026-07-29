@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from dataclasses import replace
 from typing import Any
 
@@ -80,6 +82,9 @@ class LocalBackendProvider:
         self.provider_name = provider_name or type(self).provider_name
         self.provider_runtime = provider_runtime or type(self).provider_runtime
         self._closed = False
+        self._resources_closed = False
+        self._close_lock = asyncio.Lock()
+        self._preprocess_tasks: set[asyncio.Task[Any]] = set()
 
         if capabilities is None:
             session = getattr(engine, "session", None)
@@ -111,6 +116,7 @@ class LocalBackendProvider:
         engine_config: EngineConfig | None = None,
         provider_name: str | None = None,
         provider_runtime: str | None = None,
+        provider_features: frozenset[str] = frozenset(),
     ) -> LocalBackendProvider:
         candidates = _candidate_devices(
             backends,
@@ -148,6 +154,7 @@ class LocalBackendProvider:
                 {
                     "async_infer",
                     "local_backend",
+                    *provider_features,
                     *support.capabilities,
                 }
             ),
@@ -174,6 +181,7 @@ class LocalBackendProvider:
         package_options: dict[str, Any] | None = None,
         provider_name: str | None = None,
         provider_runtime: str | None = None,
+        provider_features: frozenset[str] = frozenset(),
     ) -> LocalBackendProvider:
         package = adapter.build_package(checkpoint, **(package_options or {}))
         return cls.from_package(
@@ -186,6 +194,7 @@ class LocalBackendProvider:
             engine_config=engine_config,
             provider_name=provider_name,
             provider_runtime=provider_runtime,
+            provider_features=provider_features,
         )
 
     async def infer_async(self, request: InferenceRequest) -> InferenceResult:
@@ -196,7 +205,27 @@ class LocalBackendProvider:
 
         payload = request.payload
         if isinstance(payload, RawRequest):
-            payload = self.adapter.preprocess_one(payload)
+            preprocess = asyncio.create_task(
+                asyncio.to_thread(self.adapter.preprocess_one, payload),
+                name=f"preprocess-{request.request_id}",
+            )
+            self._preprocess_tasks.add(preprocess)
+
+            def forget_preprocess(completed: asyncio.Task[Any]) -> None:
+                self._preprocess_tasks.discard(completed)
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    completed.result()
+
+            preprocess.add_done_callback(forget_preprocess)
+            # Cancellation stops this request but cannot stop its worker
+            # thread. Shield it so aclose() can drain preprocessing before the
+            # adapter/backend resources are released.
+            try:
+                payload = await asyncio.shield(preprocess)
+            except asyncio.CancelledError:
+                with contextlib.suppress(Exception):
+                    await preprocess
+                raise
         prepared = replace(request, payload=payload)
         result = await self.engine.infer_async(prepared)
         return InferenceResult(
@@ -213,10 +242,15 @@ class LocalBackendProvider:
         )
 
     async def aclose(self) -> None:
-        if self._closed:
-            return
-        await self.engine.aclose()
-        self._closed = True
+        async with self._close_lock:
+            if self._resources_closed:
+                return
+            self._closed = True
+            preprocessing = tuple(self._preprocess_tasks)
+            if preprocessing:
+                await asyncio.gather(*preprocessing, return_exceptions=True)
+            await self.engine.aclose()
+            self._resources_closed = True
 
 
 __all__ = ["LocalBackendProvider"]

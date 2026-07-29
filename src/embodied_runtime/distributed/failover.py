@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import inspect
+import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -62,14 +63,20 @@ class FailoverConfig:
     cloud_submit_interval_s: float = 0.0
 
     def __post_init__(self) -> None:
-        if self.cloud_request_timeout_s <= 0:
-            raise ValueError("cloud_request_timeout_s must be greater than zero")
-        if self.cloud_result_ttl_s <= 0:
-            raise ValueError("cloud_result_ttl_s must be greater than zero")
+        if (
+            not math.isfinite(self.cloud_request_timeout_s)
+            or self.cloud_request_timeout_s <= 0
+        ):
+            raise ValueError("cloud_request_timeout_s must be finite and greater than zero")
+        if not math.isfinite(self.cloud_result_ttl_s) or self.cloud_result_ttl_s <= 0:
+            raise ValueError("cloud_result_ttl_s must be finite and greater than zero")
         if self.max_cloud_sequence_lag < 0:
             raise ValueError("max_cloud_sequence_lag cannot be negative")
-        if self.cloud_submit_interval_s < 0:
-            raise ValueError("cloud_submit_interval_s cannot be negative")
+        if (
+            not math.isfinite(self.cloud_submit_interval_s)
+            or self.cloud_submit_interval_s < 0
+        ):
+            raise ValueError("cloud_submit_interval_s must be finite and non-negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,16 +149,20 @@ class AsyncFailoverCoordinator(Generic[EdgeRequestT, CloudRequestT, ResultT]):
         edge_request: EdgeRequestT,
         *,
         cloud_request: CloudRequestT | None = None,
+        cloud_request_factory: Callable[[], CloudRequestT] | None = None,
     ) -> FailoverDecision[ResultT]:
         """Run one edge tick and opportunistically select a cloud result.
 
         ``cloud_request`` may differ from ``edge_request`` because two model
-        adapters can require different preprocessed payloads. If omitted, the
-        exact edge request is reused for endpoints with a shared request type.
+        adapters can require different preprocessed payloads. A factory defers
+        request snapshotting until a cloud submission is actually admitted. If
+        both are omitted, the exact edge request is reused.
         """
 
         if self._closed:
             raise RuntimeError("failover coordinator is closed")
+        if cloud_request is not None and cloud_request_factory is not None:
+            raise ValueError("provide cloud_request or cloud_request_factory, not both")
 
         async with self._step_lock:
             self._sequence_id += 1
@@ -159,9 +170,18 @@ class AsyncFailoverCoordinator(Generic[EdgeRequestT, CloudRequestT, ResultT]):
             self._observe_connection_epoch()
             self._expire_cloud_request()
 
-            if cloud_request is None:
-                cloud_request = cast(CloudRequestT, edge_request)
-            self._maybe_submit_cloud(cloud_request, sequence_id)
+            if cloud_request_factory is None:
+                resolved_request = (
+                    cast(CloudRequestT, edge_request) if cloud_request is None else cloud_request
+                )
+
+                def resolve_cloud_request() -> CloudRequestT:
+                    return resolved_request
+
+                request_factory = resolve_cloud_request
+            else:
+                request_factory = cloud_request_factory
+            self._maybe_submit_cloud(request_factory, sequence_id)
 
             # This is the only inference awaited by the control tick.
             edge_result = await self.edge.infer_async(edge_request)
@@ -214,7 +234,11 @@ class AsyncFailoverCoordinator(Generic[EdgeRequestT, CloudRequestT, ResultT]):
             self._retire(task)
         self._cloud_task = None
 
-    def _maybe_submit_cloud(self, request: CloudRequestT, sequence_id: int) -> None:
+    def _maybe_submit_cloud(
+        self,
+        request_factory: Callable[[], CloudRequestT],
+        sequence_id: int,
+    ) -> None:
         if self.config.mode is FailoverMode.EDGE_ONLY or not self.cloud.connected:
             return
         if self._cloud_task is not None and not self._cloud_task.done():
@@ -228,6 +252,14 @@ class AsyncFailoverCoordinator(Generic[EdgeRequestT, CloudRequestT, ResultT]):
             return
 
         epoch = self.cloud.connection_epoch
+        try:
+            request = request_factory()
+        except Exception:  # noqa: BLE001 - any snapshot failure must preserve edge authority
+            self._last_cloud_failure = (
+                epoch,
+                FallbackReason.CLOUD_ERROR,
+            )
+            return
         self._last_cloud_submit_s = now
         task = asyncio.create_task(
             self._run_cloud(request, sequence_id, epoch, now),
@@ -245,10 +277,16 @@ class AsyncFailoverCoordinator(Generic[EdgeRequestT, CloudRequestT, ResultT]):
     ) -> None:
         task = asyncio.current_task()
         try:
-            result = await self.cloud.infer_async(request)
+            result = await asyncio.wait_for(
+                self.cloud.infer_async(request),
+                timeout=self.config.cloud_request_timeout_s,
+            )
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except asyncio.TimeoutError:
+            if self._cloud_task is task and epoch == self.cloud.connection_epoch:
+                self._last_cloud_failure = (epoch, FallbackReason.CLOUD_TIMEOUT)
+        except Exception:  # noqa: BLE001 - remote Providers expose arbitrary failures
             if self._cloud_task is task and epoch == self.cloud.connection_epoch:
                 self._last_cloud_failure = (epoch, FallbackReason.CLOUD_ERROR)
         else:
@@ -342,7 +380,7 @@ class AsyncFailoverCoordinator(Generic[EdgeRequestT, CloudRequestT, ResultT]):
                     if callable(close):
                         close()
                     raise TypeError("result fuser must be synchronous")
-            except Exception:
+            except Exception:  # noqa: BLE001 - a user fuser cannot stop edge control
                 self._latest_cloud = None
                 return self._edge_decision(
                     edge_result,

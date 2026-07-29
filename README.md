@@ -164,10 +164,11 @@ python examples/pi05_cloud_server.py \
 Run the formal SmolVLA endpoint on the edge host against that server:
 
 ```bash
+CLOUD_HOST=cloud-hostname
 python examples/smolvla_pi05_async.py \
   --edge-checkpoint /path/to/lerobot/smolvla_base \
   --edge-vlm-base-path /path/to/SmolVLM2-500M-Video-Instruct \
-  --cloud-host <cloud-host> \
+  --cloud-host "$CLOUD_HOST" \
   --cloud-port 18765 \
   --edge-device cuda:0 \
   --num-steps 10 \
@@ -186,8 +187,9 @@ Copy the standalone client to an edge host with Python 3.10+ and PyTorch, then
 run its local GPU policy while requesting π0.5 asynchronously:
 
 ```bash
+CLOUD_LAN_HOST=cloud-lan-hostname
 python wifi_edge_client_py310.py \
-  --cloud-host <cloud-lan-ip> \
+  --cloud-host "$CLOUD_LAN_HOST" \
   --cloud-port 18765 \
   --edge-device cuda:0 \
   --num-steps 1 \
@@ -199,6 +201,122 @@ failure does not prevent the edge policy from producing an action. The
 length-prefixed TCP/JSON transport and standalone client are prototype test
 surfaces, not the future registration, discovery, authentication, or streaming
 layer.
+
+## Multi-robot edge/cloud prototype
+
+The multi-robot slice runs one independent edge process, local Provider, and
+failover coordinator per robot. All of those processes may connect to one cloud
+process that owns one shared Provider and one loaded model:
+
+```text
+robot A observation -> edge process A --\
+robot B observation -> edge process B ----> one cloud Provider / model queue
+robot C observation -> edge process C --/       session A / B / C isolated
+```
+
+The executable CLI currently constructs only a local `torch_cuda` Provider; it
+does not yet select vLLM-Omni, MaaS, or a vendor Backend from configuration.
+The sample uses a PyTorch model fixture. Change `provider.device` or pass
+`--device cuda:0` to place it on a cloud GPU:
+
+```bash
+PYTHONPATH=src python examples/multi_robot_cloud.py \
+  --config configs/multi_robot_cloud.toml \
+  --host 0.0.0.0 \
+  --port 18770
+```
+
+The checked-in default binds only to loopback. `--host 0.0.0.0` is shown solely
+for a trusted, isolated two-host experiment: this prototype transport has no
+authentication or encryption and must not be exposed to an untrusted network
+or connected to physical actuation without a safety layer.
+
+On the 5080 host, start two independent edge processes. They deliberately use
+different logical identities and receive fresh automatic session IDs, but may
+advertise the same physical resource label because both processes share one
+GPU:
+
+```bash
+CLOUD_HOST=cloud-hostname
+PYTHONPATH=src python examples/multi_robot_edge.py \
+  --config configs/multi_robot_edge.toml \
+  --robot-id robot-a \
+  --edge-node-id edge-a \
+  --physical-host-id workstation-5080 \
+  --physical-resource-id gpu-5080-0 \
+  --device cuda:0 \
+  --cloud-host "$CLOUD_HOST" \
+  --observation-offset 0
+
+PYTHONPATH=src python examples/multi_robot_edge.py \
+  --config configs/multi_robot_edge.toml \
+  --robot-id robot-b \
+  --edge-node-id edge-b \
+  --physical-host-id workstation-5080 \
+  --physical-resource-id gpu-5080-0 \
+  --device cuda:0 \
+  --cloud-host "$CLOUD_HOST" \
+  --observation-offset 100
+```
+
+The same edge command can represent another robot on a 3070 by changing its
+logical IDs and physical resource declaration. Passing `--device cpu` creates a
+CPU edge runtime. `physical_resource_id` is declaration-only metadata in this
+slice: it performs no locking, placement, or resource arbitration. Likewise,
+`cuda:0` is resolved inside one process and is not a globally unique node or
+device identity.
+
+Add `--disconnect-tick 3 --reconnect-tick 6` to one edge command to exercise
+that robot's logical cloud-link loss and background re-registration while the
+other robot remains connected.
+
+The cloud model is loaded once. Each session is ordered and isolated, and the
+default configuration admits one pending request per session and uses
+`max_batch_size = 1`. Cross-robot batching is therefore disabled by default. A
+trusted homogeneous deployment may explicitly opt in only after declaring its
+Provider multi-tenant-safe and ensuring that all batched observations have a
+compatible model-owned schema and shape.
+
+Every wire request carries `robot_id`, `edge_node_id`, `session_id`,
+`sequence_id`, `observation_id`, and the actual JSON numeric observation. The
+service namespaces otherwise identical request IDs before they enter the shared
+engine and echoes authoritative identity and action-contract metadata on every
+result. This JSON path proves that observations cross a real process or host
+boundary; it is not a production RGB/depth codec and does not preserve an
+efficient tensor representation.
+
+Only an admitted cloud submission snapshots mutable tensor/array storage.
+Encoding, transport, and cloud inference then run off the control path. The
+local snapshot copy itself is an ownership cost on that tick and must be
+budgeted. A real-time capture path can pass an immutable/reference-counted
+frame as `owned_cloud_observation` to make that ownership transfer O(1).
+
+Each edge process owns its connection epoch and cached cloud authority. A
+single session rejection or disconnect invalidates only that robot's cloud
+state. A shared-cloud process or network outage naturally affects every cloud
+session, but each edge process continues through its own local Provider.
+
+This first executable topology uses a static cloud address and an explicit
+service-local session handshake. It is not dynamic node registration and does
+not implement the future leased `RuntimeRegistry`, discovery, or route
+selection. The default sample remains a numeric target vector so the topology
+can run without checkpoints. The real SmolVLA configuration instead asks the
+loaded adapter for model-shaped synthetic observations; a physical robot still
+requires its own observation mapper and a production wire codec.
+
+The generic Provider boundary can also represent vLLM-Omni. The current
+vLLM-Omni/OpenPI Provider owns WebSocket and reset/session state, however, so it
+must be instantiated once per robot session. Those independent
+Provider/WebSocket instances may still connect to the same shared vLLM-Omni
+server; one stateful Provider instance must not be shared directly by multiple
+robot sessions.
+
+A real four-model deployment is also provided: two SmolVLA edge processes on
+one RTX 5080, one SmolVLA edge process on an RTX 3070, and one shared CPU
+SmolVLA service. See
+[`docs/smolvla_four_model_demo.md`](docs/smolvla_four_model_demo.md) for the
+fixed model contract, launch commands, health probe, disconnect test, and
+acceptance criteria.
 
 Run a synthetic-image OpenVLA-OFT smoke test:
 

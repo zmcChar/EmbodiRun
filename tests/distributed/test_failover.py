@@ -59,6 +59,22 @@ class _FailIfCalledEndpoint:
         raise AssertionError(f"cloud should not receive {request!r}")
 
 
+@pytest.mark.parametrize(
+    ("name", "value"),
+    (
+        ("cloud_request_timeout_s", float("nan")),
+        ("cloud_request_timeout_s", float("inf")),
+        ("cloud_result_ttl_s", float("nan")),
+        ("cloud_result_ttl_s", float("inf")),
+        ("cloud_submit_interval_s", float("nan")),
+        ("cloud_submit_interval_s", float("inf")),
+    ),
+)
+def test_failover_config_rejects_nonfinite_timing(name: str, value: float) -> None:
+    with pytest.raises(ValueError, match="finite"):
+        FailoverConfig(**{name: value})
+
+
 @async_test
 async def test_blocked_cloud_never_blocks_edge_tick() -> None:
     edge = _ImmediateEndpoint("edge")
@@ -76,6 +92,62 @@ async def test_blocked_cloud_never_blocks_edge_tick() -> None:
     assert decision.source is ResultSource.EDGE
     assert decision.fallback_reason is FallbackReason.CLOUD_PENDING
     assert coordinator.cloud_request_in_flight
+    await coordinator.aclose()
+
+
+@async_test
+async def test_cloud_factory_runs_only_for_an_admitted_submission() -> None:
+    edge = _ImmediateEndpoint("edge")
+    cloud = _GateEndpoint()
+    coordinator = AsyncFailoverCoordinator(
+        edge=edge,
+        cloud=DummyRemoteInferenceEndpoint(cloud),
+    )
+    snapshots: list[str] = []
+
+    def snapshot_first() -> str:
+        snapshots.append("cloud-1")
+        return "cloud-1"
+
+    def snapshot_second() -> str:
+        snapshots.append("cloud-2")
+        return "cloud-2"
+
+    await coordinator.infer_async(
+        "edge-1",
+        cloud_request_factory=snapshot_first,
+    )
+    await coordinator.infer_async(
+        "edge-2",
+        cloud_request_factory=snapshot_second,
+    )
+
+    assert snapshots == ["cloud-1"]
+    await coordinator.aclose()
+
+
+@async_test
+async def test_cloud_factory_failure_keeps_edge_authoritative() -> None:
+    edge = _ImmediateEndpoint("edge")
+    cloud = _FailIfCalledEndpoint()
+    coordinator = AsyncFailoverCoordinator(
+        edge=edge,
+        cloud=DummyRemoteInferenceEndpoint(cloud),
+    )
+
+    def fail_snapshot() -> str:
+        raise RuntimeError("camera buffer cannot be cloned")
+
+    decision = await coordinator.infer_async(
+        "edge-1",
+        cloud_request_factory=fail_snapshot,
+    )
+
+    assert decision.result == "edge:edge-1"
+    assert decision.source is ResultSource.EDGE
+    assert decision.fallback_reason is FallbackReason.CLOUD_ERROR
+    assert edge.calls == 1
+    assert cloud.calls == 0
     await coordinator.aclose()
 
 
@@ -300,6 +372,25 @@ async def test_hung_cloud_request_times_out_without_blocking_edge() -> None:
     assert second.result == "edge:edge-2"
     assert second.source is ResultSource.EDGE
     assert second.fallback_reason is FallbackReason.CLOUD_TIMEOUT
+    await coordinator.aclose()
+
+
+@async_test
+async def test_wait_for_cloud_idle_observes_real_request_timeout() -> None:
+    edge = _ImmediateEndpoint("edge")
+    cloud = _GateEndpoint()
+    coordinator = AsyncFailoverCoordinator(
+        edge=edge,
+        cloud=DummyRemoteInferenceEndpoint(cloud),
+        config=FailoverConfig(cloud_request_timeout_s=0.01),
+    )
+
+    await coordinator.infer_async("edge-1", cloud_request="cloud-1")
+    await asyncio.wait_for(coordinator.wait_for_cloud_idle(), timeout=0.5)
+    decision = await coordinator.infer_async("edge-2", cloud_request="cloud-2")
+
+    assert decision.source is ResultSource.EDGE
+    assert decision.fallback_reason is FallbackReason.CLOUD_TIMEOUT
     await coordinator.aclose()
 
 

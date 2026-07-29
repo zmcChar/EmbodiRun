@@ -1,0 +1,38 @@
+# Shared CPU cloud Provider for the real four-model topology.
+# Pass concrete local model paths with --checkpoint and --vlm-base-path.
+
+[service]
+host = "127.0.0.1"
+port = 18770
+request_timeout_s = 600.0
+max_sessions = 8
+max_pending_per_session = 1
+session_idle_ttl_s = 1800.0
+action_space_id = "smolvla-so100-actions-v1"
+supported_embodiments = ["so100"]
+shutdown_grace_s = 30.0
+
+[provider]
+name = "shared-cpu-smolvla"
+runtime = "local_backend"
+multi_tenant_safe = true
+model = "smolvla"
+checkpoint = "/path/to/smolvla_base"
+backend = "torch_cuda"
+device = "cpu"
+compile_mode = "eager"
+dtype = "preserve"
+
+[provider.package_options]
+vlm_base_path = "/path/to/SmolVLM2-500M-Video-Instruct"
+stats_variant = "so100"
+local_files_only = true
+load_device = "cpu"
+# Keep the checkpoint's policy-faithful flow schedule. Set this to 1 only for
+# a fast topology smoke that does not need policy-equivalent action quality.
+default_num_steps = 10
+
+[provider.engine]
+max_queue_size = 8
+max_batch_size = 1
+max_wait_ms = 0.0

@@ -231,6 +231,81 @@ TCP connection, and the π0.5 server returns the final FP32 action array. This
 transport proves a physical network boundary without pretending to be the
 production communication layer.
 
+## Multi-robot shared-cloud serving
+
+The N:1 prototype separates robot state from cloud model ownership:
+
+```text
+RobotEdgeRuntime A: edge Provider A + coordinator A + cloud session A --\
+RobotEdgeRuntime B: edge Provider B + coordinator B + cloud session B ----+
+RobotEdgeRuntime C: edge Provider C + coordinator C + cloud session C --/
+                                                                         |
+                                                   MultiTenantInferenceService
+                                                                         |
+                                                         one cloud Provider
+                                                         one model/queue
+```
+
+`RobotSessionIdentity` distinguishes a stable `robot_id`, a logical
+`edge_node_id`, and an episode-scoped `session_id`. A device selector such as
+`cuda:0` is process-local and is never used as node identity. Colocated edge
+processes may advertise the same `physical_resource_id`, but this is only a
+declarative label in the prototype. It does not discover, lock, schedule, or
+arbitrate the underlying device.
+
+The robot runtime sends one `RawRequest` observation with a contiguous,
+session-local `sequence_id` starting at 1, so coordinator freshness and wire
+observation order use the same clock. `MultiTenantInferenceService`:
+
+- binds a session ID to exactly one robot and edge identity;
+- serializes requests within one session while allowing cross-session
+  concurrency;
+- prefixes external request IDs before submitting them to the shared Provider;
+- overwrites identity metadata with server-authoritative values;
+- validates the declared embodiment and action-space contract;
+- echoes robot, session, sequence, and observation identity on the result; and
+- rejects duplicate or out-of-order session sequences.
+
+Each edge keeps its own `AsyncFailoverCoordinator`. Therefore an endpoint
+epoch change clears only that robot's cloud authority. The cloud service has no
+shared failover cache and does not choose robot actions. A registration or
+transport failure confined to one session does not invalidate another robot's
+cached result. Conversely, an outage of the one shared cloud process or its
+network path makes every cloud session unavailable; the independent edge
+Providers remain the per-robot availability baseline.
+
+The safe default is serial session isolation: at most one pending request is
+admitted per session, and the shared local Provider uses
+`max_batch_size = 1`. Cross-session dynamic batching is an explicit opt-in for
+a Provider declared `multi_tenant_safe` and a trusted deployment whose
+model-owned observations are shape- and schema-compatible. The generic engine
+does not yet infer that compatibility from arbitrary robot payloads.
+
+Registration in this slice is a direct service-local handshake to one static
+endpoint, not the future leased discovery plane or dynamic `RuntimeRegistry`.
+Per-request TCP connections and JSON numeric observations deliberately keep the
+first topology test small. The JSON path demonstrates real observation
+transfer, but is not a production RGB/depth/tensor codec. The default listener
+is loopback-only; the protocol has no authentication or encryption, so a
+non-loopback bind is limited to an isolated test network.
+
+The coordinator invokes the cloud request factory only when it admits a
+submission. That factory snapshots mutable tensor/array storage before the
+caller may reuse a frame; JSON conversion, network I/O, and cloud inference are
+background work. The snapshot copy is still local control-path cost and must be
+measured. A capture layer may instead pass an immutable/reference-counted
+`owned_cloud_observation`, avoiding the defensive copy on the control path.
+
+The executable multi-robot CLI currently constructs only a local `torch_cuda`
+Provider. Its default target-vector observation keeps checkpoint-free tests
+small; `adapter_synthetic` delegates model-shaped test input construction to
+the loaded adapter and is used by the real SmolVLA four-model deployment.
+Physical cameras and state still require a robot-owned mapper. Other Provider
+types remain composition options rather than CLI choices. In particular, the
+vLLM-Omni/OpenPI Provider owns WebSocket and reset state. A multi-robot
+deployment therefore needs one such Provider/WebSocket per robot session,
+while all of those independent clients may share the same vLLM-Omni server.
+
 ## CUDA Graph boundary
 
 Explicit CUDA Graph capture is private to `backends/torch_cuda`. A caller
@@ -286,22 +361,31 @@ flow outside the graph.
 - Current coordination composes complete model results; it does not split one
   neural network layer-by-layer across hosts.
 - The formal SmolVLA/π0.5 path preserves distinct `(50, 6)` and `(50, 32)`
-  actions and forbids numeric fusion. Action-space identity, units, coordinate
-  frames, and robot capability negotiation are not yet a general result
-  contract.
+  actions and forbids numeric fusion. The shared-cloud handshake now checks a
+  declared action-space ID, action dimension/horizon, and embodiment, but units,
+  coordinate frames, and physical robot capabilities are not yet a general
+  result contract.
 - A cached cloud action may come from an earlier tick. TTL and sequence lag
-  bound its age, but observation-version matching is not yet implemented.
-- The cloud server currently owns one pre-generated synthetic observation; a
-  request carries an inference descriptor rather than camera or robot sensor
-  data.
-- TCP/JSON does not yet provide dynamic registration, discovery,
-  authentication, encryption, compression, retries, backpressure, streaming,
-  or model-version negotiation.
+  bound its age. The multi-robot path now preserves the originating
+  `observation_id`, but policy-specific logic must still decide whether that
+  older action remains valid for the current control tick.
+- The legacy π0.5 smoke server still owns one pre-generated synthetic
+  observation. The multi-robot service carries each client's JSON numeric
+  observation; an efficient, dtype/shape-aware RGB/depth binary codec remains
+  future work.
+- The multi-robot TCP handshake provides session registration but not leased
+  runtime discovery. TCP/JSON still lacks authentication, encryption,
+  compression, persistent connections, streaming, and model-version
+  negotiation.
 - The synchronous fuser's device copy and arithmetic execute inside the
   decision path. Their cost is small in the recorded smoke run but must be
   budgeted explicitly in a fixed-frequency control loop.
-- The prototype server does not yet drain or cancel active request handlers
-  before closing the model engine during shutdown.
+- The multi-robot server drains or cancels active handlers during shutdown,
+  but a client disconnect does not yet cancel work already admitted to the
+  shared Provider.
+- Shutdown grace is cooperative, not a hard kill boundary. A native backend
+  call that does not return cannot be safely terminated in-process; production
+  deployment needs a process supervisor with a hard termination deadline.
 - RLinf, robot SDKs, physical actuators, and a safety supervisor are not yet
   connected. The RTX 3070 laptop represents an edge node, not an embedded
   on-robot deployment target.

@@ -282,6 +282,29 @@ def test_injected_policy_runs_staged_flow_through_cpu_backend_and_engine(
     torch.testing.assert_close(policy.model.step_times[1], torch.tensor((0.5,)))
 
 
+def test_package_can_override_default_flow_steps_for_cpu_smoke() -> None:
+    adapter = SmolVLAAdapter()
+
+    package = adapter.build_package(
+        "",
+        policy=_FakeSmolVLAPolicy(),
+        default_num_steps=1,
+    )
+
+    assert package.plan.default_num_steps == 1
+
+
+def test_package_rejects_non_positive_default_flow_steps() -> None:
+    adapter = SmolVLAAdapter()
+
+    with pytest.raises(ValueError, match="default_num_steps must be greater than zero"):
+        adapter.build_package(
+            "",
+            policy=_FakeSmolVLAPolicy(),
+            default_num_steps=0,
+        )
+
+
 def test_processor_retains_batch_one_and_collate_owns_batching() -> None:
     adapter = SmolVLAAdapter()
     policy = _FakeSmolVLAPolicy()

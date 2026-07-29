@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import Any
 
 import pytest
@@ -60,6 +61,18 @@ class _Adapter:
 
     def postprocess_one(self, output):
         return output
+
+
+class _BlockingAdapter(_Adapter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def preprocess_one(self, request: RawRequest) -> dict[str, Any]:
+        self.started.set()
+        self.release.wait()
+        return super().preprocess_one(request)
 
 
 class _Session:
@@ -251,3 +264,42 @@ def test_local_provider_reports_detected_devices_for_a_bad_selection() -> None:
             backend_name="vendor_test",
             device="vendor:9",
         )
+
+
+def test_local_provider_close_drains_cancelled_preprocessing_thread() -> None:
+    adapter = _BlockingAdapter()
+    backend = _VendorBackend()
+    provider = LocalBackendProvider.from_checkpoint(
+        adapter,
+        "fixture-checkpoint",
+        backends=BackendRegistry([backend]),
+        backend_name="vendor_test",
+        device="vendor:0",
+    )
+
+    async def run() -> None:
+        inference = asyncio.create_task(
+            provider.infer_async(
+                InferenceRequest(
+                    request_id="cancelled-preprocess",
+                    payload=RawRequest(observation={"value": 7}),
+                )
+            )
+        )
+        started = await asyncio.to_thread(adapter.started.wait, 1.0)
+        assert started
+        inference.cancel()
+
+        closing = asyncio.create_task(provider.aclose())
+        await asyncio.sleep(0)
+        assert not inference.done()
+        assert not closing.done()
+        assert backend.session is not None and not backend.session.closed
+
+        adapter.release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await inference
+        await closing
+        assert backend.session.closed
+
+    asyncio.run(run())

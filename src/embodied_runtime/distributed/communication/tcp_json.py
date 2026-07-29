@@ -21,6 +21,22 @@ def _reject_nonstandard_json_constant(value: str) -> None:
     raise TcpJsonProtocolError(f"non-standard JSON constant is not allowed: {value}")
 
 
+def _decode_json(encoded: bytes) -> Any:
+    return json.loads(
+        encoded,
+        parse_constant=_reject_nonstandard_json_constant,
+    )
+
+
+def _encode_json(payload: Mapping[str, Any]) -> bytes:
+    return json.dumps(
+        dict(payload),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+
+
 async def _close_writer(writer: asyncio.StreamWriter) -> None:
     writer.close()
     with contextlib.suppress(ConnectionError, OSError):
@@ -45,9 +61,9 @@ async def read_json_message(
             raise TcpJsonProtocolError(f"message size {size} exceeds limit {max_message_bytes}")
         encoded = await reader.readexactly(size)
         try:
-            value = json.loads(
+            value = await asyncio.to_thread(
+                _decode_json,
                 encoded,
-                parse_constant=_reject_nonstandard_json_constant,
             )
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
             raise TcpJsonProtocolError(f"invalid JSON message: {error}") from error
@@ -68,12 +84,7 @@ async def write_json_message(
 
     if max_message_bytes <= 0:
         raise ValueError("max_message_bytes must be greater than zero")
-    encoded = json.dumps(
-        dict(payload),
-        ensure_ascii=False,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
+    encoded = await asyncio.to_thread(_encode_json, dict(payload))
     if len(encoded) > max_message_bytes:
         raise TcpJsonProtocolError(f"message size {len(encoded)} exceeds limit {max_message_bytes}")
     writer.write(_HEADER.pack(len(encoded)))
@@ -114,10 +125,13 @@ class TcpJsonRequestClient:
             timeout=self.timeout_s,
         )
         try:
-            await write_json_message(
-                writer,
-                payload,
-                max_message_bytes=self.max_message_bytes,
+            await asyncio.wait_for(
+                write_json_message(
+                    writer,
+                    payload,
+                    max_message_bytes=self.max_message_bytes,
+                ),
+                timeout=self.timeout_s,
             )
             return await read_json_message(
                 reader,

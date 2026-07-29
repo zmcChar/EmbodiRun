@@ -16,6 +16,7 @@ from .failover import (
     ResultSource,
 )
 from .routing import EndpointRouter
+from .session import RobotSessionIdentity
 
 __all__ = [
     "AsyncFailoverCoordinator",
@@ -27,5 +28,6 @@ __all__ = [
     "NodeRole",
     "ResultFuser",
     "ResultSource",
+    "RobotSessionIdentity",
     "RuntimeEndpoint",
 ]

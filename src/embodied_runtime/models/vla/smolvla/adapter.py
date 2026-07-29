@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 import importlib.metadata
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -243,8 +243,12 @@ def load_lerobot_smolvla(
             cache_dir=cache_dir,
             revision=revision,
             local_files_only=local_files_only,
+            # Apply the placement before LeRobot's dataclass __post_init__.
+            # Assigning config.device afterwards is too late: a missing device
+            # in the checkpoint auto-selects CUDA and can leave a CUDA allocator
+            # resident even when the formal Backend target is CPU.
+            cli_overrides=[f"--device={load_device}"],
         )
-        config.device = load_device
         config.vlm_model_name = vlm_source
         config.load_vlm_weights = load_vlm_weights
         config.compile_model = False
@@ -265,6 +269,11 @@ def load_lerobot_smolvla(
             f"failed to load SmolVLA weights from {source!r}: {error}"
         ) from error
     _verify_loaded_weights(policy, weights_file, stats_variant)
+    if torch.device(load_device).type == "cpu" and torch.cuda.is_initialized():
+        # LeRobot 0.3.3 parses the checkpoint config once before applying
+        # overrides and may briefly auto-select CUDA. The final policy is on
+        # CPU, so release that transient allocator reservation as well.
+        torch.cuda.empty_cache()
     return policy
 
 
@@ -311,6 +320,7 @@ class SmolVLAAdapter(VLAAdapterBase):
         policy = options.pop("policy", None)
         revision = options.pop("revision", DEFAULT_SMOLVLA_REVISION)
         stats_variant = options.pop("stats_variant", "so100")
+        default_num_steps = options.pop("default_num_steps", None)
         if policy is None:
             vlm_base_path = options.pop("vlm_base_path", None)
             if vlm_base_path is None:
@@ -376,9 +386,12 @@ class SmolVLAAdapter(VLAAdapterBase):
                 "stats_variant": stats_variant,
             },
         )
-        plan = SmolVLAFlowPlan(
-            default_num_steps=int(config.num_steps),
+        configured_num_steps = (
+            int(config.num_steps) if default_num_steps is None else int(default_num_steps)
         )
+        if configured_num_steps <= 0:
+            raise ValueError("default_num_steps must be greater than zero")
+        plan = SmolVLAFlowPlan(default_num_steps=configured_num_steps)
         return ModelPackage(
             spec=self._spec,
             checkpoint=checkpoint or None,
