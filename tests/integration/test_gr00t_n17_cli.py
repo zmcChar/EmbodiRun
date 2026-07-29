@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import pytest
 
-from embodied_runtime.apps.gr00t_n17 import build_parser, main
+from embodied_runtime.apps.gr00t_n17 import DEFAULT_OPENPI_URL, build_parser, main
 
 
-def test_gr00t_cli_exposes_only_hf_provider() -> None:
+def test_gr00t_cli_exposes_exact_two_provider_choices() -> None:
     parser = build_parser()
 
-    args = parser.parse_args(["--provider", "hf"])
-    assert args.provider == "hf"
+    for provider in ("hf", "vllm-omni"):
+        args = parser.parse_args(["--provider", provider])
+        assert args.provider == provider
+        assert args.url == DEFAULT_OPENPI_URL
 
     with pytest.raises(SystemExit):
         parser.parse_args(["--provider", "not-a-provider"])

@@ -1,4 +1,4 @@
-"""Run GR00T N1.7 through the local HF/NVIDIA reference path."""
+"""Run GR00T N1.7 through the HF reference or native vLLM-Omni path."""
 
 from __future__ import annotations
 
@@ -10,12 +10,17 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from embodied_runtime.contracts import InferenceRequest
-from embodied_runtime.integrations.serving.gr00t import HfLocalGr00tProvider
+from embodied_runtime.integrations.serving.gr00t import (
+    HfLocalGr00tProvider,
+    VllmOmniGr00tProvider,
+)
 from embodied_runtime.models.vla.gr00t_n17 import (
     DEFAULT_CHECKPOINT,
     Gr00tN17Adapter,
     synthetic_droid_request,
 )
+
+DEFAULT_OPENPI_URL = "ws://127.0.0.1:8000/v1/realtime/robot/openpi"
 
 
 def _shape(value: Any) -> tuple[int, ...]:
@@ -38,6 +43,8 @@ async def run_gr00t_n17(
     checkpoint: str = DEFAULT_CHECKPOINT,
     device: str = "cuda:0",
     mode: str = "eager",
+    url: str = DEFAULT_OPENPI_URL,
+    session_id: str | None = None,
     timeout_s: float = 300.0,
     prompt: str = "pick up the object",
     image_height: int = 180,
@@ -56,6 +63,20 @@ async def run_gr00t_n17(
             local_files_only=local_files_only,
             adapter=adapter,
         )
+        server_metadata: Mapping[str, Any] = {}
+    elif provider_name == "vllm-omni":
+        if checkpoint != DEFAULT_CHECKPOINT:
+            raise ValueError(
+                "--checkpoint configures only the local HF provider; launch the "
+                "vLLM-Omni service with the intended checkpoint instead"
+            )
+        provider = VllmOmniGr00tProvider.from_url(
+            url,
+            session_id=session_id,
+            timeout_s=timeout_s,
+            adapter=adapter,
+        )
+        server_metadata = await provider.connect()
     else:
         raise ValueError(f"unknown GR00T provider: {provider_name!r}")
     setup_time_s = time.perf_counter() - setup_started
@@ -67,6 +88,7 @@ async def run_gr00t_n17(
             image_width=image_width,
         ),
         deadline_s=timeout_s,
+        metadata={} if session_id is None else {"session_id": session_id},
     )
     try:
         result = await provider.infer_async(request)
@@ -76,18 +98,27 @@ async def run_gr00t_n17(
             raise TypeError("GR00T result must contain a named action mapping")
         action_shapes = {str(name): _shape(value) for name, value in actions.items()}
         action_preview = {str(name): _preview(value) for name, value in actions.items()}
+        reported_model = adapter.describe().model_id
+        if provider_name != "hf":
+            reported_model = str(
+                server_metadata.get("model_path")
+                or server_metadata.get("model")
+                or server_metadata.get("checkpoint")
+                or "remote-unreported"
+            )
         return {
             "ok": True,
             "provider": result.metadata["provider"],
             "provider_runtime": result.metadata["provider_runtime"],
-            "model_id": adapter.describe().model_id,
+            "model_id": reported_model,
             "requested_checkpoint": checkpoint,
-            "device": result.metadata.get("device_id"),
+            "device": result.metadata.get("device_id") if provider_name == "hf" else "remote",
             "request_id": result.request_id,
             "setup_time_s": setup_time_s,
             "inference_time_s": result.execution_time_s,
             "action_shapes": action_shapes,
             "action_preview": action_preview,
+            "server_metadata": dict(server_metadata),
         }
     finally:
         await provider.aclose()
@@ -95,11 +126,11 @@ async def run_gr00t_n17(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run GR00T N1.7 through the local HF/NVIDIA reference runtime."
+        description="Run GR00T N1.7 through the HF reference or native vLLM-Omni runtime."
     )
     parser.add_argument(
         "--provider",
-        choices=("hf",),
+        choices=("hf", "vllm-omni"),
         required=True,
     )
     parser.add_argument("--checkpoint", default=DEFAULT_CHECKPOINT)
@@ -110,6 +141,8 @@ def build_parser() -> argparse.ArgumentParser:
         default="eager",
         help="Only the reference eager path is currently supported.",
     )
+    parser.add_argument("--url", default=DEFAULT_OPENPI_URL)
+    parser.add_argument("--session-id")
     parser.add_argument("--timeout-s", type=float, default=300.0)
     parser.add_argument("--prompt", default="pick up the object")
     parser.add_argument("--image-height", type=int, default=180)
@@ -139,6 +172,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             checkpoint=args.checkpoint,
             device=args.device,
             mode=args.mode,
+            url=args.url,
+            session_id=args.session_id,
             timeout_s=args.timeout_s,
             prompt=args.prompt,
             image_height=args.image_height,

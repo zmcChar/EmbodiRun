@@ -31,6 +31,11 @@ openvla_oft = [
   "torchvision",
   "transformers>=5,<6",
 ]
+gr00t_client = [
+  "numpy>=1.26,<2",
+  "openpi-client==0.1.2",
+  "websockets>=16,<17",
+]
 dev = [
   "pytest>=8",
   "ruff>=0.12",
@@ -50,6 +55,7 @@ markers = [
   "pi05: tests that require a real LeRobot π0.5 checkpoint",
   "smolvla: tests that require a real LeRobot SmolVLA checkpoint",
   "gr00t_n17: tests that require the real NVIDIA GR00T N1.7 checkpoint",
+  "vllm_omni: tests that require a live vLLM-Omni server",
 ]
 
 [tool.ruff]

@@ -31,7 +31,8 @@ The initial implementation concentrates on Groups 1, 3, and 4:
 - `models/vla/openvla_oft`: builds a full-forward categorical-action package
   and supplies the image/text preprocessing and action-token semantics.
 - `models/vla/gr00t_n17`: exposes NVIDIA's official GR00T N1.7 policy as a
-  formal single-forward package with a named-action contract.
+  formal single-forward package with a named-action contract. The same adapter
+  also fronts native vLLM-Omni serving over OpenPI.
 - `models/base.py`: defines the optional adapter base and the explicit
   `preprocess_one → collate → unbatch → postprocess_one` cardinality boundary.
 - `engine`: selects a runner from the package's `ExecutionPlan`, then owns
