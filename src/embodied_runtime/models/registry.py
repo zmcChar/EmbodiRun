@@ -20,6 +20,7 @@ _REGISTRY: dict[str, AdapterFactory] = {}
 _BUILTIN_MODULES: dict[str, str] = {
     "openvla_oft": "embodied_runtime.models.vla.openvla_oft",
     "pi05": "embodied_runtime.models.vla.pi05",
+    "smolvla": "embodied_runtime.models.vla.smolvla",
     "toy_flow": "embodied_runtime.models.vla.toy_flow",
     "toy_single_forward": "embodied_runtime.models.vla.toy_single_forward",
 }

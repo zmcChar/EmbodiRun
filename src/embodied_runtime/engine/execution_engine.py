@@ -15,10 +15,10 @@ import itertools
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from enum import StrEnum
 from threading import Event, RLock
 from typing import Any
 
+from embodied_runtime._compat import StrEnum
 from embodied_runtime.contracts import (
     BackendExecutionError,
     BackendSession,

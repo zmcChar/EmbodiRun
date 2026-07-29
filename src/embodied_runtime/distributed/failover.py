@@ -8,8 +8,9 @@ import inspect
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import Generic, TypeVar, cast
+
+from embodied_runtime._compat import StrEnum
 
 from .communication import AsyncInferenceEndpoint, AsyncRemoteInferenceEndpoint
 

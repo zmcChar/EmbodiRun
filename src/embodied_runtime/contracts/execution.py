@@ -5,8 +5,9 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass, field
-from enum import StrEnum
 from threading import Event
+
+from embodied_runtime._compat import StrEnum
 
 from .model import RawRequest
 from .types import Metadata, TensorTree

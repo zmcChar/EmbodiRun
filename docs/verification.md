@@ -14,7 +14,7 @@ Verified on 2026-07-29 in the local WSL environment:
 ## Automated tests
 
 ```text
-144 passed, 3 optional real-checkpoint tests skipped
+156 passed, 4 optional real-checkpoint tests skipped
 ruff check: passed
 ruff format --check: passed
 compileall: passed
@@ -161,6 +161,74 @@ Run the opt-in test with:
 ```bash
 EMBODIED_RUNTIME_PI05_CHECKPOINT=/path/to/pi05_base \
   pytest -q tests/integration/test_pi05_cpu_gpu_collaboration.py
+```
+
+## Real SmolVLA adapter and formal two-host path
+
+The edge endpoint used an RTX 3070 Laptop GPU with Python 3.10.12, PyTorch
+2.6.0+cu118, LeRobot 0.3.3, the pinned legacy `lerobot/smolvla_base`
+checkpoint, and a complete local SmolVLM2 base. The checkpoint loader verified
+sentinel tensors in the vision, expert, action-projection, and normalization
+paths before exposing the package.
+
+Using the same observations and initial noise, both the four model entrypoints
+and the complete Adapter → Torch backend → Engine request matched LeRobot's
+original ten-step `sample_actions` result exactly:
+
+| Check | Result |
+| --- | ---: |
+| Parameters | 450,046,212 |
+| Native action | `(50, 6)` |
+| Staged/reference maximum absolute error | `0.0` |
+| Engine/reference maximum absolute error | `0.0` |
+
+SmolVLA's reference implementation accumulates its timestep as an FP32 scalar,
+whereas π0.5 computes each timestep analytically in Python. The model-specific
+`SmolVLAFlowPlan` preserves the former sequence while retaining the generic
+`iterative_flow` runner. This matters numerically: using the π0.5-style
+analytic schedule produced a `0.3854751587` maximum action difference after
+unnormalization.
+
+The final real network run kept π0.5 on the RTX 5080 host and SmolVLA on the
+RTX 3070 endpoint. Both used ten flow steps and independent synthetic
+observations:
+
+| Metric | Result |
+| --- | ---: |
+| SmolVLA cold load | 7.840 s |
+| First tick | edge `[50, 6]`, 0.496 s |
+| Cloud in flight after first tick | true |
+| π0.5 server execution | 1.019 s |
+| Cloud wait outside control path | 0.700 s |
+| Second control path | 0.205 s, cached cloud `[50, 32]` selected |
+| Disconnected tick | edge `[50, 6]`, 0.209 s |
+| Numeric blend | false |
+
+This run validates two persistent real-model runtimes, an actual TCP boundary,
+non-blocking cloud submission, later cloud authority, and immediate
+connection-epoch fallback. It does not claim that the two policies solve the
+same task: their action spaces are explicitly incompatible, and the prototype
+rejects `async_blend`.
+
+Run the edge endpoint after starting `examples/pi05_cloud_server.py`:
+
+```bash
+python examples/smolvla_pi05_async.py \
+  --edge-checkpoint /path/to/smolvla_base \
+  --edge-vlm-base-path /path/to/smolvlm2_base \
+  --cloud-host <cloud-host> \
+  --cloud-port 18765 \
+  --num-steps 10 \
+  --mode async_cloud_preferred
+```
+
+The opt-in exact-parity regression uses:
+
+```bash
+EMBODIED_RUNTIME_SMOLVLA_CHECKPOINT=/path/to/smolvla_base \
+EMBODIED_RUNTIME_SMOLVLA_VLM_BASE=/path/to/smolvlm2_base \
+  pytest -q \
+  tests/models/test_smolvla_adapter.py::test_real_checkpoint_matches_reference_and_formal_engine
 ```
 
 ## Real two-host Wi-Fi collaboration

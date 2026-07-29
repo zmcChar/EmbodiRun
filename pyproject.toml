@@ -7,15 +7,21 @@ name = "embodied-runtime-prototype"
 version = "0.1.0"
 description = "Provisional prototype for model, engine, and heterogeneous backend contracts"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [{ name = "Project contributors" }]
-dependencies = []
+dependencies = [
+  "tomli>=2; python_version < '3.11'",
+]
 
 [project.optional-dependencies]
 torch = ["torch>=2.7"]
 pi05 = [
   "lerobot[pi]==0.5.1",
+  "safetensors>=0.4.3,<1",
+]
+smolvla = [
+  "lerobot[smolvla]==0.3.3",
   "safetensors>=0.4.3,<1",
 ]
 openvla_oft = [
@@ -42,8 +48,9 @@ addopts = "-ra --import-mode=importlib"
 markers = [
   "openvla_oft: tests that require a real OpenVLA-OFT checkpoint",
   "pi05: tests that require a real LeRobot π0.5 checkpoint",
+  "smolvla: tests that require a real LeRobot SmolVLA checkpoint",
 ]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py310"

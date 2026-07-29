@@ -1,8 +1,9 @@
 # Embodied runtime prototype
 
 This repository is a provisional prototype; the product name has intentionally
-not been decided. Its first vertical slices run π0.5 and OpenVLA-OFT model
-packages through a hardware-neutral execution engine and a Torch/CUDA backend.
+not been decided. Its first vertical slices run π0.5, SmolVLA, and OpenVLA-OFT
+model packages through a hardware-neutral execution engine and a Torch/CUDA
+backend.
 
 The neutral Python namespace is `embodied_runtime`; VLA is one model family
 under `embodied_runtime.models.vla`, not the boundary of the runtime.
@@ -24,6 +25,9 @@ The initial implementation concentrates on Groups 1, 3, and 4:
 
 - `models/vla/pi05`: builds a staged π0.5 package (`encode_prefix`,
   `init_state`, `denoise_step`, `finalize`) and owns reference parity.
+- `models/vla/smolvla`: exposes the same staged contract for the pinned
+  LeRobot 0.3.3 SmolVLA checkpoint, including its legacy flow schedule and
+  robot-native action unnormalization.
 - `models/vla/openvla_oft`: builds a full-forward categorical-action package
   and supplies the image/text preprocessing and action-token semantics.
 - `models/base.py`: defines the optional adapter base and the explicit
@@ -58,14 +62,21 @@ For OpenVLA-OFT, install its isolated model extra instead:
 python -m pip install -e '.[dev,torch,openvla_oft]'
 ```
 
-Checkpoints are loaded from user-provided local paths or Hugging Face IDs. This
-repository does not contain model weights, and both real-model commands are
-offline by default.
+SmolVLA uses a separate endpoint environment because its official legacy
+checkpoint requires LeRobot 0.3.3:
 
-The dependency-free contracts and core runtime target Python 3.11+. The
-`pi05` extra requires Python 3.12+ because that is LeRobot 0.5.1's declared
-minimum. A local compatibility path also covers its configuration parser on
-Python 3.14.
+```bash
+python -m pip install -e '.[dev,torch,smolvla]'
+```
+
+Checkpoints are loaded from user-provided local paths or Hugging Face IDs. This
+repository does not contain model weights, and real-model commands are offline
+by default.
+
+The dependency-free contracts and core runtime target Python 3.10+. The
+`smolvla` endpoint is verified with Python 3.10 and LeRobot 0.3.3. The `pi05`
+extra requires Python 3.12+ because that is LeRobot 0.5.1's declared minimum,
+so the two real models intentionally run in separate environments.
 
 Run the small cross-group contract fixture:
 
@@ -137,6 +148,27 @@ python examples/pi05_cloud_server.py \
   --host 0.0.0.0 \
   --port 18765
 ```
+
+Run the formal SmolVLA endpoint on the edge host against that server:
+
+```bash
+python examples/smolvla_pi05_async.py \
+  --edge-checkpoint /path/to/lerobot/smolvla_base \
+  --edge-vlm-base-path /path/to/SmolVLM2-500M-Video-Instruct \
+  --cloud-host <cloud-host> \
+  --cloud-port 18765 \
+  --edge-device cuda:0 \
+  --num-steps 10 \
+  --mode async_cloud_preferred
+```
+
+This path constructs SmolVLA once through
+`SmolVLAAdapter → TorchCudaBackend → ExecutionEngine`. The first tick returns
+the edge result while π0.5 remains in flight, the next tick may select a fresh
+cached cloud result, and a connection-epoch change immediately falls back to
+SmolVLA. The policies retain their native `[50, 6]` and `[50, 32]` action
+contracts. `async_blend` is rejected because equal horizon does not imply
+compatible robot actions.
 
 Copy the standalone client to an edge host with Python 3.10+ and PyTorch, then
 run its local GPU policy while requesting π0.5 asynchronously:

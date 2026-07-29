@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import StrEnum
 
+from embodied_runtime._compat import StrEnum
 from embodied_runtime.contracts import Metadata
 
 

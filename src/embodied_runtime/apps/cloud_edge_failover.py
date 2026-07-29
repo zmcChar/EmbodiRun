@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
+    import tomli as tomllib
 
 from embodied_runtime.backends.torch_cuda import TorchCudaBackend
 from embodied_runtime.contracts import CompileOptions, InferenceRequest, RawRequest

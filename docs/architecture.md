@@ -47,6 +47,7 @@ Model semantics and execution pattern are deliberately independent:
 | Concrete adapter | Semantic family | Execution plan |
 | --- | --- | --- |
 | `Pi05Adapter` | VLA | `IterativeFlowPlan` |
+| `SmolVLAAdapter` | VLA | `SmolVLAFlowPlan` (`iterative_flow`) |
 | `OpenVLAOFTAdapter` | VLA | `SingleForwardPlan` |
 | `ToyFlowAdapter` | VLA fixture | `IterativeFlowPlan` |
 | `ToySingleForwardAdapter` | VLA fixture | `SingleForwardPlan` |
@@ -61,8 +62,15 @@ BaseModelAdapter
         ^
 VLAAdapterBase
         ^
-Pi05Adapter / OpenVLAOFTAdapter / ToyFlowAdapter / ToySingleForwardAdapter
+Pi05Adapter / SmolVLAAdapter / OpenVLAOFTAdapter / fixtures
 ```
+
+`SmolVLAAdapter` is another sibling under the same VLA family. Its
+`SmolVLAFlowPlan` only specializes the timestep schedule needed to reproduce
+LeRobot 0.3.3's FP32 scalar accumulation exactly; it retains the generic
+`iterative_flow` kind and therefore uses the same Group-3 runner. π0.5 keeps
+its analytic Python schedule. The Engine still owns iteration and the Backend
+still owns arithmetic on the selected device.
 
 OpenVLA-OFT follows the same family base but selects a different plan:
 
@@ -174,6 +182,12 @@ result. The fuser itself must be synchronous, lightweight, free of I/O, and
 must not mutate either input. Hierarchical guidance remains a separate future
 composition policy rather than another branch inside this selector.
 
+The SmolVLA/π0.5 prototype intentionally permits only `edge_only` and
+`async_cloud_preferred`. SmolVLA emits robot-specific `[50, 6]` actions after
+checkpoint unnormalization, while the current π0.5 checkpoint emits `[50, 32]`.
+The coordinator can transfer output authority between endpoints, but it cannot
+make those action spaces semantically compatible by padding or averaging.
+
 ### Prototype TCP transport
 
 The real two-host smoke path uses a four-byte big-endian payload length followed
@@ -236,9 +250,10 @@ flow outside the graph.
   preprocessing and backend transfer two explicit stages.
 - Current coordination composes complete model results; it does not split one
   neural network layer-by-layer across hosts.
-- The π0.5 and lightweight edge policies share only a `(50, 32)` tensor shape
-  in this smoke test. Action-space identity, normalization, units, coordinate
-  frames, and semantic compatibility are not yet part of the result contract.
+- The formal SmolVLA/π0.5 path preserves distinct `(50, 6)` and `(50, 32)`
+  actions and forbids numeric fusion. Action-space identity, units, coordinate
+  frames, and robot capability negotiation are not yet a general result
+  contract.
 - A cached cloud action may come from an earlier tick. TTL and sequence lag
   bound its age, but observation-version matching is not yet implemented.
 - The cloud server currently owns one pre-generated synthetic observation; a
