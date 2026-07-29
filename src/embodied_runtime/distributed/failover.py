@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -15,18 +16,21 @@ from .communication import AsyncInferenceEndpoint, AsyncRemoteInferenceEndpoint
 EdgeRequestT = TypeVar("EdgeRequestT")
 CloudRequestT = TypeVar("CloudRequestT")
 ResultT = TypeVar("ResultT")
+ResultFuser = Callable[[ResultT, ResultT], ResultT]
 
 
 class FailoverMode(StrEnum):
     """Supported result-selection policies."""
 
     ASYNC_CLOUD_PREFERRED = "async_cloud_preferred"
+    ASYNC_BLEND = "async_blend"
     EDGE_ONLY = "edge_only"
 
 
 class ResultSource(StrEnum):
     CLOUD = "cloud"
     EDGE = "edge"
+    BLENDED = "blended"
 
 
 class FallbackReason(StrEnum):
@@ -35,6 +39,7 @@ class FallbackReason(StrEnum):
     CLOUD_PENDING = "cloud_pending"
     CLOUD_TIMEOUT = "cloud_timeout"
     CLOUD_ERROR = "cloud_error"
+    BLEND_ERROR = "blend_error"
     NO_CLOUD_RESULT = "no_cloud_result"
     STALE_CLOUD_RESULT = "stale_cloud_result"
 
@@ -94,6 +99,10 @@ class AsyncFailoverCoordinator(Generic[EdgeRequestT, CloudRequestT, ResultT]):
     baseline. Cloud work runs in a background task. A fresh cloud result may
     preempt the *output authority* at a later decision point; model execution on
     the edge is never cancelled and a control tick never waits for cloud.
+
+    A result fuser must be synchronous, lightweight, free of I/O, and must not
+    mutate either input because one cached cloud result may be reused by
+    multiple edge ticks.
     """
 
     def __init__(
@@ -102,11 +111,15 @@ class AsyncFailoverCoordinator(Generic[EdgeRequestT, CloudRequestT, ResultT]):
         edge: AsyncInferenceEndpoint[EdgeRequestT, ResultT],
         cloud: AsyncRemoteInferenceEndpoint[CloudRequestT, ResultT],
         config: FailoverConfig | None = None,
+        fuser: ResultFuser[ResultT] | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.edge = edge
         self.cloud = cloud
         self.config = config or FailoverConfig()
+        if self.config.mode is FailoverMode.ASYNC_BLEND and fuser is None:
+            raise ValueError("async_blend mode requires a result fuser")
+        self._fuser = fuser
         self._clock = clock
         self._sequence_id = 0
         self._observed_epoch = cloud.connection_epoch
@@ -319,9 +332,31 @@ class AsyncFailoverCoordinator(Generic[EdgeRequestT, CloudRequestT, ResultT]):
                 FallbackReason.STALE_CLOUD_RESULT,
             )
 
+        if self.config.mode is FailoverMode.ASYNC_BLEND:
+            assert self._fuser is not None
+            try:
+                selected_result = self._fuser(edge_result, cloud_result.result)
+                if inspect.isawaitable(selected_result):
+                    close = getattr(selected_result, "close", None)
+                    if callable(close):
+                        close()
+                    raise TypeError("result fuser must be synchronous")
+            except Exception:
+                self._latest_cloud = None
+                return self._edge_decision(
+                    edge_result,
+                    sequence_id,
+                    epoch,
+                    FallbackReason.BLEND_ERROR,
+                )
+            selected_source = ResultSource.BLENDED
+        else:
+            selected_result = cloud_result.result
+            selected_source = ResultSource.CLOUD
+
         return FailoverDecision(
-            result=cloud_result.result,
-            source=ResultSource.CLOUD,
+            result=selected_result,
+            source=selected_source,
             sequence_id=sequence_id,
             source_sequence_id=cloud_result.sequence_id,
             connection_epoch=epoch,
@@ -361,5 +396,6 @@ __all__ = [
     "FailoverDecision",
     "FailoverMode",
     "FallbackReason",
+    "ResultFuser",
     "ResultSource",
 ]

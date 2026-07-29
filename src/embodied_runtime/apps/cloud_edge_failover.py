@@ -16,6 +16,7 @@ from embodied_runtime.distributed import (
     AsyncFailoverCoordinator,
     FailoverConfig,
     FailoverMode,
+    ResultSource,
 )
 from embodied_runtime.distributed.communication import (
     DummyLink,
@@ -23,6 +24,8 @@ from embodied_runtime.distributed.communication import (
 )
 from embodied_runtime.engine import ExecutionEngine
 from embodied_runtime.models.vla.toy_single_forward import ToySingleForwardAdapter
+
+from .action_fusion import make_action_result_fuser
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +36,7 @@ class DemoConfig:
     reconnect_tick: int | None = 8
     one_way_latency_s: float = 0.04
     failover: FailoverConfig = FailoverConfig(max_cloud_sequence_lag=4)
+    cloud_weight: float = 0.5
 
     def __post_init__(self) -> None:
         if self.ticks <= 0:
@@ -41,6 +45,8 @@ class DemoConfig:
             raise ValueError("control_period_s cannot be negative")
         if self.one_way_latency_s < 0:
             raise ValueError("one_way_latency_s cannot be negative")
+        if not 0.0 <= self.cloud_weight <= 1.0:
+            raise ValueError("cloud_weight must be between zero and one")
 
 
 def load_demo_config(path: str | Path) -> DemoConfig:
@@ -51,12 +57,14 @@ def load_demo_config(path: str | Path) -> DemoConfig:
     failover_values = raw.get("failover", {})
     demo_values = raw.get("demo", {})
     link_values = raw.get("dummy_link", {})
+    fusion_values = raw.get("fusion", {})
     return DemoConfig(
         ticks=int(demo_values.get("ticks", 12)),
         control_period_s=float(demo_values.get("control_period_s", 0.05)),
         disconnect_tick=_optional_int(demo_values.get("disconnect_tick", 5)),
         reconnect_tick=_optional_int(demo_values.get("reconnect_tick", 8)),
         one_way_latency_s=float(link_values.get("one_way_latency_s", 0.04)),
+        cloud_weight=float(fusion_values.get("cloud_weight", 0.5)),
         failover=FailoverConfig(
             mode=FailoverMode(failover_values.get("mode", FailoverMode.ASYNC_CLOUD_PREFERRED)),
             cloud_request_timeout_s=float(failover_values.get("cloud_request_timeout_s", 5.0)),
@@ -78,6 +86,7 @@ async def run_cloud_edge_failover_demo(config: DemoConfig) -> list[dict[str, Any
         edge=edge_engine,
         cloud=remote_cloud,
         config=config.failover,
+        fuser=make_action_result_fuser(cloud_weight=config.cloud_weight),
     )
     records: list[dict[str, Any]] = []
 
@@ -103,7 +112,9 @@ async def run_cloud_edge_failover_demo(config: DemoConfig) -> list[dict[str, Any
                 edge_request,
                 cloud_request=cloud_request,
             )
-            selected_adapter = cloud_adapter if decision.source.value == "cloud" else edge_adapter
+            selected_adapter = (
+                cloud_adapter if decision.source is ResultSource.CLOUD else edge_adapter
+            )
             action = selected_adapter.postprocess_one(decision.result.output)
             records.append(
                 {

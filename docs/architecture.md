@@ -129,38 +129,58 @@ RLinf / other trainer / MaaS
 endpoint. `robots` maps model-independent actions into a physical control
 interface.
 
-## Asynchronous cloud/edge failover
+## Asynchronous cloud/edge coordination
 
-The first cross-runtime policy is result-level preemption. It is deliberately
-outside `ExecutionEngine`: engine priority orders work within one endpoint,
-whereas failover chooses which endpoint owns the output at a control decision
-point.
+Cross-runtime coordination is deliberately outside `ExecutionEngine`: engine
+priority orders work within one endpoint, whereas the coordinator chooses how
+results from independent endpoints contribute at a control decision point.
 
 ```text
-tick N observation
-      |
-      +----> edge Engine ---- await ----> edge result N -----+
-      |                                                       |
-      +----> dummy/remote link -> cloud Engine                 |
-                    background only                           |
-                            |                                 v
-                            +-> latest fresh cloud result -> selector -> action
+tick N:   submit cloud request N ----------------------+
+          await edge N -> edge result N                | no waiting
+                                                       v
+tick N+k: await edge N+k -> edge result N+k + cached cloud result N
+                                      |
+                                      v
+                         select or synchronously fuse
 ```
 
-The selector never waits for cloud. Edge inference remains hot even while a
+The control tick never waits for cloud. Edge inference remains hot even while a
 cloud result has output authority. Only one cloud request may be in flight, and
 an in-flight timeout prevents a hung request from occupying that slot forever.
 Cloud results are guarded by both a TTL measured from submission and a maximum
 sequence lag. Disconnect or connection-epoch change immediately invalidates
-cached authority, preventing an old response from taking over after
+the cached result, preventing an old response from taking over after
 reconnection.
 
+| Mode | Cloud submission | Tick output |
+| --- | --- | --- |
+| `edge_only` | No | Current edge result |
+| `async_cloud_preferred` | Background | Fresh cached cloud result, otherwise edge |
+| `async_blend` | Background | Current edge plus fresh cached cloud through a fuser |
+
 `AsyncFailoverCoordinator` accepts distinct edge and cloud request payloads.
-This keeps model-specific preprocessing outside the policy and allows two
-different adapters to produce the same normalized action contract. The current
-mode is configurable as `async_cloud_preferred` or `edge_only`; hierarchical
-guidance is intended as a separate composition policy rather than another
-branch inside the failover selector.
+This keeps model-specific preprocessing outside the policy and lets two
+different adapters target one common result contract. The action fuser copies
+the cloud action to the current edge action's device and dtype, verifies equal
+shapes, and computes:
+
+```text
+edge + (cloud - edge) * cloud_weight
+```
+
+Shape mismatch, an invalid fuser, or any cloud failure returns the current edge
+result. The fuser itself must be synchronous, lightweight, free of I/O, and
+must not mutate either input. Hierarchical guidance remains a separate future
+composition policy rather than another branch inside this selector.
+
+### Prototype TCP transport
+
+The real two-host smoke path uses a four-byte big-endian payload length followed
+by a UTF-8 JSON object. Messages are limited to 64 MiB, each request opens one
+TCP connection, and the π0.5 server returns the final FP32 action array. This
+transport proves a physical network boundary without pretending to be the
+production communication layer.
 
 ## CUDA Graph boundary
 
@@ -214,3 +234,24 @@ flow outside the graph.
 - π0.5 still reuses LeRobot's image preprocessing helper, which follows the
   policy's current device. A production robot input pipeline should make host
   preprocessing and backend transfer two explicit stages.
+- Current coordination composes complete model results; it does not split one
+  neural network layer-by-layer across hosts.
+- The π0.5 and lightweight edge policies share only a `(50, 32)` tensor shape
+  in this smoke test. Action-space identity, normalization, units, coordinate
+  frames, and semantic compatibility are not yet part of the result contract.
+- A cached cloud action may come from an earlier tick. TTL and sequence lag
+  bound its age, but observation-version matching is not yet implemented.
+- The cloud server currently owns one pre-generated synthetic observation; a
+  request carries an inference descriptor rather than camera or robot sensor
+  data.
+- TCP/JSON does not yet provide dynamic registration, discovery,
+  authentication, encryption, compression, retries, backpressure, streaming,
+  or model-version negotiation.
+- The synchronous fuser's device copy and arithmetic execute inside the
+  decision path. Their cost is small in the recorded smoke run but must be
+  budgeted explicitly in a fixed-frequency control loop.
+- The prototype server does not yet drain or cancel active request handlers
+  before closing the model engine during shutdown.
+- RLinf, robot SDKs, physical actuators, and a safety supervisor are not yet
+  connected. The RTX 3070 laptop represents an edge node, not an embedded
+  on-robot deployment target.

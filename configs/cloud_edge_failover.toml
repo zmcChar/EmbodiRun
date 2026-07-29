@@ -5,6 +5,9 @@ cloud_result_ttl_s = 1.0
 max_cloud_sequence_lag = 4
 cloud_submit_interval_s = 0.0
 
+[fusion]
+cloud_weight = 0.5
+
 [dummy_link]
 # Applied once in each direction around the cloud ExecutionEngine.
 one_way_latency_s = 0.04

@@ -1,6 +1,6 @@
 # Verification record
 
-Verified on 2026-07-28 in the local WSL environment:
+Verified on 2026-07-29 in the local WSL environment:
 
 | Item | Value |
 | --- | --- |
@@ -14,7 +14,7 @@ Verified on 2026-07-28 in the local WSL environment:
 ## Automated tests
 
 ```text
-106 passed, 2 optional real-checkpoint tests skipped
+144 passed, 3 optional real-checkpoint tests skipped
 ruff check: passed
 ruff format --check: passed
 compileall: passed
@@ -130,6 +130,126 @@ optimized latency benchmark. Inputs were synthetic, no tokenizer or robot was
 connected, and weight loading was intentionally repeated in fresh processes.
 The final run additionally exercised synchronized CUDA stage completion,
 backend-owned Euler updates, and session-close GPU offload.
+
+## Local GPU/CPU asynchronous collaboration
+
+A separate real-checkpoint smoke run placed π0.5 on the RTX 5080 and a
+lightweight single-forward policy on CPU. The two runtimes communicated through
+the controllable dummy link so disconnect behavior was deterministic.
+
+| Metric | Result |
+| --- | ---: |
+| Cloud model/device | π0.5 / `cuda:0` |
+| Edge model/device | toy single-forward / CPU |
+| Cloud flow steps | 1 |
+| Cold load | 81.177 s |
+| First tick | edge, 1.982 ms |
+| Cloud in flight after first tick | true |
+| Second tick | blended |
+| Disconnected tick | edge / `cloud_disconnected` |
+| Action shape | `(50, 32)` |
+| Final action device | CPU |
+| Peak CUDA allocation | 9,038.96 MiB |
+| Fusion maximum absolute error | `0.0` |
+
+This is the deterministic GPU-plus-CPU integration path. It validates that the
+control tick does not await π0.5, that a completed cloud result can later be
+fused on the edge device, and that disconnect invalidates cloud authority.
+
+Run the opt-in test with:
+
+```bash
+EMBODIED_RUNTIME_PI05_CHECKPOINT=/path/to/pi05_base \
+  pytest -q tests/integration/test_pi05_cpu_gpu_collaboration.py
+```
+
+## Real two-host Wi-Fi collaboration
+
+The real network run used the RTX 5080 host as the π0.5 cloud runtime and a
+second laptop as the edge runtime:
+
+| Role | Environment |
+| --- | --- |
+| Cloud | RTX 5080, Python 3.14.4, PyTorch 2.10.0+cu128 |
+| Edge | RTX 3070 Laptop GPU, Python 3.10.12, PyTorch 1.11.0+cu115 |
+| Edge model | 33,088-parameter temporal MLP, `(50, 32)` action |
+| Transport | Length-prefixed TCP/JSON over a direct Tailscale/WireGuard peer |
+
+The laptop's physical interface route to `<cloud-lan-ip>` was `wlp3s0`.
+`tailscale ping` reported the cloud peer as direct
+`via <cloud-lan-ip>:<peer-udp-port> in 4ms`, rather than through a relay. A
+separate 20-packet LAN ICMP sample reported 5% loss and
+3.113/10.225/118.309 ms minimum/average/maximum RTT. Direct inbound TCP to the
+WSL service through `<cloud-lan-ip>:18765` was blocked by the host firewall, so
+the recorded application run used the directly peered Tailscale address
+`<cloud-overlay-ip>:18765`; its underlying peer path still traversed the local
+Wi-Fi network.
+
+The first direct run reported:
+
+| Metric | Result |
+| --- | ---: |
+| First tick | edge, 1.469 ms |
+| Edge model execution in first tick | 0.441 ms |
+| Cloud still in flight after first tick | true |
+| π0.5 server execution | 295.567 ms |
+| Cloud round trip | 341.272 ms |
+| Second tick | blended |
+| Fusion time on RTX 3070 | 0.044 ms |
+| Action shape/device | `(50, 32)` / `cuda:0` on the RTX 3070 |
+| Fusion maximum absolute error | `2.2351741790771484e-08` |
+| Request/response JSON payload | 92 / 34,090 bytes |
+
+The same client then submitted a request to the known-closed port `18999`
+while running its next edge tick. The connection failed with
+`ConnectionRefusedError`, but the tick still returned an edge action in
+0.577 ms; the complete failure probe settled in 11.821 ms. A subsequent request
+to the real cloud port again produced a blended result, with a 413.130 ms round
+trip and 368.830 ms server execution, demonstrating recovery after the failure
+probe.
+
+An additional same-address cycle fixed the laptop endpoint at
+`127.0.0.1:18766` through an SSH reverse forward carried by the direct Wi-Fi
+connection. With that forward removed, the cloud connection was refused while
+the first tick still returned edge in 1.513 ms and the second tick remained
+edge. Restoring the forward at the same address produced
+`cloud_in_flight_after_first=true` and a blended second tick; the recovery
+request reported a 1.317 s round trip and 1.167 s first-request server
+execution. This separates address-stable disconnect/reconnect behavior from
+the bad-port probe above.
+
+The cloud command was:
+
+```bash
+python examples/pi05_cloud_server.py \
+  --config configs/pi05_cpu_gpu_collaboration.toml \
+  --checkpoint /path/to/pi05_base \
+  --num-steps 1 \
+  --host 0.0.0.0 \
+  --port 18765
+```
+
+The standalone edge command was:
+
+```bash
+python3 wifi_edge_client_py310.py \
+  --cloud-host <cloud-overlay-ip> \
+  --cloud-port 18765 \
+  --edge-device cuda:0 \
+  --num-steps 1 \
+  --cloud-weight 0.5 \
+  --failure-probe-port 18999
+```
+
+This validates asynchronous result transport, non-blocking edge execution,
+numerical action fusion, real network failure fallback, and later recovery. It
+does not validate semantic compatibility or task-quality improvement between
+the π0.5 cloud policy and the lightweight edge policy. The server used one
+synthetic observation generated at startup, and the edge model was a
+deterministic structural fixture rather than a trained robot policy. The
+standalone client explicitly waits for the first cloud task outside the
+real-time tick before starting its second tick, so this is not yet a sustained
+fixed-frequency control-loop benchmark.
 
 ## CUDA Graph vertical slice
 

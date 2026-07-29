@@ -12,6 +12,7 @@ from .failover import (
     FailoverDecision,
     FailoverMode,
     FallbackReason,
+    ResultFuser,
     ResultSource,
 )
 from .routing import EndpointRouter
@@ -24,6 +25,7 @@ __all__ = [
     "FailoverMode",
     "FallbackReason",
     "NodeRole",
+    "ResultFuser",
     "ResultSource",
     "RuntimeEndpoint",
 ]

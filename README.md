@@ -38,8 +38,9 @@ Model-family semantics and execution pattern are independent: π0.5 is a VLA
 using iterative flow, while OpenVLA-OFT is a real VLA using one causal forward
 and a categorical action-token head.
 
-`distributed`, `robots`, and the RLinf integration start as explicit interface
-boundaries and will be filled by their owning groups.
+`distributed` now contains asynchronous endpoint coordination and prototype
+transports. `robots` and the RLinf integration remain explicit interface
+boundaries for their owning groups.
 
 ## Development
 
@@ -83,13 +84,23 @@ dummy link:
 
 ```bash
 python examples/cloud_edge_failover.py \
-  --config configs/cloud_edge_failover.toml
+  --config configs/cloud_edge_failover.toml \
+  --mode async_blend
 ```
 
 The edge engine executes on every control tick and is never blocked by cloud
-completion. A fresh cloud result can take output authority at a later tick.
+completion. The configurable coordination modes are:
+
+- `edge_only`: do not submit cloud work;
+- `async_cloud_preferred`: use a fresh cached cloud result when available,
+  otherwise use the current edge result;
+- `async_blend`: synchronously combine the current edge result and a fresh
+  cached cloud result.
+
 The example disconnects and reconnects the dummy link according to the TOML
-schedule; changing `failover.mode` to `edge_only` disables cloud submission.
+schedule. Here, asynchronous means that a control tick does not await cloud
+completion. A result fuser is intentionally synchronous, lightweight, and free
+of I/O.
 
 Run a tokenizer-free real-weight π0.5 smoke test:
 
@@ -101,6 +112,49 @@ python examples/pi05_synthetic.py \
   --num-steps 10 \
   --cuda-graph
 ```
+
+Run the real π0.5 model on a local GPU and a lightweight policy on CPU:
+
+```bash
+python examples/pi05_cpu_gpu_collaboration.py \
+  --config configs/pi05_cpu_gpu_collaboration.toml \
+  --checkpoint /path/to/lerobot/pi05_base \
+  --num-steps 1
+```
+
+This smoke test uses two local runtimes and a controllable dummy link. The first
+tick returns the CPU result while π0.5 runs in the background, a later tick
+blends the available action results, and a disconnected tick falls back to
+CPU.
+
+For a real two-host link, start π0.5 on the cloud GPU:
+
+```bash
+python examples/pi05_cloud_server.py \
+  --config configs/pi05_cpu_gpu_collaboration.toml \
+  --checkpoint /path/to/lerobot/pi05_base \
+  --num-steps 1 \
+  --host 0.0.0.0 \
+  --port 18765
+```
+
+Copy the standalone client to an edge host with Python 3.10+ and PyTorch, then
+run its local GPU policy while requesting π0.5 asynchronously:
+
+```bash
+python wifi_edge_client_py310.py \
+  --cloud-host <cloud-lan-ip> \
+  --cloud-port 18765 \
+  --edge-device cuda:0 \
+  --num-steps 1 \
+  --cloud-weight 0.5
+```
+
+`--failure-probe-port <closed-port>` additionally verifies that a real TCP
+failure does not prevent the edge policy from producing an action. The
+length-prefixed TCP/JSON transport and standalone client are prototype test
+surfaces, not the future registration, discovery, authentication, or streaming
+layer.
 
 Run a synthetic-image OpenVLA-OFT smoke test:
 

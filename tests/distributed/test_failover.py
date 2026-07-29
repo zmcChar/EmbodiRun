@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from functools import wraps
 
+import pytest
+
 from embodied_runtime.distributed import (
     AsyncFailoverCoordinator,
     FailoverConfig,
@@ -99,6 +101,106 @@ async def test_fresh_cloud_result_preempts_output_but_edge_stays_hot() -> None:
     assert second.source is ResultSource.CLOUD
     assert second.source_sequence_id == 1
     assert edge.calls == 2
+    await coordinator.aclose()
+
+
+def test_async_blend_requires_an_explicit_result_fuser() -> None:
+    with pytest.raises(ValueError, match="requires a result fuser"):
+        AsyncFailoverCoordinator(
+            edge=_ImmediateEndpoint("edge"),
+            cloud=DummyRemoteInferenceEndpoint(_ImmediateEndpoint("cloud")),
+            config=FailoverConfig(mode=FailoverMode.ASYNC_BLEND),
+        )
+
+
+@async_test
+async def test_async_blend_combines_current_edge_and_fresh_cloud_results() -> None:
+    edge = _ImmediateEndpoint("edge")
+    cloud = _GateEndpoint()
+    coordinator = AsyncFailoverCoordinator(
+        edge=edge,
+        cloud=DummyRemoteInferenceEndpoint(cloud),
+        config=FailoverConfig(mode=FailoverMode.ASYNC_BLEND),
+        fuser=lambda edge_result, cloud_result: f"{edge_result}+{cloud_result}",
+    )
+
+    first = await coordinator.infer_async("edge-1", cloud_request="cloud-1")
+    assert first.source is ResultSource.EDGE
+    cloud.release.set()
+    await asyncio.wait_for(coordinator.wait_for_cloud_idle(), timeout=1.0)
+
+    second = await coordinator.infer_async("edge-2", cloud_request="cloud-2")
+
+    assert second.result == "edge:edge-2+cloud:cloud-1"
+    assert second.source is ResultSource.BLENDED
+    assert second.sequence_id == 2
+    assert second.source_sequence_id == 1
+    assert edge.calls == 2
+    await coordinator.aclose()
+
+
+@async_test
+async def test_blend_failure_keeps_edge_result_authoritative() -> None:
+    edge = _ImmediateEndpoint("edge")
+    cloud = _ImmediateEndpoint("cloud")
+
+    def fail_to_blend(edge_result: str, cloud_result: str) -> str:
+        raise ValueError(f"cannot blend {edge_result!r} with {cloud_result!r}")
+
+    coordinator = AsyncFailoverCoordinator(
+        edge=edge,
+        cloud=DummyRemoteInferenceEndpoint(cloud),
+        config=FailoverConfig(mode=FailoverMode.ASYNC_BLEND),
+        fuser=fail_to_blend,
+    )
+    await coordinator.infer_async("edge-1", cloud_request="cloud-1")
+    await coordinator.wait_for_cloud_idle()
+
+    decision = await coordinator.infer_async("edge-2", cloud_request="cloud-2")
+
+    assert decision.result == "edge:edge-2"
+    assert decision.source is ResultSource.EDGE
+    assert decision.fallback_reason is FallbackReason.BLEND_ERROR
+    await coordinator.aclose()
+
+
+@async_test
+async def test_blend_disconnect_and_reconnect_require_a_fresh_cloud_epoch() -> None:
+    edge = _ImmediateEndpoint("edge")
+    cloud = _ImmediateEndpoint("cloud")
+    link = DummyLink()
+    fused_pairs: list[tuple[str, str]] = []
+
+    def record_blend(edge_result: str, cloud_result: str) -> str:
+        fused_pairs.append((edge_result, cloud_result))
+        return f"{edge_result}+{cloud_result}"
+
+    coordinator = AsyncFailoverCoordinator(
+        edge=edge,
+        cloud=DummyRemoteInferenceEndpoint(cloud, link),
+        config=FailoverConfig(mode=FailoverMode.ASYNC_BLEND),
+        fuser=record_blend,
+    )
+    await coordinator.infer_async("edge-1", cloud_request="cloud-1")
+    await coordinator.wait_for_cloud_idle()
+    assert (
+        await coordinator.infer_async("edge-2", cloud_request="cloud-2")
+    ).source is ResultSource.BLENDED
+
+    link.set_connected(False)
+    disconnected = await coordinator.infer_async("edge-3", cloud_request="cloud-3")
+    assert disconnected.source is ResultSource.EDGE
+    assert disconnected.fallback_reason is FallbackReason.CLOUD_DISCONNECTED
+    assert len(fused_pairs) == 1
+
+    link.set_connected(True)
+    recovering = await coordinator.infer_async("edge-4", cloud_request="cloud-4")
+    assert recovering.source is ResultSource.EDGE
+    await coordinator.wait_for_cloud_idle()
+    recovered = await coordinator.infer_async("edge-5", cloud_request="cloud-5")
+    assert recovered.source is ResultSource.BLENDED
+    assert recovered.connection_epoch == 2
+    assert fused_pairs[-1] == ("edge:edge-5", "cloud:cloud-4")
     await coordinator.aclose()
 
 

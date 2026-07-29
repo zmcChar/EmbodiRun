@@ -1,0 +1,27 @@
+[model]
+checkpoint = "lerobot/pi05_base"
+local_files_only = true
+
+[cloud]
+device = "cuda:0"
+dtype = "preserve"
+num_steps = 10
+language_length = 8
+seed = 0
+cuda_graph = false
+
+[edge]
+device = "cpu"
+
+[coordination]
+mode = "async_blend"
+cloud_weight = 0.5
+cloud_request_timeout_s = 5.0
+cloud_result_ttl_s = 5.0
+max_cloud_sequence_lag = 4
+# The smoke run keeps one cloud result so the second tick can deterministically
+# prove fusion without launching another expensive real-model request.
+cloud_submit_interval_s = 60.0
+
+[dummy_link]
+one_way_latency_s = 0.0
