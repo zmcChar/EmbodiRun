@@ -18,6 +18,7 @@ AdapterFactory = Callable[..., ModelAdapter]
 
 _REGISTRY: dict[str, AdapterFactory] = {}
 _BUILTIN_MODULES: dict[str, str] = {
+    "gr00t_n17": "embodied_runtime.models.vla.gr00t_n17",
     "openvla_oft": "embodied_runtime.models.vla.openvla_oft",
     "pi05": "embodied_runtime.models.vla.pi05",
     "smolvla": "embodied_runtime.models.vla.smolvla",

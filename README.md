@@ -1,9 +1,9 @@
 # Embodied runtime prototype
 
 This repository is a provisional prototype; the product name has intentionally
-not been decided. Its first vertical slices run π0.5, SmolVLA, and OpenVLA-OFT
-model packages through a hardware-neutral execution engine and a Torch/CUDA
-backend.
+not been decided. Its first vertical slices run π0.5, SmolVLA, OpenVLA-OFT, and
+GR00T N1.7 model packages through a hardware-neutral execution engine and a
+Torch/CUDA backend.
 
 The neutral Python namespace is `embodied_runtime`; VLA is one model family
 under `embodied_runtime.models.vla`, not the boundary of the runtime.
@@ -30,6 +30,8 @@ The initial implementation concentrates on Groups 1, 3, and 4:
   robot-native action unnormalization.
 - `models/vla/openvla_oft`: builds a full-forward categorical-action package
   and supplies the image/text preprocessing and action-token semantics.
+- `models/vla/gr00t_n17`: exposes NVIDIA's official GR00T N1.7 policy as a
+  formal single-forward package with a named-action contract.
 - `models/base.py`: defines the optional adapter base and the explicit
   `preprocess_one → collate → unbatch → postprocess_one` cardinality boundary.
 - `engine`: selects a runner from the package's `ExecutionPlan`, then owns
@@ -71,7 +73,9 @@ python -m pip install -e '.[dev,torch,smolvla]'
 
 Checkpoints are loaded from user-provided local paths or Hugging Face IDs. This
 repository does not contain model weights, and real-model commands are offline
-by default.
+by default at the outer checkpoint boundary. Models with nested upstream
+dependencies may require their own cached snapshots; GR00T's Cosmos backbone
+is documented explicitly in the GR00T guide.
 
 The dependency-free contracts and core runtime target Python 3.10+. The
 `smolvla` endpoint is verified with Python 3.10 and LeRobot 0.3.3. The `pi05`
@@ -222,3 +226,5 @@ participate in the graph cache key.
 
 See [architecture](docs/architecture.md) for the ownership boundary and
 [verification](docs/verification.md) for the tested environment and results.
+The GR00T provider boundary, isolated environment commands, and upstream
+support status are documented in [GR00T N1.7](docs/gr00t_n17.md).

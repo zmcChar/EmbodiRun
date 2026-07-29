@@ -49,6 +49,7 @@ markers = [
   "openvla_oft: tests that require a real OpenVLA-OFT checkpoint",
   "pi05: tests that require a real LeRobot π0.5 checkpoint",
   "smolvla: tests that require a real LeRobot SmolVLA checkpoint",
+  "gr00t_n17: tests that require the real NVIDIA GR00T N1.7 checkpoint",
 ]
 
 [tool.ruff]
