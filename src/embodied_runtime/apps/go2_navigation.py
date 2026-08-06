@@ -11,6 +11,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, is_dataclass, replace
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 try:
     import tomllib
@@ -34,6 +35,8 @@ from embodied_runtime.robots.go2 import (
 DEFAULT_CONFIG_PATH = Path("configs/go2_navigation.toml")
 BACKENDS = ("qwen", "streamvln", "internvla")
 GO2_CONTROL_HARD_LIMITS = Go2Limits(0.35, 0.35, 0.7)
+DEFAULT_GO2_CAMERA_URL = "http://127.0.0.1:8765"
+DEFAULT_GO2_CONTROL_URL = "http://127.0.0.1:8080"
 
 
 def _nonempty(value: object, name: str, *, optional: bool = False) -> str | None:
@@ -52,6 +55,23 @@ def _positive(value: object, name: str) -> float:
     if not math.isfinite(result) or result <= 0:
         raise ValueError(f"{name} must be a positive finite number")
     return result
+
+
+def _network_port(value: object, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{name} must be an integer")
+    if not 1 <= value <= 65535:
+        raise ValueError(f"{name} must be between 1 and 65535")
+    return value
+
+
+def _robot_service_url(host: str, port: int) -> str:
+    host = str(_nonempty(host, "robot_host"))
+    if "://" in host or any(character in host for character in "/?#@"):
+        raise ValueError("robot_host must be a hostname or IP address, not a URL")
+    port = _network_port(port, "robot service port")
+    authority = f"[{host}]" if ":" in host and not host.startswith("[") else host
+    return f"http://{authority}:{port}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,8 +147,8 @@ class ProviderSettings:
 
 @dataclass(frozen=True, slots=True)
 class Go2Settings:
-    camera_url: str = "http://192.168.137.34:8765"
-    control_url: str = "http://192.168.137.34:8080"
+    camera_url: str = DEFAULT_GO2_CAMERA_URL
+    control_url: str = DEFAULT_GO2_CONTROL_URL
     camera_token: str | None = None
     control_token: str | None = None
     camera_timeout_s: float = 2.0
@@ -142,6 +162,9 @@ class Go2Settings:
     def __post_init__(self) -> None:
         for name in ("camera_url", "control_url"):
             object.__setattr__(self, name, _nonempty(getattr(self, name), name))
+            parsed = urlsplit(getattr(self, name))
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                raise ValueError(f"{name} must be an absolute HTTP(S) URL")
         for name in ("camera_token", "control_token"):
             object.__setattr__(self, name, _nonempty(getattr(self, name), name, optional=True))
         for name in (
@@ -216,8 +239,8 @@ def load_config(path: str | Path) -> Go2NavigationAppConfig:
             internvla_device=str(internvla.get("device", "cuda:0")),
         ),
         go2=Go2Settings(
-            camera_url=str(go2.get("camera_url", "http://192.168.137.34:8765")),
-            control_url=str(go2.get("control_url", "http://192.168.137.34:8080")),
+            camera_url=str(go2.get("camera_url", DEFAULT_GO2_CAMERA_URL)),
+            control_url=str(go2.get("control_url", DEFAULT_GO2_CONTROL_URL)),
             camera_token=go2.get("camera_token") or os.environ.get("GO2_CAMERA_TOKEN"),
             control_token=go2.get("control_token") or os.environ.get("GO2_API_TOKEN"),
             camera_timeout_s=float(go2.get("camera_timeout_s", 2.0)),
@@ -383,6 +406,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lease-duration-s", type=float)
     parser.add_argument("--camera-url")
     parser.add_argument("--control-url")
+    parser.add_argument(
+        "--robot-host",
+        "--robot-ip",
+        dest="robot_host",
+        help="Robot hostname or IP; derives both HTTP service URLs.",
+    )
+    parser.add_argument("--camera-port", type=int, default=None)
+    parser.add_argument("--control-port", type=int, default=None)
     parser.add_argument("--camera-token")
     parser.add_argument("--control-token")
     parser.add_argument("--qwen-base-url")
@@ -454,6 +485,18 @@ def apply_cli_overrides(
         provider = replace(provider, local_files_only=False)
     if args.no_warmup:
         provider = replace(provider, warmup=False)
+    if args.robot_host is not None:
+        if args.camera_url is not None or args.control_url is not None:
+            raise ValueError("--robot-host cannot be combined with explicit service URLs")
+        camera_port = 8765 if args.camera_port is None else args.camera_port
+        control_port = 8080 if args.control_port is None else args.control_port
+        go2 = replace(
+            go2,
+            camera_url=_robot_service_url(args.robot_host, camera_port),
+            control_url=_robot_service_url(args.robot_host, control_port),
+        )
+    elif args.camera_port is not None or args.control_port is not None:
+        raise ValueError("--camera-port and --control-port require --robot-host")
     go2_values = {
         "camera_url": args.camera_url,
         "control_url": args.control_url,
@@ -495,6 +538,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 __all__ = [
     "BACKENDS",
     "DEFAULT_CONFIG_PATH",
+    "DEFAULT_GO2_CAMERA_URL",
+    "DEFAULT_GO2_CONTROL_URL",
     "GO2_CONTROL_HARD_LIMITS",
     "Go2NavigationAppConfig",
     "Go2Settings",

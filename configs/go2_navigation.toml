@@ -18,8 +18,8 @@ timeout_s = 60.0
 # Prefer QWEN_API_KEY instead of storing api_key here.
 
 [streamvln]
-repository = "/home/user/go2-nav-runtime/src/StreamVLN"
-checkpoint = "/home/user/go2-nav-runtime/checkpoints/streamvln-real-world"
+repository = "/path/to/StreamVLN"
+checkpoint = "/path/to/streamvln-real-world"
 device = "cuda:0"
 cuda_memory_fraction = 0.45
 max_new_tokens = 64
@@ -27,14 +27,16 @@ local_files_only = true
 warmup = true
 
 [internvla]
-repository = "/home/user/go2-nav-runtime/src/InternNav"
-checkpoint = "/home/user/go2-nav-runtime/checkpoints/internvla-n1-dualvln"
+repository = "/path/to/InternNav"
+checkpoint = "/path/to/internvla-n1-dualvln"
 variant = "dualvln" # dualvln (RGB) or navdp (registered RGB-D)
 device = "cuda:0"
 
 [go2]
-camera_url = "http://192.168.137.34:8765"
-control_url = "http://192.168.137.34:8080"
+# Loopback is inert for a remote robot. Pass --robot-host/--robot-ip at runtime,
+# or override these URLs explicitly when using an SSH/WireGuard tunnel.
+camera_url = "http://127.0.0.1:8765"
+control_url = "http://127.0.0.1:8080"
 camera_timeout_s = 2.0
 control_timeout_s = 1.0
 # Prefer GO2_CAMERA_TOKEN and GO2_API_TOKEN instead of storing tokens here.

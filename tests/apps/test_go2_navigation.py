@@ -63,8 +63,8 @@ base_url = "http://127.0.0.1:15003/v1"
 model = "qwen-original"
 
 [go2]
-camera_url = "http://192.168.137.34:8765"
-control_url = "http://192.168.137.34:8080"
+camera_url = "http://robot.example:8765"
+control_url = "http://robot.example:8080"
 
 [go2.follower]
 max_abs_vx_mps = 0.30
@@ -101,6 +101,32 @@ max_abs_yaw_rate_rps = 0.60
     assert config.provider.streamvln_device == "cuda:1"
     assert config.go2.camera_token == "camera-from-env"
     assert config.go2.control_token == "control-from-env"
+
+
+def test_robot_host_cli_derives_service_urls_without_stored_ip() -> None:
+    args = app.build_parser().parse_args(
+        [
+            "--robot-host",
+            "go2.internal",
+            "--camera-port",
+            "9001",
+            "--control-port",
+            "9002",
+        ]
+    )
+
+    resolved = app.apply_cli_overrides(app.Go2NavigationAppConfig(), args)
+
+    assert resolved.go2.camera_url == "http://go2.internal:9001"
+    assert resolved.go2.control_url == "http://go2.internal:9002"
+
+
+def test_robot_host_rejects_ambiguous_explicit_url() -> None:
+    args = app.build_parser().parse_args(
+        ["--robot-ip", "10.0.0.2", "--camera-url", "http://camera:8765"]
+    )
+    with pytest.raises(ValueError, match="cannot be combined"):
+        app.apply_cli_overrides(app.Go2NavigationAppConfig(), args)
 
 
 def test_go2_limits_cannot_exceed_control_service_bounds() -> None:
@@ -212,11 +238,11 @@ def test_composition_passes_explicit_execution_policy_and_emits_json(execute) ->
     assert result.episode_id == "go2-navigation"
     assert provider.closed is True
     assert constructed["camera"] == (
-        "http://192.168.137.34:8765",
+        "http://127.0.0.1:8765",
         {"token": "camera-token", "timeout_s": 2.0},
     )
     assert constructed["control"] == (
-        "http://192.168.137.34:8080",
+        "http://127.0.0.1:8080",
         {"token": "control-token", "timeout_s": 1.0},
     )
     session_config = constructed["session"]["config"]
