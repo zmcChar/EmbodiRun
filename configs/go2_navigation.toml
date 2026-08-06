@@ -1,14 +1,25 @@
-# One shared Python environment, with one heavy local model resident at a time.
+# This file never enables motion. The CLI writes velocity only with --execute.
+[session]
+episode_id = "go2-navigation"
+max_runtime_s = 120.0
+control_hz = 10.0
+lease_duration_s = 10.0
+max_events = 256
+
+# Select exactly one backend. Local backends are loaded in this process; the
+# existing Qwen endpoint is only called and is never started, stopped, or restarted.
 [provider]
 backend = "streamvln" # qwen, streamvln, or internvla
 
 [qwen]
 base_url = "http://127.0.0.1:15003/v1"
 model = "qwen3.5-9b"
+timeout_s = 60.0
+# Prefer QWEN_API_KEY instead of storing api_key here.
 
 [streamvln]
-repository = "/path/to/StreamVLN"
-checkpoint = "/path/to/streamvln-real-world"
+repository = "/home/user/go2-nav-runtime/src/StreamVLN"
+checkpoint = "/home/user/go2-nav-runtime/checkpoints/streamvln-real-world"
 device = "cuda:0"
 cuda_memory_fraction = 0.45
 max_new_tokens = 64
@@ -16,19 +27,22 @@ local_files_only = true
 warmup = true
 
 [internvla]
-repository = "/path/to/InternNav"
-checkpoint = "/path/to/internvla-n1-dualvln"
-variant = "dualvln"
+repository = "/home/user/go2-nav-runtime/src/InternNav"
+checkpoint = "/home/user/go2-nav-runtime/checkpoints/internvla-n1-dualvln"
+variant = "dualvln" # dualvln (RGB) or navdp (registered RGB-D)
 device = "cuda:0"
 
 [go2]
-camera_url = "http://192.168.137.34:8081"
+camera_url = "http://192.168.137.34:8765"
 control_url = "http://192.168.137.34:8080"
-control_hz = 10.0
+camera_timeout_s = 2.0
+control_timeout_s = 1.0
+# Prefer GO2_CAMERA_TOKEN and GO2_API_TOKEN instead of storing tokens here.
 
 [go2.follower]
-max_abs_vx_mps = 0.65
+# These values equal the hard bounds accepted by the deployed control API.
+max_abs_vx_mps = 0.35
 max_abs_vy_mps = 0.35
-max_abs_yaw_rate_rps = 0.8
+max_abs_yaw_rate_rps = 0.7
 position_tolerance_m = 0.08
 yaw_tolerance_rad = 0.08

@@ -21,9 +21,12 @@ def _bounded(value: object, name: str, limit: float) -> float:
 
 @dataclass(frozen=True, slots=True)
 class Go2Limits:
-    max_abs_vx_mps: float = 0.65
+    # Keep these defaults aligned with go2-control-api's hard admission
+    # bounds.  Commands above them are rejected instead of clipped by the
+    # robot service, which would otherwise break the controller heartbeat.
+    max_abs_vx_mps: float = 0.35
     max_abs_vy_mps: float = 0.35
-    max_abs_yaw_rate_rps: float = 0.8
+    max_abs_yaw_rate_rps: float = 0.7
 
     def __post_init__(self) -> None:
         for name in ("max_abs_vx_mps", "max_abs_vy_mps", "max_abs_yaw_rate_rps"):

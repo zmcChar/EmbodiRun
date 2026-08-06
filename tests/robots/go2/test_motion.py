@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from embodied_runtime.robots.go2 import BaseVelocityCommand, Go2VelocityLease
+from embodied_runtime.robots.go2 import (
+    DEFAULT_GO2_LIMITS,
+    BaseVelocityCommand,
+    Go2VelocityLease,
+)
+
+
+def test_default_limits_match_go2_control_api_admission_bounds() -> None:
+    assert DEFAULT_GO2_LIMITS.max_abs_vx_mps == 0.35
+    assert DEFAULT_GO2_LIMITS.max_abs_vy_mps == 0.35
+    assert DEFAULT_GO2_LIMITS.max_abs_yaw_rate_rps == 0.7
 
 
 class _Client:
@@ -29,7 +39,7 @@ class _Client:
 def test_velocity_lease_starts_once_then_heartbeats_without_command_gaps() -> None:
     client = _Client()
     lease = Go2VelocityLease(client)  # type: ignore[arg-type]
-    moving = BaseVelocityCommand(0.4, 0.0, 0.0)
+    moving = BaseVelocityCommand(0.3, 0.0, 0.0)
 
     lease.send(BaseVelocityCommand.stopped())
     lease.send(moving)

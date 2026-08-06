@@ -3,6 +3,15 @@
 from .camera import Go2CameraClient, Go2CameraError
 from .client import Go2ClientError, Go2ControlClient
 from .motion import Go2VelocityLease
+from .session import (
+    DEFAULT_GO2_NAVIGATION_SESSION_CONFIG,
+    Go2NavigationSession,
+    Go2NavigationSessionConfig,
+    Go2NavigationSessionError,
+    Go2NavigationSessionResult,
+    NavigationEndReason,
+    NavigationSessionEvent,
+)
 from .time_sync import MAX_PROJECTION_S, capture_pose, project_pose_to_time
 from .types import DEFAULT_GO2_LIMITS, BaseVelocityCommand, Go2Limits, Go2State
 from .waypoint_follower import (
@@ -15,6 +24,7 @@ from .waypoint_follower import (
 
 __all__ = [
     "DEFAULT_GO2_LIMITS",
+    "DEFAULT_GO2_NAVIGATION_SESSION_CONFIG",
     "DEFAULT_WAYPOINT_FOLLOWER_CONFIG",
     "MAX_PROJECTION_S",
     "BaseVelocityCommand",
@@ -24,8 +34,14 @@ __all__ = [
     "Go2ClientError",
     "Go2ControlClient",
     "Go2Limits",
+    "Go2NavigationSession",
+    "Go2NavigationSessionConfig",
+    "Go2NavigationSessionError",
+    "Go2NavigationSessionResult",
     "Go2State",
     "Go2VelocityLease",
+    "NavigationEndReason",
+    "NavigationSessionEvent",
     "WaypointFollowerConfig",
     "WorldWaypointFollower",
     "capture_pose",

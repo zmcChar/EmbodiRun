@@ -18,7 +18,7 @@ def test_plan_is_anchored_at_capture_pose_and_recomputed_at_control_rate() -> No
     )
 
     first = follower.sample(Pose2D(2.0, 3.0, math.pi / 2), 5.1)
-    later = follower.sample(Pose2D(2.0, 3.5, math.pi / 2), 5.5)
+    later = follower.sample(Pose2D(2.0, 3.7, math.pi / 2), 5.5)
 
     assert first.active and first.command.vx_mps > 0
     assert later.active and 0 < later.command.vx_mps < first.command.vx_mps

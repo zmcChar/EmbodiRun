@@ -50,8 +50,9 @@ class Go2ControlClient:
         except HttpClientError as error:
             raise Go2ClientError(str(error)) from error
 
-    def state(self, *, require_fresh: bool = True) -> Go2State:
-        payload = self._request("GET", "/v1/state")
+    def _state_from_payload(
+        self, payload: Mapping[str, object], *, require_fresh: bool
+    ) -> Go2State:
         if self.expected_transport and payload.get("transport") != self.expected_transport:
             raise Go2ClientError(
                 f"unexpected transport {payload.get('transport')!r}; "
@@ -101,6 +102,28 @@ class Go2ControlClient:
             active_action=active,
             raw=state,
         )
+
+    def state(self, *, require_fresh: bool = True) -> Go2State:
+        payload = self._request("GET", "/v1/state")
+        return self._state_from_payload(payload, require_fresh=require_fresh)
+
+    def preflight(self) -> Go2State:
+        """Require an idle, explicitly armed live control service.
+
+        This check is read-only.  The control API independently rechecks the
+        interlock when a motion lease is created, so passing preflight never
+        grants motion authority by itself.
+        """
+
+        payload = self._request("GET", "/v1/state")
+        state = self._state_from_payload(payload, require_fresh=True)
+        if payload.get("closing") is True:
+            raise Go2ClientError("control service is closing")
+        if payload.get("operator_motion_ready") is not True:
+            raise Go2ClientError("operator motion-ready interlock is not enabled")
+        if state.active_action is not None:
+            raise Go2ClientError("another robot action is active")
+        return state
 
     def start_velocity_lease(
         self, command: BaseVelocityCommand, *, duration_s: float = 10.0
