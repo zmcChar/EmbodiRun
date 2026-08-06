@@ -1,5 +1,20 @@
 # Go2 unified navigation runtime
 
+## One-command StreamVLN navigation
+
+On the dual-4090 host, the wrapper checks the camera service, re-arms the
+control service, and starts the image-reactive StreamVLN loop:
+
+```bash
+cd /home/user/go2-nav-runtime/RLinf-deploy
+bash nav.sh --prompt "Find the tripod and stop in front of it."
+```
+
+If `GO2_SSH_PASSWORD` is not already exported, the wrapper prompts for it
+without echoing it. Use `--dry-run` to exercise camera and model inference
+without sending motion commands. `bash nav.sh --help` lists overrides for the
+robot host, SSH user, model paths, timeout, GPU, and velocity bounds.
+
 The navigation command composes a Go2 RGB-D camera, odometry/control client,
 metric waypoint follower, and exactly one Qwen, StreamVLN, or InternVLA
 provider. It runs on the dual-4090 host and talks to the Go2-side services over
