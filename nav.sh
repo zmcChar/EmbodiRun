@@ -9,6 +9,8 @@ PROMPT=""
 ROBOT_HOST="${GO2_ROBOT_HOST:-192.168.137.34}"
 SSH_PORT="${GO2_SSH_PORT:-22}"
 SSH_USER="${GO2_SSH_USER:-unitree}"
+SSH_CONNECT_TIMEOUT_S="${GO2_SSH_CONNECT_TIMEOUT_S:-5}"
+DEPLOY_ATTEMPTS="${GO2_DEPLOY_ATTEMPTS:-3}"
 PASSWORD_ENV_NAME="${GO2_PASSWORD_ENV_NAME:-GO2_SSH_PASSWORD}"
 REMOTE_ROOT="${GO2_REMOTE_ROOT:-/home/unitree/robotics/rlinf-go2-agent}"
 ROBOT_PYTHON="${GO2_ROBOT_PYTHON:-/home/unitree/miniforge3/envs/unitree/bin/python}"
@@ -29,6 +31,7 @@ CONTROL_PORT="${GO2_CONTROL_PORT:-8080}"
 CAMERA_SERIAL="${GO2_CAMERA_SERIAL:-254322072616}"
 DEPTH_SCALE="${GO2_DEPTH_SCALE:-0.0010000000474974513}"
 MAX_RUNTIME_S="${GO2_NAV_MAX_RUNTIME_S:-120}"
+CONTROL_TIMEOUT_S="${GO2_NAV_CONTROL_TIMEOUT_S:-3.0}"
 MAX_VX="${GO2_NAV_MAX_VX:-0.25}"
 MAX_VY="${GO2_NAV_MAX_VY:-0.25}"
 MAX_YAW_RATE="${GO2_NAV_MAX_YAW_RATE:-0.50}"
@@ -44,6 +47,7 @@ Options:
   --robot-host HOST           Go2 IP/hostname
   --ssh-port PORT             Go2 SSH port
   --ssh-user USER             Go2 SSH username
+  --deploy-attempts COUNT     SSH deployment attempts
   --password-env NAME         Environment variable containing the SSH password
   --secrets-file PATH         File containing GO2_API_TOKEN/GO2_CAMERA_TOKEN
   --remote-root PATH          Dog-side installation root
@@ -51,6 +55,7 @@ Options:
   --model-path PATH           StreamVLN checkpoint
   --cuda-device-index INDEX   Physical GPU exposed to the process
   --max-runtime-s SECONDS     Navigation timeout
+  --control-timeout-s SEC     Timeout for one control HTTP request
   --max-vx MPS               Forward/backward speed bound
   --max-vy MPS               Lateral speed bound
   --max-yaw-rate RAD_S        Yaw-rate bound
@@ -94,6 +99,11 @@ while (($#)); do
       SSH_USER="$2"
       shift 2
       ;;
+    --deploy-attempts)
+      require_value "$1" "${2-}"
+      DEPLOY_ATTEMPTS="$2"
+      shift 2
+      ;;
     --password-env)
       require_value "$1" "${2-}"
       PASSWORD_ENV_NAME="$2"
@@ -129,6 +139,11 @@ while (($#)); do
       MAX_RUNTIME_S="$2"
       shift 2
       ;;
+    --control-timeout-s)
+      require_value "$1" "${2-}"
+      CONTROL_TIMEOUT_S="$2"
+      shift 2
+      ;;
     --max-vx)
       require_value "$1" "${2-}"
       MAX_VX="$2"
@@ -160,6 +175,7 @@ done
 
 [[ -n "${PROMPT//[[:space:]]/}" ]] || die '--prompt is required'
 [[ "$PASSWORD_ENV_NAME" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die 'invalid --password-env name'
+[[ "$DEPLOY_ATTEMPTS" =~ ^[1-9][0-9]*$ ]] || die '--deploy-attempts must be positive'
 [[ -r "$SECRETS_FILE" ]] || die "cannot read secrets file: $SECRETS_FILE"
 [[ -x "$HOST_PYTHON" ]] || die "navigation Python is not executable: $HOST_PYTHON"
 [[ -d "$STREAMVLN_ROOT" ]] || die "StreamVLN repository does not exist: $STREAMVLN_ROOT"
@@ -190,10 +206,26 @@ DEPLOY=(
   "$DEPLOY_PYTHON" "$SCRIPT_DIR/examples/go2_agent_deploy.py"
   --host "$ROBOT_HOST"
   --ssh-port "$SSH_PORT"
+  --connect-timeout "$SSH_CONNECT_TIMEOUT_S"
   --username "$SSH_USER"
   --password-env "$PASSWORD_ENV_NAME"
   --remote-root "$REMOTE_ROOT"
 )
+
+run_deploy() {
+  local attempt
+  for ((attempt = 1; attempt <= DEPLOY_ATTEMPTS; attempt++)); do
+    if "${DEPLOY[@]}" "$@"; then
+      return 0
+    fi
+    if ((attempt < DEPLOY_ATTEMPTS)); then
+      printf 'Go2 SSH attempt %d/%d failed; retrying...\n' \
+        "$attempt" "$DEPLOY_ATTEMPTS" >&2
+      sleep 1
+    fi
+  done
+  return 1
+}
 
 camera_ready() {
   curl -fsS --max-time 3 \
@@ -230,8 +262,8 @@ wait_until() {
 
 if ! camera_ready; then
   printf 'Starting Go2 camera service...\n'
-  "${DEPLOY[@]}" stop --service camera >/dev/null
-  "${DEPLOY[@]}" start \
+  run_deploy stop --service camera >/dev/null
+  run_deploy start \
     --service camera \
     --python "$ROBOT_PYTHON" \
     --camera-backend realsense \
@@ -248,8 +280,8 @@ fi
 
 if ((EXECUTE)); then
   printf 'Re-arming Go2 control service...\n'
-  "${DEPLOY[@]}" stop --service control >/dev/null
-  "${DEPLOY[@]}" start \
+  run_deploy stop --service control >/dev/null
+  run_deploy start \
     --service control \
     --python "$ROBOT_PYTHON" \
     --control-mode live \
@@ -262,8 +294,8 @@ if ((EXECUTE)); then
   wait_until 'armed control service' control_ready true
 elif ! control_ready false; then
   printf 'Starting read-only Go2 control service...\n'
-  "${DEPLOY[@]}" stop --service control >/dev/null
-  "${DEPLOY[@]}" start \
+  run_deploy stop --service control >/dev/null
+  run_deploy start \
     --service control \
     --python "$ROBOT_PYTHON" \
     --control-mode live \
@@ -289,6 +321,7 @@ NAVIGATION=(
   --robot-host "$ROBOT_HOST"
   --camera-port "$CAMERA_PORT"
   --control-port "$CONTROL_PORT"
+  --control-timeout-s "$CONTROL_TIMEOUT_S"
   --instruction "$PROMPT"
   --max-runtime-s "$MAX_RUNTIME_S"
   --max-vx "$MAX_VX"

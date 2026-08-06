@@ -89,6 +89,8 @@ max_abs_yaw_rate_rps = 0.60
             "cuda:1",
             "--control-hz",
             "12",
+            "--control-timeout-s",
+            "3",
         ]
     )
     config = app.apply_cli_overrides(loaded, args)
@@ -101,6 +103,7 @@ max_abs_yaw_rate_rps = 0.60
     assert config.provider.streamvln_device == "cuda:1"
     assert config.go2.camera_token == "camera-from-env"
     assert config.go2.control_token == "control-from-env"
+    assert config.go2.control_timeout_s == 3.0
 
 
 def test_robot_host_cli_derives_service_urls_without_stored_ip() -> None:

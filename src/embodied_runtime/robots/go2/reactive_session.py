@@ -36,7 +36,7 @@ from .session import (
     NavigationSessionEvent,
     _robot_state_metadata,
 )
-from .types import DEFAULT_GO2_LIMITS, BaseVelocityCommand, Go2Limits
+from .types import DEFAULT_GO2_LIMITS, BaseVelocityCommand, Go2Limits, Go2State
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +50,8 @@ class Go2ReactiveSessionConfig:
     min_pulse_s: float = 0.05
     max_pulse_s: float = 1.50
     settle_s: float = 0.15
+    state_attempts: int = 3
+    state_retry_delay_s: float = 0.15
     max_events: int = 256
     limits: Go2Limits = DEFAULT_GO2_LIMITS
 
@@ -68,12 +70,14 @@ class Go2ReactiveSessionConfig:
             if not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be finite and positive")
             object.__setattr__(self, name, value)
-        if isinstance(self.settle_s, bool) or not isinstance(self.settle_s, (int, float)):
-            raise TypeError("settle_s must be a number")
-        settle_s = float(self.settle_s)
-        if not math.isfinite(settle_s) or settle_s < 0:
-            raise ValueError("settle_s must be finite and non-negative")
-        object.__setattr__(self, "settle_s", settle_s)
+        for name in ("settle_s", "state_retry_delay_s"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError(f"{name} must be a number")
+            value = float(value)
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"{name} must be finite and non-negative")
+            object.__setattr__(self, name, value)
         if self.min_pulse_s > self.max_pulse_s:
             raise ValueError("min_pulse_s must not exceed max_pulse_s")
         if self.linear_speed_mps > min(self.limits.max_abs_vx_mps, self.limits.max_abs_vy_mps):
@@ -82,6 +86,12 @@ class Go2ReactiveSessionConfig:
             raise ValueError("yaw_rate_rps exceeds Go2 limits")
         if not isinstance(self.execute, bool):
             raise TypeError("execute must be a boolean")
+        if (
+            isinstance(self.state_attempts, bool)
+            or not isinstance(self.state_attempts, int)
+            or self.state_attempts < 1
+        ):
+            raise ValueError("state_attempts must be a positive integer")
         if (
             isinstance(self.max_events, bool)
             or not isinstance(self.max_events, int)
@@ -176,8 +186,25 @@ class Go2ReactiveNavigationSession:
         if self.event_sink is not None:
             self.event_sink(event)
 
+    async def _read_state(self) -> Go2State:
+        last_error: Go2ClientError | None = None
+        for attempt in range(1, self.config.state_attempts + 1):
+            try:
+                return await asyncio.to_thread(self.control.state)
+            except Go2ClientError as error:
+                last_error = error
+                if attempt >= self.config.state_attempts:
+                    raise
+                self._emit(
+                    "state_retry",
+                    message=f"attempt={attempt} error={error}",
+                )
+                await asyncio.sleep(self.config.state_retry_delay_s)
+        assert last_error is not None
+        raise last_error
+
     async def _capture(self, episode_id: str, *, reset: bool) -> NavigationObservation:
-        state = await asyncio.to_thread(self.control.state)
+        state = await self._read_state()
         observation = await asyncio.to_thread(
             self.camera.capture,
             episode_id=episode_id,

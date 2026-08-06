@@ -450,6 +450,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--control-port", type=int, default=None)
     parser.add_argument("--camera-token")
     parser.add_argument("--control-token")
+    parser.add_argument("--control-timeout-s", type=float)
     parser.add_argument("--qwen-base-url")
     parser.add_argument("--qwen-model")
     parser.add_argument("--qwen-api-key")
@@ -537,6 +538,7 @@ def apply_cli_overrides(
         "control_url": args.control_url,
         "camera_token": args.camera_token,
         "control_token": args.control_token,
+        "control_timeout_s": args.control_timeout_s,
         "max_abs_vx_mps": args.max_vx,
         "max_abs_vy_mps": args.max_vy,
         "max_abs_yaw_rate_rps": args.max_yaw_rate,

@@ -12,6 +12,7 @@ from embodied_runtime.contracts import (
     Waypoint,
     WaypointPlan,
 )
+from embodied_runtime.robots.go2.client import Go2ClientError
 from embodied_runtime.robots.go2.reactive_session import (
     Go2ReactiveNavigationSession,
     Go2ReactiveSessionConfig,
@@ -146,6 +147,66 @@ def test_dry_run_never_writes_control() -> None:
     assert control.preflight_calls == 0
     assert control.started == []
     assert control.stop_calls == 0
+
+
+def test_transient_state_timeout_is_retried_before_capture() -> None:
+    class FlakyControl(_Control):
+        def state(self) -> Go2State:
+            self.state_calls += 1
+            if self.state_calls == 1:
+                raise Go2ClientError("temporary state timeout")
+            return self._state()
+
+    control = FlakyControl()
+    session = Go2ReactiveNavigationSession(
+        _Provider([WaypointPlan(1, (), terminal=True)]),  # type: ignore[arg-type]
+        _Camera(),  # type: ignore[arg-type]
+        control,  # type: ignore[arg-type]
+        config=Go2ReactiveSessionConfig(
+            execute=False,
+            max_runtime_s=1,
+            state_attempts=2,
+            state_retry_delay_s=0,
+        ),
+    )
+
+    result = asyncio.run(session.run("find target"))
+
+    assert result.reason == "terminal"
+    assert control.state_calls == 2
+    assert any(event.kind == "state_retry" for event in result.events)
+
+
+def test_persistent_state_timeout_stops_after_configured_attempts() -> None:
+    class FailingControl(_Control):
+        def state(self) -> Go2State:
+            self.state_calls += 1
+            raise Go2ClientError("persistent state timeout")
+
+    control = FailingControl()
+    session = Go2ReactiveNavigationSession(
+        _Provider([WaypointPlan(1, (), terminal=True)]),  # type: ignore[arg-type]
+        _Camera(),  # type: ignore[arg-type]
+        control,  # type: ignore[arg-type]
+        config=Go2ReactiveSessionConfig(
+            execute=False,
+            max_runtime_s=1,
+            state_attempts=3,
+            state_retry_delay_s=0,
+        ),
+    )
+
+    with pytest.raises(Go2ClientError, match="persistent state timeout"):
+        asyncio.run(session.run("find target"))
+
+    assert control.state_calls == 3
+
+
+def test_state_retry_configuration_is_validated() -> None:
+    with pytest.raises(ValueError, match="state_attempts"):
+        Go2ReactiveSessionConfig(state_attempts=0)
+    with pytest.raises(ValueError, match="state_retry_delay_s"):
+        Go2ReactiveSessionConfig(state_retry_delay_s=-0.1)
 
 
 def test_timeout_forces_one_final_stop() -> None:
