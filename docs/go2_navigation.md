@@ -19,6 +19,15 @@ yaw counter-clockwise). They do not emit SDK commands. The Go2 follower anchors
 each capture-time plan in odometry and continuously converts it to bounded
 `vx`, `vy`, and `yaw_rate` while the next inference runs.
 
+For StreamVLN on the current Go2 image, `SportModeState.position` may remain
+constant even while the robot walks. The default `session.mode = "auto"`
+therefore selects an image-reactive controller for StreamVLN: execute only the
+first native 0.25 m/15 degree action as a timed pulse, wait for `StopMove`,
+capture a new image, and infer again. A `STOP` with no preceding waypoint ends
+the episode; `terminal=true` with a final waypoint executes that waypoint and
+then captures once more. This gives a real visual search loop without relying
+on unavailable translational odometry.
+
 ## Safety boundary and modes
 
 The command is **dry-run by default**. Dry-run captures camera/state data and
@@ -79,6 +88,7 @@ Relevant overrides include:
 
 ```text
 --backend qwen|streamvln|internvla
+--session-mode auto|reactive|continuous
 --instruction TEXT             --episode-id ID
 --max-runtime-s SECONDS        --control-hz HZ
 --camera-url URL               --control-url URL
@@ -101,6 +111,7 @@ PYTHONNOUSERSITE=1 CUDA_VISIBLE_DEVICES=1 \
   examples/go2_navigation.py \
   --config configs/go2_navigation.toml \
   --backend streamvln \
+  --session-mode reactive \
   --device cuda:0 \
   --instruction '导航到画面中的黄色立柱前，保持约 0.8 米距离'
 ```

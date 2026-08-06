@@ -258,6 +258,46 @@ def test_composition_passes_explicit_execution_policy_and_emits_json(execute) ->
     assert "events" not in decoded[-1]
 
 
+def test_streamvln_auto_selects_image_reactive_session() -> None:
+    provider = _Provider()
+    constructed = {}
+    lines: list[str] = []
+
+    class Client:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    class Session:
+        def __init__(self, selected, camera, control, **kwargs):
+            del camera, control
+            assert selected is provider
+            constructed.update(kwargs)
+
+        async def run(self, _instruction, *, episode_id):
+            return _Result(episode_id=episode_id)
+
+    config = app.Go2NavigationAppConfig(
+        run=app.RunSettings(instruction="find the tripod"),
+        provider=app.ProviderSettings(backend="streamvln"),
+    )
+    asyncio.run(
+        app.run_go2_navigation(
+            config,
+            execute=True,
+            output=lines.append,
+            provider_factory=lambda _settings: provider,
+            camera_factory=Client,
+            control_factory=Client,
+            session_factory=Session,
+        )
+    )
+
+    assert constructed["config"].execute is True
+    assert type(constructed["config"]).__name__ == "Go2ReactiveSessionConfig"
+    assert "follower" not in constructed
+    assert json.loads(lines[0])["session_mode"] == "reactive"
+
+
 def test_missing_instruction_fails_before_robot_io() -> None:
     config = app.Go2NavigationAppConfig(provider=app.ProviderSettings(backend="qwen"))
     called = False

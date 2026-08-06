@@ -82,6 +82,7 @@ class RunSettings:
     control_hz: float = 10.0
     lease_duration_s: float = 10.0
     max_events: int = 256
+    session_mode: str = "auto"
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -94,6 +95,8 @@ class RunSettings:
             raise TypeError("max_events must be a positive integer")
         if self.max_events < 1:
             raise ValueError("max_events must be a positive integer")
+        if self.session_mode not in {"auto", "continuous", "reactive"}:
+            raise ValueError("session_mode must be 'auto', 'continuous', or 'reactive'")
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,6 +222,7 @@ def load_config(path: str | Path) -> Go2NavigationAppConfig:
             control_hz=float(session.get("control_hz", go2.get("control_hz", 10.0))),
             lease_duration_s=float(session.get("lease_duration_s", 10.0)),
             max_events=int(session.get("max_events", 256)),
+            session_mode=str(session.get("mode", "auto")),
         ),
         provider=ProviderSettings(
             backend=str(provider.get("backend", "streamvln")),
@@ -314,6 +318,10 @@ async def run_go2_navigation(
 
     if config.run.instruction is None:
         raise ValueError("navigation instruction is required (use --instruction)")
+    from embodied_runtime.robots.go2.reactive_session import (
+        Go2ReactiveNavigationSession,
+        Go2ReactiveSessionConfig,
+    )
     from embodied_runtime.robots.go2.session import (  # local import keeps CLI inspection light
         Go2NavigationSession,
         Go2NavigationSessionConfig,
@@ -350,21 +358,41 @@ async def run_go2_navigation(
                 payload = {"event": payload}
             _emit(output, payload)
 
-        session_class = session_factory or Go2NavigationSession
-        session = session_class(
-            provider,
-            camera,
-            control,
-            follower=follower,
-            config=Go2NavigationSessionConfig(
-                control_hz=config.run.control_hz,
-                max_runtime_s=config.run.max_runtime_s,
-                execute=execute,
-                lease_duration_s=config.run.lease_duration_s,
-                max_events=config.run.max_events,
-            ),
-            event_sink=event_sink,
-        )
+        session_mode = config.run.session_mode
+        if session_mode == "auto":
+            session_mode = "reactive" if config.provider.backend == "streamvln" else "continuous"
+        if session_mode == "reactive":
+            session_class = session_factory or Go2ReactiveNavigationSession
+            session = session_class(
+                provider,
+                camera,
+                control,
+                config=Go2ReactiveSessionConfig(
+                    max_runtime_s=config.run.max_runtime_s,
+                    execute=execute,
+                    linear_speed_mps=min(0.30, limits.max_abs_vx_mps, limits.max_abs_vy_mps),
+                    yaw_rate_rps=min(0.60, limits.max_abs_yaw_rate_rps),
+                    max_events=config.run.max_events,
+                    limits=limits,
+                ),
+                event_sink=event_sink,
+            )
+        else:
+            session_class = session_factory or Go2NavigationSession
+            session = session_class(
+                provider,
+                camera,
+                control,
+                follower=follower,
+                config=Go2NavigationSessionConfig(
+                    control_hz=config.run.control_hz,
+                    max_runtime_s=config.run.max_runtime_s,
+                    execute=execute,
+                    lease_duration_s=config.run.lease_duration_s,
+                    max_events=config.run.max_events,
+                ),
+                event_sink=event_sink,
+            )
         _emit(
             output,
             {
@@ -372,6 +400,7 @@ async def run_go2_navigation(
                 "backend": config.provider.backend,
                 "episode_id": config.run.episode_id,
                 "mode": "execute" if execute else "dry-run",
+                "session_mode": session_mode,
             },
         )
         result = await session.run(config.run.instruction, episode_id=config.run.episode_id)
@@ -404,6 +433,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-runtime-s", type=float)
     parser.add_argument("--control-hz", type=float)
     parser.add_argument("--lease-duration-s", type=float)
+    parser.add_argument(
+        "--session-mode",
+        choices=("auto", "continuous", "reactive"),
+        help="Use image-reactive pulses or odometry-based continuous tracking; auto selects reactive for StreamVLN.",
+    )
     parser.add_argument("--camera-url")
     parser.add_argument("--control-url")
     parser.add_argument(
@@ -451,6 +485,7 @@ def apply_cli_overrides(
         "max_runtime_s": args.max_runtime_s,
         "control_hz": args.control_hz,
         "lease_duration_s": args.lease_duration_s,
+        "session_mode": args.session_mode,
     }
     run = replace(run, **{key: value for key, value in run_values.items() if value is not None})
     provider_values = {

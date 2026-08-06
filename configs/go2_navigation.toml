@@ -5,6 +5,9 @@ max_runtime_s = 120.0
 control_hz = 10.0
 lease_duration_s = 10.0
 max_events = 256
+# auto uses one-action image-reactive replanning for StreamVLN. Use
+# continuous only when the robot exposes a trustworthy changing x/y pose.
+mode = "auto"
 
 # Select exactly one backend. Local backends are loaded in this process; the
 # existing Qwen endpoint is only called and is never started, stopped, or restarted.

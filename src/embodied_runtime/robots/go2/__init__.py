@@ -25,6 +25,8 @@ __all__ = [
     "Go2NavigationSessionConfig",
     "Go2NavigationSessionError",
     "Go2NavigationSessionResult",
+    "Go2ReactiveNavigationSession",
+    "Go2ReactiveSessionConfig",
     "Go2State",
     "Go2VelocityLease",
     "NavigationEndReason",
@@ -34,6 +36,7 @@ __all__ = [
     "capture_pose",
     "project_pose_to_time",
     "relative_target_to_velocity",
+    "waypoint_to_velocity_pulse",
 ]
 
 _SYMBOL_MODULES = {
@@ -49,6 +52,9 @@ _SYMBOL_MODULES = {
     "Go2NavigationSessionResult": ".session",
     "NavigationEndReason": ".session",
     "NavigationSessionEvent": ".session",
+    "Go2ReactiveNavigationSession": ".reactive_session",
+    "Go2ReactiveSessionConfig": ".reactive_session",
+    "waypoint_to_velocity_pulse": ".reactive_session",
     "MAX_PROJECTION_S": ".time_sync",
     "capture_pose": ".time_sync",
     "project_pose_to_time": ".time_sync",
