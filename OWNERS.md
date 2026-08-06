@@ -9,6 +9,7 @@
 | `src/embodied_runtime/backends/` | Group 4 | Device discovery, compilation, device execution, operators |
 | `src/embodied_runtime/robots/` | Group 5 | Observation/action mapping, control loop, safety, watchdog |
 | `src/embodied_runtime/contracts/` | Shared review | Cross-group interfaces; changes require affected groups to review |
+| `src/embodied_runtime/utils/` | Shared review | Small dependency-free geometry, encoding, and transport primitives; no domain policy |
 | `src/embodied_runtime/apps/` | Integration | Composition roots; concrete domains meet only here |
 
 Dependency rule:
@@ -19,6 +20,8 @@ distributed ──┤
 engine ───────┼──> contracts
 backends ─────┤
 robots ───────┘
+
+all domains ──> utils (dependency-free primitives only)
 
 apps/integrations may compose the five domains.
 ```

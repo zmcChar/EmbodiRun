@@ -19,6 +19,16 @@ from .model import (
     ModelSpec,
     RawRequest,
 )
+from .navigation import (
+    EncodedDepthFrame,
+    EncodedRGBFrame,
+    NavigationContractError,
+    NavigationObservation,
+    NavigationRequest,
+    NavigationResult,
+    Waypoint,
+    WaypointPlan,
+)
 from .plan import ExecutionPlan, FlowRecipe, IterativeFlowPlan, SingleForwardPlan
 from .resource import DeviceInfo, MemoryStats, ResourceRequirements
 from .robot import RobotAction, RobotAdapter, RobotObservation
@@ -41,6 +51,8 @@ __all__ = [
     "BackendSession",
     "CompileOptions",
     "DeviceInfo",
+    "EncodedDepthFrame",
+    "EncodedRGBFrame",
     "EntrypointSpec",
     "Envelope",
     "ExecutionContext",
@@ -55,6 +67,10 @@ __all__ = [
     "ModelPackage",
     "ModelPackageError",
     "ModelSpec",
+    "NavigationContractError",
+    "NavigationObservation",
+    "NavigationRequest",
+    "NavigationResult",
     "PlanEnvelope",
     "PlanFeedback",
     "PlanRequest",
@@ -75,4 +91,6 @@ __all__ = [
     "TaskGoal",
     "TensorTree",
     "UnsupportedBackendError",
+    "Waypoint",
+    "WaypointPlan",
 ]
