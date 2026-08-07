@@ -107,7 +107,7 @@ def test_generation_disables_checkpoint_sampling_options(
     assert prediction.action.primitive is NaVILAPrimitive.MOVE_FORWARD
     assert model.generate_kwargs is not None
     assert model.generate_kwargs["do_sample"] is False
-    assert model.generate_kwargs["temperature"] is None
-    assert model.generate_kwargs["top_p"] is None
-    assert model.generate_kwargs["top_k"] is None
+    assert model.generate_kwargs["temperature"] == 1.0
+    assert model.generate_kwargs["top_p"] == 1.0
+    assert model.generate_kwargs["top_k"] == 50
     assert model.generate_kwargs["attention_mask"] == "attention-mask"
