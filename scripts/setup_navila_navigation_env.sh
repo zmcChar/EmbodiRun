@@ -119,6 +119,8 @@ PYTHONNOUSERSITE=1 "$environment_python" -m pip install \
   timm==0.9.12 \
   opencv-python-headless==4.8.0.74 \
   decord==0.6.0 \
+  deepspeed==0.9.5 \
+  loguru==0.7.3 \
   "s2wrapper @ git+https://github.com/bfshi/scaling_on_scales"
 PYTHONNOUSERSITE=1 "$environment_python" -m pip install -e "$repository_root"
 
@@ -170,6 +172,7 @@ import sys
 from pathlib import Path
 
 import flash_attn
+import deepspeed
 import llava
 import torch
 import transformers
@@ -191,13 +194,15 @@ assert llava_path.is_relative_to(source)
 assert source_revision == expected_revision
 assert torch.__version__.split("+", 1)[0] == "2.3.0"
 assert transformers.__version__ == "4.37.2"
+assert deepspeed.__version__ == "0.9.5"
 assert flash_attn.__version__ == "0+navila-eager-disabled"
 
 print(f"NaVILA source ready: {source}@{source_revision}")
 print(
     "isolated environment ready: "
     f"torch={torch.__version__} transformers={transformers.__version__} "
-    f"attention=eager flash_guard={flash_attn.__version__}"
+    f"deepspeed={deepspeed.__version__} attention=eager "
+    f"flash_guard={flash_attn.__version__}"
 )
 print(f"cuda available: {torch.cuda.is_available()}")
 PY

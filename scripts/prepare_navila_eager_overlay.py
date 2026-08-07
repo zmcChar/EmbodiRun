@@ -62,6 +62,21 @@ index_first_axis = _disabled
 pad_input = _disabled
 unpad_input = _disabled
 '''
+_INTERFACE_STUB = '''"""Fail-closed symbols imported by unused NaVILA vision encoders."""
+
+
+def _disabled(*args, **kwargs):
+    del args, kwargs
+    raise RuntimeError("FLASH_ATTENTION_DISABLED_FOR_NAVILA_EAGER")
+
+
+flash_attn_unpadded_qkvpacked_func = _disabled
+flash_attn_varlen_qkvpacked_func = _disabled
+_flash_attn_backward = _disabled
+_flash_attn_forward = _disabled
+_flash_attn_varlen_backward = _disabled
+_flash_attn_varlen_forward = _disabled
+'''
 
 
 def eager_modeling_llama(source: str) -> str:
@@ -107,6 +122,10 @@ def install_eager_overlay(source: Path, transformers_target: Path) -> None:
     flash_stub.mkdir(parents=True, exist_ok=True)
     (flash_stub / "__init__.py").write_text(_FLASH_STUB, encoding="utf-8")
     (flash_stub / "bert_padding.py").write_text(_PADDING_STUB, encoding="utf-8")
+    (flash_stub / "flash_attn_interface.py").write_text(
+        _INTERFACE_STUB,
+        encoding="utf-8",
+    )
 
 
 def main() -> int:

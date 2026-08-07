@@ -56,3 +56,7 @@ def test_overlay_installs_patched_transformers_and_fail_closed_flash_stub(
     assert (target / "models/llama/extra.py").read_text(encoding="utf-8") == "VALUE = 1\n"
     flash_stub = target.parent / "flash_attn/__init__.py"
     assert "FLASH_ATTENTION_DISABLED_FOR_NAVILA_EAGER" in flash_stub.read_text(encoding="utf-8")
+    interface_stub = target.parent / "flash_attn/flash_attn_interface.py"
+    interface_source = interface_stub.read_text(encoding="utf-8")
+    assert "flash_attn_unpadded_qkvpacked_func = _disabled" in interface_source
+    assert "flash_attn_varlen_qkvpacked_func = _disabled" in interface_source
