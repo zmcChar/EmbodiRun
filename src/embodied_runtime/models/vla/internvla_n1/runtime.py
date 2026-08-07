@@ -101,6 +101,13 @@ class InternVLARuntime:
                 )
             return self._agent
 
+    def load(self) -> InternVLARuntime:
+        """Explicitly materialize the lazy agent and return ``self``."""
+
+        with self._state_lock:
+            self._ensure_loaded()
+        return self
+
     def reset(self) -> None:
         """Reset model history without forcing an unloaded model to load."""
 

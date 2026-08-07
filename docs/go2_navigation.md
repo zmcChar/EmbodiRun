@@ -85,6 +85,11 @@ does not start, stop, or restart Qwen. StreamVLN and InternVLA load the selected
 local checkpoint in the navigation process. InternVLA `dualvln` consumes RGB;
 `navdp` additionally requires registered depth.
 
+The application awaits each policy's `prepare()` lifecycle hook before it
+starts the task session. StreamVLN checkpoint loading and configured warmup,
+and InternVLA checkpoint loading, therefore do not consume `max_runtime_s`.
+Qwen preparation intentionally does not probe or manage the external server.
+
 Every policy returns a `WaypointPlan` in `base_link`: `x` is forward, `y` is
 left, and positive yaw is counter-clockwise. A policy never emits Unitree SDK
 commands. The task session validates the observation sequence and converts the

@@ -92,6 +92,13 @@ def test_config_preserves_variant_and_plan_step_gap_without_loading() -> None:
     assert not runtime.loaded
 
 
+def test_explicit_load_materializes_runtime_without_prediction() -> None:
+    runtime = InternVLARuntime(agent_factory=lambda args: FakeOfficialAgent(args, []))
+
+    assert runtime.load() is runtime
+    assert runtime.loaded
+
+
 def test_dualvln_is_lazy_rgb_only_and_uses_cpu_fake_agent() -> None:
     holder: dict[str, FakeOfficialAgent] = {}
 

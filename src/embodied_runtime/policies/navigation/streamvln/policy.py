@@ -46,6 +46,14 @@ class StreamVLNNavigationPolicy:
         self._cursor = EpisodeCursor()
         self._closed = False
 
+    async def prepare(self) -> None:
+        """Load and warm the local model before a navigation session starts."""
+
+        async with self._lock:
+            if self._closed:
+                raise RuntimeError("StreamVLN policy is closed")
+            await asyncio.to_thread(self.runtime.load)
+
     async def plan(self, request: NavigationRequest) -> WaypointPlan:
         """Advance one recurrent episode and return its semantic navigation plan."""
 

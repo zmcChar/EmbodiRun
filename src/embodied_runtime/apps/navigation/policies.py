@@ -5,12 +5,12 @@ from embodied_runtime.policies.navigation import (
     QwenNavigationPolicy,
     StreamVLNNavigationPolicy,
 )
-from embodied_runtime.tasks.navigation import NavigationPolicy
 
+from .interfaces import ManagedNavigationPolicy
 from .settings import PolicySettings
 
 
-def build_navigation_policy(settings: PolicySettings) -> NavigationPolicy:
+def build_navigation_policy(settings: PolicySettings) -> ManagedNavigationPolicy:
     """Construct one policy; existing external model servers are never managed."""
 
     if settings.backend == "qwen":

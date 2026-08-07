@@ -56,8 +56,13 @@ class _StreamRuntime:
             revision="test",
             num_future_steps=4,
         )
+        self.loads = 0
         self.resets = 0
         self.inputs: list[np.ndarray] = []
+
+    def load(self) -> _StreamRuntime:
+        self.loads += 1
+        return self
 
     def reset(self) -> None:
         self.resets += 1
@@ -76,7 +81,12 @@ class _InternRuntime:
             depth_required=False,
         )
         self.variant = "dualvln"
+        self.loads = 0
         self.resets = 0
+
+    def load(self) -> _InternRuntime:
+        self.loads += 1
+        return self
 
     def reset(self) -> None:
         self.resets += 1
@@ -91,6 +101,8 @@ def test_streamvln_policy_maps_prediction_and_preserves_episode_order() -> None:
     runtime = _StreamRuntime()
     policy = StreamVLNNavigationPolicy(runtime=runtime)  # type: ignore[arg-type]
 
+    asyncio.run(policy.prepare())
+    assert runtime.loads == 1
     plan = asyncio.run(policy.plan(_request(1, reset=True)))
     assert isinstance(plan, WaypointPlan)
     assert plan.waypoints[0].x_m == pytest.approx(0.25)
@@ -104,6 +116,8 @@ def test_internvla_policy_maps_native_output_and_requires_reset_on_new_episode()
     runtime = _InternRuntime()
     policy = InternVLANavigationPolicy(runtime=runtime)  # type: ignore[arg-type]
 
+    asyncio.run(policy.prepare())
+    assert runtime.loads == 1
     plan = asyncio.run(policy.plan(_request(1)))
     assert isinstance(plan, WaypointPlan)
     assert not plan.terminal

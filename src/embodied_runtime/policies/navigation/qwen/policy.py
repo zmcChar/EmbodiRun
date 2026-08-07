@@ -51,6 +51,13 @@ class QwenNavigationPolicy:
     def connected(self) -> bool:
         return not self._closed and self.client.connected
 
+    async def prepare(self) -> None:
+        """Validate lifecycle state without managing the external Qwen server."""
+
+        async with self._state:
+            if self._closed:
+                raise RuntimeError(f"{self.policy_name} policy is closed")
+
     async def _admit(self) -> None:
         async with self._state:
             if self._closed:

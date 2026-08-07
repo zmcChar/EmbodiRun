@@ -13,7 +13,11 @@ from embodied_runtime.tasks.navigation import NavigationSessionEvent
 
 class _Policy:
     def __init__(self) -> None:
+        self.prepared = False
         self.closed = False
+
+    async def prepare(self) -> None:
+        self.prepared = True
 
     async def aclose(self) -> None:
         self.closed = True
@@ -215,6 +219,7 @@ def test_composition_passes_explicit_execution_policy_and_emits_json(execute) ->
 
         async def run(self, instruction, *, episode_id):
             assert instruction == "导航到三脚架前"
+            assert policy.prepared is True
             self_event = NavigationSessionEvent("plan_accepted", 0.5, 7, 0, "waypoints=2")
             constructed["session"]["event_sink"](self_event)
             return _Result(
@@ -240,6 +245,7 @@ def test_composition_passes_explicit_execution_policy_and_emits_json(execute) ->
     )
 
     assert result.episode_id == "go2-navigation"
+    assert policy.prepared is True
     assert policy.closed is True
     assert constructed["camera"] == (
         "http://127.0.0.1:8765",
@@ -278,6 +284,7 @@ def test_streamvln_auto_selects_image_reactive_session() -> None:
             constructed.update(kwargs)
 
         async def run(self, _instruction, *, episode_id):
+            assert policy.prepared is True
             return _Result(episode_id=episode_id)
 
     config = app.Go2NavigationAppConfig(

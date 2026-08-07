@@ -9,6 +9,8 @@ from embodied_runtime.tasks.navigation import NavigationPolicy
 
 @runtime_checkable
 class ManagedNavigationPolicy(NavigationPolicy, Protocol):
+    async def prepare(self) -> None: ...
+
     async def aclose(self) -> None: ...
 
 

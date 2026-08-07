@@ -32,6 +32,9 @@ async def run_navigation(
         raise ValueError("navigation instruction is required (use --instruction)")
     policy = policy_factory(config.policy)
     try:
+        # Materialize local models before the task session starts so checkpoint
+        # loading and warmup do not consume the navigation runtime budget.
+        await policy.prepare()
         camera = camera_factory(
             config.go2.camera_url,
             token=config.go2.camera_token,

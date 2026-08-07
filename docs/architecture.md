@@ -251,6 +251,12 @@ continuous follower    one bounded velocity pulse
        Go2 resident control service → Unitree SDK2
 ```
 
+The application-owned policy lifecycle calls `prepare()` before constructing
+and running the task session. This keeps local checkpoint loading and warmup
+outside the session's navigation deadline without introducing model knowledge
+into `tasks/navigation`. Qwen's hook is deliberately local-state-only because
+the external server has an independent lifecycle.
+
 `NavigationSession` anchors each capture-time waypoint plan in odometry. Its
 inference loop may replace the plan while the control loop samples the current
 `WorldWaypointFollower` at the configured rate. This mode requires changing,
