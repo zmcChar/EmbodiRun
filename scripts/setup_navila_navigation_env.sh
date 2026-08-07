@@ -106,10 +106,10 @@ fi
 
 environment_python="$environment_path/bin/python"
 PYTHONNOUSERSITE=1 "$environment_python" -m pip install --upgrade "pip>=25,<27"
-PYTHONNOUSERSITE=1 DS_BUILD_OPS=0 "$environment_python" -m pip install \
+PYTHONNOUSERSITE=1 "$environment_python" -m pip install \
   torch==2.3.0 torchvision==0.18.0 \
   --index-url https://download.pytorch.org/whl/cu121
-PYTHONNOUSERSITE=1 "$environment_python" -m pip install \
+PYTHONNOUSERSITE=1 DS_BUILD_OPS=0 "$environment_python" -m pip install \
   transformers==4.37.2 \
   tokenizers==0.15.2 \
   sentencepiece==0.1.99 \
