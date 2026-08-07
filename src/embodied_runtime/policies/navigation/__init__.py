@@ -19,9 +19,9 @@ __all__ = [
 _SYMBOL_MODULES = {
     "EpisodeCursor": ".episode",
     "NavigationPolicyError": ".errors",
-    "InternVLANavigationPolicy": ".internvla",
+    "InternVLANavigationPolicy": ".internvla.policy",
     "QwenNavigationPolicy": ".qwen.policy",
-    "StreamVLNNavigationPolicy": ".streamvln",
+    "StreamVLNNavigationPolicy": ".streamvln.policy",
 }
 
 

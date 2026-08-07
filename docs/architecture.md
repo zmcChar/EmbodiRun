@@ -53,9 +53,9 @@ src/embodied_runtime/
 │   ├── vla/                   # π0.5, SmolVLA, OpenVLA-OFT, GR00T, InternVLA
 │   └── vln/streamvln/         # StreamVLN runtime and native action validation
 ├── policies/navigation/
-│   ├── qwen/                  # remote structured-output navigation policy
-│   ├── streamvln.py           # StreamVLN → WaypointPlan
-│   └── internvla.py           # InternVLA → WaypointPlan
+│   ├── qwen/                  # policy, HTTP transport, schema, parsing
+│   ├── streamvln/             # policy and native-action geometry
+│   └── internvla/             # policy and native-output mapping
 ├── tasks/
 │   ├── navigation/            # task values, sessions, and controllers
 │   └── planning/              # task goals and versioned high-level plans

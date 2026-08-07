@@ -5,7 +5,7 @@ import math
 import pytest
 
 from embodied_runtime.models.vln.streamvln import StreamVLNNativeOutputError
-from embodied_runtime.policies.navigation.streamvln_geometry import (
+from embodied_runtime.policies.navigation.streamvln.geometry import (
     streamvln_actions_to_waypoint_plan,
 )
 

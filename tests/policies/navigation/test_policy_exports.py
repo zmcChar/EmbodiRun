@@ -46,8 +46,8 @@ import embodied_runtime.policies.navigation as navigation
 
 concrete = (
     'embodied_runtime.policies.navigation.qwen.policy',
-    'embodied_runtime.policies.navigation.streamvln',
-    'embodied_runtime.policies.navigation.internvla',
+    'embodied_runtime.policies.navigation.streamvln.policy',
+    'embodied_runtime.policies.navigation.internvla.policy',
 )
 assert not any(name in sys.modules for name in concrete)
 assert navigation.QwenNavigationPolicy.__name__ == 'QwenNavigationPolicy'

@@ -8,10 +8,10 @@ from pathlib import Path
 from embodied_runtime.models.vln.streamvln import DEFAULT_MODEL, StreamVLNRuntime
 from embodied_runtime.tasks.navigation import NavigationRequest, WaypointPlan
 
-from .episode import EpisodeCursor
-from .streamvln_geometry import streamvln_actions_to_waypoint_plan
-from .validation import navigation_request
-from .vision import decode_rgb
+from ..episode import EpisodeCursor
+from ..validation import navigation_request
+from ..vision import decode_rgb
+from .geometry import streamvln_actions_to_waypoint_plan
 
 
 class StreamVLNNavigationPolicy:

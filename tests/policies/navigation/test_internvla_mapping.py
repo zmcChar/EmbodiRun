@@ -9,7 +9,7 @@ from embodied_runtime.models.vla.internvla_n1 import (
     InternVLAOutputError,
     NativePrediction,
 )
-from embodied_runtime.policies.navigation.internvla_mapping import (
+from embodied_runtime.policies.navigation.internvla.mapping import (
     internvla_prediction_to_waypoint_plan,
 )
 

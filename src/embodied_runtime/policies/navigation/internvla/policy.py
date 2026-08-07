@@ -10,11 +10,11 @@ from embodied_runtime.models.vla.internvla_n1 import (
 )
 from embodied_runtime.tasks.navigation import NavigationRequest, WaypointPlan
 
-from .episode import EpisodeCursor
-from .errors import NavigationPolicyError
-from .internvla_mapping import internvla_prediction_to_waypoint_plan
-from .validation import navigation_request
-from .vision import decode_rgb
+from ..episode import EpisodeCursor
+from ..errors import NavigationPolicyError
+from ..validation import navigation_request
+from ..vision import decode_rgb
+from .mapping import internvla_prediction_to_waypoint_plan
 
 
 class InternVLANavigationPolicy:
