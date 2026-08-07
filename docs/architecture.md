@@ -28,7 +28,7 @@ flow, not permission for every package to import every package above it.
   model-native outputs, preprocessing, and checkpoint/runtime code.
 - `policies` owns model-coupled interpretation. A policy may use model-native
   code and task-owned values, but it does not command a robot. The navigation
-  policies normalize Qwen, StreamVLN, and InternVLA output into
+  policies normalize Qwen, StreamVLN, InternVLA, and NaVILA output into
   `tasks.navigation.WaypointPlan`.
 - `tasks` owns robot-independent goals, observations, plans, interfaces,
   controllers, and closed loops. Navigation and high-level planning live here.
@@ -50,12 +50,13 @@ them from that owner: inference envelopes from `engine`, model packages from
 src/embodied_runtime/
 ├── models/
 │   ├── plans/                 # single-forward and iterative-flow plans
-│   ├── vla/                   # π0.5, SmolVLA, OpenVLA-OFT, GR00T, InternVLA
+│   ├── vla/                   # π0.5, SmolVLA, OpenVLA-OFT, GR00T, InternVLA, NaVILA
 │   └── vln/streamvln/         # StreamVLN runtime and native action validation
 ├── policies/navigation/
 │   ├── qwen/                  # policy, HTTP transport, schema, parsing
 │   ├── streamvln/             # policy and native-action geometry
-│   └── internvla/             # policy and native-output mapping
+│   ├── internvla/             # policy and native-output mapping
+│   └── navila/                # episode history and textual-action geometry
 ├── tasks/
 │   ├── navigation/            # task values, sessions, and controllers
 │   └── planning/              # task goals and versioned high-level plans
@@ -198,12 +199,13 @@ The navigation task has one robot-independent policy interface:
 plan(NavigationRequest) -> WaypointPlan
 ```
 
-The three current policies reach it through different model paths:
+The four current policies reach it through different model paths:
 
 ```text
 Qwen HTTP endpoint ───────────────┐
 StreamVLNRuntime ─────────────────┼─> policies.navigation
-InternVLARuntime (DualVLN/NavDP) ─┘          │
+InternVLARuntime (DualVLN/NavDP) ─┤          │
+NaVILARuntime ────────────────────┘          │
                                              v
                               tasks.navigation.WaypointPlan
 ```
@@ -212,10 +214,16 @@ Qwen uses validated structured output from an already-running
 OpenAI-compatible endpoint. StreamVLN uses
 `models.vln.streamvln.StreamVLNRuntime`. InternVLA uses
 `models.vla.internvla_n1.InternVLARuntime`; NavDP additionally requires
-registered depth. Each policy owns recurrent episode reset/serialization and
+registered depth. NaVILA uses the released Llama 3 8B checkpoint against
+[official source commit `76b98f2`](https://github.com/AnjieCheng/NaVILA/tree/76b98f233dd0fff05dfcd69435eec6740febff9d)
+and exactly eight image slots: the policy retains the encoded episode,
+uniformly samples seven historical positions plus the latest frame, and
+left-pads missing early history with black images. Each policy owns episode
+reset/serialization and
 returns base-frame metric waypoints. StreamVLN models expose only normalized
-native actions, and InternVLA models expose only the official native output
-union; their action/trajectory geometry is interpreted in the policy layer.
+native actions, InternVLA models expose only the official native output union,
+and NaVILA exposes one textual mid-level action; their action/trajectory
+geometry is interpreted in the policy layer.
 Policies implement only the task `NavigationPolicy` protocol, not the engine
 `InferenceProvider` protocol. None imports the engine, Go2, or sends motion
 commands.
@@ -231,7 +239,7 @@ Go2CameraClient.capture + Go2ControlClient.state
           NavigationObservation + instruction
                     │
                     v
-       Qwen / StreamVLN / InternVLA policy
+       Qwen / StreamVLN / InternVLA / NaVILA policy
                     │
                     v
               WaypointPlan (base_link)
@@ -252,21 +260,38 @@ continuous follower    one bounded velocity pulse
 ```
 
 The application-owned policy lifecycle calls `prepare()` before constructing
-and running the task session. This keeps local checkpoint loading and warmup
-outside the session's navigation deadline without introducing model knowledge
-into `tasks/navigation`. Qwen's hook is deliberately local-state-only because
-the external server has an independent lifecycle.
+and running the task session. This keeps local checkpoint loading and any
+configured warmup outside the session's navigation deadline without
+introducing model knowledge into `tasks/navigation`. Qwen's hook is
+deliberately local-state-only because the external server has an independent
+lifecycle.
+
+NaVILA's accepted native vocabulary is deliberately bounded to `STOP`, forward
+25/50/75 cm, and left/right 15/30/45 degrees. The policy maps forward distance
+to `x_m`, left turn to positive yaw, right turn to negative yaw, and `STOP` to
+an empty terminal `WaypointPlan`. The current Go2 application sizes NaVILA's
+reactive lease duration from the configured Go2 speed so the 75 cm envelope is
+not silently truncated, then executes the plan through the task controller and
+Unitree SDK2 velocity lease.
+
+This is not the complete low-level stack described by NaVILA. The official
+two-level system pairs the high-level VLA with a learned real-time locomotion
+policy for obstacle avoidance. This repository does not vendor or run the
+official
+[`legged-loco` policy](https://github.com/yang-zj1026/legged-loco/tree/87b0d3d18404e784abc0a62227bc41c940f29ecc);
+therefore its Go2 mapping does not claim the learned obstacle avoidance,
+terrain handling, or whole-body behavior of the paper.
 
 `NavigationSession` anchors each capture-time waypoint plan in odometry. Its
 inference loop may replace the plan while the control loop samples the current
 `WorldWaypointFollower` at the configured rate. This mode requires changing,
 trustworthy planar pose state.
 
-`ReactiveNavigationSession` is the default for StreamVLN under `session.mode =
-"auto"`. It executes only the first waypoint as a bounded timed pulse, stops,
-settles, captures a new frame, and replans. This is the implemented fallback
-for the observed Go2 state stream whose x/y position may remain constant while
-the robot walks.
+`ReactiveNavigationSession` is the default for StreamVLN and NaVILA under
+`session.mode = "auto"`. It executes only the first waypoint as a bounded timed
+pulse, stops, settles, captures a new frame, and replans. This is the
+implemented fallback for the observed Go2 state stream whose x/y position may
+remain constant while the robot walks.
 
 Both sessions are observation-only unless the CLI receives `--execute`.
 Execution first calls the Go2 preflight check, then uses `stream_move` and

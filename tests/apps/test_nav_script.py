@@ -78,7 +78,20 @@ def _write_executable(path: Path, source: str) -> None:
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
 
 
-def test_one_command_stops_installs_restarts_then_runs_navigation(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("backend_arguments", "root_environment", "model_environment", "root_option"),
+    [
+        ((), "STREAMVLN_ROOT", "STREAMVLN_MODEL_PATH", "--streamvln-root"),
+        (("--backend", "navila"), "NAVILA_ROOT", "NAVILA_MODEL_PATH", "--navila-root"),
+    ],
+)
+def test_one_command_stops_installs_restarts_then_runs_navigation(
+    tmp_path: Path,
+    backend_arguments: tuple[str, ...],
+    root_environment: str,
+    model_environment: str,
+    root_option: str,
+) -> None:
     log_path = tmp_path / "commands.jsonl"
     fake_deploy_python = tmp_path / "fake-deploy-python"
     _write_executable(
@@ -121,9 +134,9 @@ def test_one_command_stops_installs_restarts_then_runs_navigation(tmp_path: Path
         "GO2_API_TOKEN=" + "a" * 32 + "\n" + "GO2_CAMERA_TOKEN=" + "c" * 32 + "\n",
         encoding="utf-8",
     )
-    streamvln_root = tmp_path / "StreamVLN"
+    model_root = tmp_path / "model-source"
     checkpoint = tmp_path / "checkpoint"
-    streamvln_root.mkdir()
+    model_root.mkdir()
     checkpoint.mkdir()
 
     environment = _without_machine_defaults()
@@ -135,14 +148,15 @@ def test_one_command_stops_installs_restarts_then_runs_navigation(tmp_path: Path
             "GO2_SSH_PASSWORD": "ssh-password",
             "NAV_TEST_LOG": os.fspath(log_path),
             "PATH": os.fspath(fake_bin) + os.pathsep + environment["PATH"],
-            "STREAMVLN_ROOT": os.fspath(streamvln_root),
-            "STREAMVLN_MODEL_PATH": os.fspath(checkpoint),
+            root_environment: os.fspath(model_root),
+            model_environment: os.fspath(checkpoint),
         }
     )
     completed = subprocess.run(
         [
             "bash",
             os.fspath(NAV_SCRIPT),
+            *backend_arguments,
             "--prompt",
             "find the tripod",
             "--robot-host",
@@ -185,5 +199,8 @@ def test_one_command_stops_installs_restarts_then_runs_navigation(tmp_path: Path
 
     navigation = next(record["args"] for record in records if record["kind"] == "navigation")
     assert navigation[:3] == ["-m", "embodied_runtime.apps.navigate", "--config"]
+    expected_backend = "navila" if backend_arguments else "streamvln"
+    assert navigation[navigation.index("--backend") + 1] == expected_backend
+    assert navigation[navigation.index(root_option) + 1] == os.fspath(model_root)
     assert navigation[navigation.index("--robot-host") + 1] == "go2.example"
     assert "--execute" in navigation

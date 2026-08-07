@@ -5,6 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from embodied_runtime.policies.navigation.navila import (
+    MAX_NAVILA_FORWARD_M,
+    MAX_NAVILA_TURN_RAD,
+)
 from embodied_runtime.tasks.navigation import (
     NavigationSession,
     NavigationSessionConfig,
@@ -23,7 +27,7 @@ from .settings import Go2NavigationAppConfig
 def resolve_session_mode(config: Go2NavigationAppConfig) -> str:
     mode = config.run.session_mode
     if mode == "auto":
-        return "reactive" if config.policy.backend == "streamvln" else "continuous"
+        return "reactive" if config.policy.backend in {"streamvln", "navila"} else "continuous"
     return mode
 
 
@@ -44,6 +48,17 @@ def build_session(
     )
     mode = resolve_session_mode(config)
     if mode == "reactive":
+        linear_speed_mps = min(0.30, limits.max_abs_vx_mps, limits.max_abs_vy_mps)
+        yaw_rate_rps = min(0.60, limits.max_abs_yaw_rate_rps)
+        max_pulse_s = 1.50
+        if config.policy.backend == "navila":
+            # Preserve NaVILA's largest native action after applying Go2's lower
+            # velocity ceiling instead of silently truncating a 75 cm command.
+            max_pulse_s = max(
+                max_pulse_s,
+                MAX_NAVILA_FORWARD_M / linear_speed_mps,
+                MAX_NAVILA_TURN_RAD / yaw_rate_rps,
+            )
         session_class = session_factory or ReactiveNavigationSession
         session = session_class(
             policy,
@@ -52,8 +67,9 @@ def build_session(
             config=ReactiveNavigationSessionConfig(
                 max_runtime_s=config.run.max_runtime_s,
                 execute=execute,
-                linear_speed_mps=min(0.30, limits.max_abs_vx_mps, limits.max_abs_vy_mps),
-                yaw_rate_rps=min(0.60, limits.max_abs_yaw_rate_rps),
+                linear_speed_mps=linear_speed_mps,
+                yaw_rate_rps=yaw_rate_rps,
+                max_pulse_s=max_pulse_s,
                 max_events=config.run.max_events,
                 limits=limits,
             ),

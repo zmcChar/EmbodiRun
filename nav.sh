@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RUNTIME_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
 PROMPT=""
+BACKEND="${GO2_NAV_BACKEND:-streamvln}"
 ROBOT_HOST="${GO2_ROBOT_HOST:-}"
 SSH_PORT="${GO2_SSH_PORT:-22}"
 SSH_USER="${GO2_SSH_USER:-}"
@@ -19,10 +20,14 @@ STATE_TOPIC="${GO2_STATE_TOPIC:-rt/lf/sportmodestate}"
 CYCLONEDDS_LIB_DIR="${GO2_CYCLONEDDS_LIB_DIR:-/home/unitree/cyclonedds/install/lib}"
 
 SECRETS_FILE="${GO2_NAV_SECRETS_FILE:-$RUNTIME_ROOT/run/go2-test.env}"
-HOST_PYTHON="${GO2_NAV_PYTHON:-$RUNTIME_ROOT/env/bin/python}"
+HOST_PYTHON_OVERRIDE="${GO2_NAV_PYTHON:-}"
 DEPLOY_PYTHON="${GO2_DEPLOY_PYTHON:-python3}"
 STREAMVLN_ROOT="${STREAMVLN_ROOT:-$RUNTIME_ROOT/src/StreamVLN}"
-MODEL_PATH="${STREAMVLN_MODEL_PATH:-$RUNTIME_ROOT/checkpoints/streamvln-real-world}"
+STREAMVLN_MODEL_PATH="${STREAMVLN_MODEL_PATH:-$RUNTIME_ROOT/checkpoints/streamvln-real-world}"
+NAVILA_RUNTIME_ROOT="${NAVILA_NAV_RUNTIME_ROOT:-$SCRIPT_DIR/.navila-navigation-runtime}"
+NAVILA_ROOT="${NAVILA_ROOT:-${NAVILA_NAV_SOURCE_PATH:-$NAVILA_RUNTIME_ROOT/source/NaVILA}}"
+NAVILA_MODEL_PATH="${NAVILA_MODEL_PATH:-$RUNTIME_ROOT/checkpoints/navila-llama3-8b-8f}"
+MODEL_PATH_OVERRIDE=""
 CUDA_DEVICE_INDEX="${GO2_NAV_CUDA_DEVICE_INDEX:-1}"
 CUDA_MEMORY_FRACTION="${GO2_NAV_CUDA_MEMORY_FRACTION:-0.44}"
 
@@ -40,12 +45,13 @@ EXECUTE=1
 usage() {
   cat <<'EOF'
 Usage:
-  bash nav.sh --prompt "Find the tripod and stop in front of it." \
+  bash nav.sh --backend streamvln --prompt "Find the tripod and stop in front of it." \
     --robot-host HOST --ssh-user USER \
     --camera-serial SERIAL --depth-scale METERS_PER_UNIT
 
 Options:
   --prompt TEXT               Navigation instruction (required)
+  --backend NAME              streamvln (default) or navila
   --robot-host HOST           Go2 IP/hostname
   --ssh-port PORT             Go2 SSH port
   --ssh-user USER             Go2 SSH username
@@ -56,7 +62,8 @@ Options:
   --camera-serial SERIAL      RealSense device serial (required)
   --depth-scale SCALE         Verified meters per raw depth unit (required)
   --streamvln-root PATH       Official StreamVLN repository
-  --model-path PATH           StreamVLN checkpoint
+  --navila-root PATH          Official NaVILA repository
+  --model-path PATH           Checkpoint for the selected backend
   --cuda-device-index INDEX   Physical GPU exposed to the process
   --max-runtime-s SECONDS     Navigation timeout
   --control-timeout-s SEC     Timeout for one control HTTP request
@@ -86,6 +93,11 @@ while (($#)); do
     --prompt)
       require_value "$1" "${2-}"
       PROMPT="$2"
+      shift 2
+      ;;
+    --backend)
+      require_value "$1" "${2-}"
+      BACKEND="$2"
       shift 2
       ;;
     --robot-host)
@@ -138,9 +150,14 @@ while (($#)); do
       STREAMVLN_ROOT="$2"
       shift 2
       ;;
+    --navila-root)
+      require_value "$1" "${2-}"
+      NAVILA_ROOT="$2"
+      shift 2
+      ;;
     --model-path)
       require_value "$1" "${2-}"
-      MODEL_PATH="$2"
+      MODEL_PATH_OVERRIDE="$2"
       shift 2
       ;;
     --cuda-device-index)
@@ -187,6 +204,24 @@ while (($#)); do
   esac
 done
 
+case "$BACKEND" in
+  streamvln)
+    MODEL_ROOT="$STREAMVLN_ROOT"
+    MODEL_PATH="${MODEL_PATH_OVERRIDE:-$STREAMVLN_MODEL_PATH}"
+    HOST_PYTHON="${HOST_PYTHON_OVERRIDE:-$RUNTIME_ROOT/env/bin/python}"
+    MODEL_ROOT_OPTION="--streamvln-root"
+    ;;
+  navila)
+    MODEL_ROOT="$NAVILA_ROOT"
+    MODEL_PATH="${MODEL_PATH_OVERRIDE:-$NAVILA_MODEL_PATH}"
+    HOST_PYTHON="${HOST_PYTHON_OVERRIDE:-${NAVILA_NAV_ENV_PATH:-$NAVILA_RUNTIME_ROOT/env}/bin/python}"
+    MODEL_ROOT_OPTION="--navila-root"
+    ;;
+  *)
+    die "--backend must be streamvln or navila"
+    ;;
+esac
+
 [[ -n "${PROMPT//[[:space:]]/}" ]] || die '--prompt is required'
 [[ -n "${ROBOT_HOST//[[:space:]]/}" ]] || \
   die '--robot-host is required (or set GO2_ROBOT_HOST)'
@@ -203,8 +238,8 @@ awk -v value="$DEPTH_SCALE" 'BEGIN { exit !(value > 0 && value < 1) }' || \
 [[ "$DEPLOY_ATTEMPTS" =~ ^[1-9][0-9]*$ ]] || die '--deploy-attempts must be positive'
 [[ -r "$SECRETS_FILE" ]] || die "cannot read secrets file: $SECRETS_FILE"
 [[ -x "$HOST_PYTHON" ]] || die "navigation Python is not executable: $HOST_PYTHON"
-[[ -d "$STREAMVLN_ROOT" ]] || die "StreamVLN repository does not exist: $STREAMVLN_ROOT"
-[[ -d "$MODEL_PATH" ]] || die "StreamVLN checkpoint does not exist: $MODEL_PATH"
+[[ -d "$MODEL_ROOT" ]] || die "$BACKEND repository does not exist: $MODEL_ROOT"
+[[ -d "$MODEL_PATH" ]] || die "$BACKEND checkpoint does not exist: $MODEL_PATH"
 command -v "$DEPLOY_PYTHON" >/dev/null || die "deployment Python was not found: $DEPLOY_PYTHON"
 command -v curl >/dev/null || die 'curl is required'
 
@@ -334,14 +369,14 @@ else
   wait_until 'control service' control_ready false
 fi
 
-printf 'Starting StreamVLN navigation: %s\n' "$PROMPT"
+printf 'Starting %s navigation: %s\n' "$BACKEND" "$PROMPT"
 
 NAVIGATION=(
   "$HOST_PYTHON" -m embodied_runtime.apps.navigate
   --config "$SCRIPT_DIR/configs/go2_navigation.toml"
-  --backend streamvln
+  --backend "$BACKEND"
   --session-mode reactive
-  --streamvln-root "$STREAMVLN_ROOT"
+  "$MODEL_ROOT_OPTION" "$MODEL_ROOT"
   --model-path "$MODEL_PATH"
   --device cuda:0
   --cuda-memory-fraction "$CUDA_MEMORY_FRACTION"

@@ -8,6 +8,7 @@ from embodied_runtime.policies.navigation import (
     InternVLANavigationPolicy,
     NavigationPolicy,
     NavigationPolicyError,
+    NaVILANavigationPolicy,
     QwenNavigationPolicy,
     StreamVLNNavigationPolicy,
 )
@@ -17,6 +18,9 @@ from embodied_runtime.policies.navigation.errors import (
 )
 from embodied_runtime.policies.navigation.internvla import (
     InternVLANavigationPolicy as DirectInternVLAPolicy,
+)
+from embodied_runtime.policies.navigation.navila import (
+    NaVILANavigationPolicy as DirectNaVILAPolicy,
 )
 from embodied_runtime.policies.navigation.qwen.policy import (
     QwenNavigationPolicy as DirectQwenPolicy,
@@ -37,6 +41,7 @@ def test_navigation_package_exports_canonical_symbols() -> None:
     assert QwenNavigationPolicy is DirectQwenPolicy
     assert StreamVLNNavigationPolicy is DirectStreamVLNPolicy
     assert InternVLANavigationPolicy is DirectInternVLAPolicy
+    assert NaVILANavigationPolicy is DirectNaVILAPolicy
 
 
 def test_navigation_package_keeps_concrete_policies_lazy() -> None:
@@ -48,12 +53,14 @@ concrete = (
     'embodied_runtime.policies.navigation.qwen.policy',
     'embodied_runtime.policies.navigation.streamvln.policy',
     'embodied_runtime.policies.navigation.internvla.policy',
+    'embodied_runtime.policies.navigation.navila.policy',
 )
 assert not any(name in sys.modules for name in concrete)
 assert navigation.QwenNavigationPolicy.__name__ == 'QwenNavigationPolicy'
 assert concrete[0] in sys.modules
 assert concrete[1] not in sys.modules
 assert concrete[2] not in sys.modules
+assert concrete[3] not in sys.modules
 """
     environment = os.environ.copy()
     environment["PYTHONPATH"] = "src"
@@ -68,3 +75,4 @@ def test_all_navigation_policies_implement_task_policy_structurally() -> None:
     assert isinstance(object.__new__(QwenNavigationPolicy), NavigationPolicy)
     assert isinstance(object.__new__(StreamVLNNavigationPolicy), NavigationPolicy)
     assert isinstance(object.__new__(InternVLANavigationPolicy), NavigationPolicy)
+    assert isinstance(object.__new__(NaVILANavigationPolicy), NavigationPolicy)

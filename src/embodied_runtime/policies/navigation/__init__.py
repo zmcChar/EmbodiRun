@@ -10,6 +10,7 @@ from embodied_runtime.tasks.navigation.interfaces import NavigationPolicy
 __all__ = [
     "EpisodeCursor",
     "InternVLANavigationPolicy",
+    "NaVILANavigationPolicy",
     "NavigationPolicy",
     "NavigationPolicyError",
     "QwenNavigationPolicy",
@@ -20,6 +21,7 @@ _SYMBOL_MODULES = {
     "EpisodeCursor": ".episode",
     "NavigationPolicyError": ".errors",
     "InternVLANavigationPolicy": ".internvla.policy",
+    "NaVILANavigationPolicy": ".navila.policy",
     "QwenNavigationPolicy": ".qwen.policy",
     "StreamVLNNavigationPolicy": ".streamvln.policy",
 }

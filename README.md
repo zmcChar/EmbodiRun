@@ -69,7 +69,7 @@ The current source layout is:
 ```text
 src/embodied_runtime/
 ├── models/                 # model specs, packages, plans, VLA/VLN runtimes
-├── policies/navigation/    # Qwen, StreamVLN, InternVLA task adapters
+├── policies/navigation/    # Qwen, StreamVLN, InternVLA, NaVILA task adapters
 ├── tasks/                  # navigation and high-level planning loops
 ├── robots/unitree/go2/     # Go2 host clients and robot-resident agent
 ├── simulators/             # simulator endpoints, traces, VLABench adapters
@@ -86,7 +86,7 @@ src/embodied_runtime/
 The Go2 navigation composition follows the same ownership chain:
 
 ```text
-Qwen / StreamVLN / InternVLA policy
+Qwen / StreamVLN / InternVLA / NaVILA policy
         → tasks.navigation.WaypointPlan
         → NavigationSession or ReactiveNavigationSession
         → bounded planar velocity
@@ -94,9 +94,11 @@ Qwen / StreamVLN / InternVLA policy
         → robot HTTP control service → Unitree SDK2
 ```
 
-Qwen calls an already-running OpenAI-compatible endpoint. StreamVLN and
-InternVLA load their selected local runtime in the navigation process. All
-three return a task-owned `WaypointPlan`; none emits SDK commands. See
+Qwen calls an already-running OpenAI-compatible endpoint. StreamVLN, InternVLA,
+and NaVILA load their selected local runtime in the navigation process. All
+four return a task-owned `WaypointPlan`; none emits SDK commands. NaVILA uses
+seven uniformly sampled historical images plus the latest observation and
+normalizes one textual navigation action into the same plan contract. See
 [Go2 navigation](docs/go2_navigation.md) for the closed loop and verified
 commands.
 
@@ -110,6 +112,8 @@ Implemented model execution includes:
   preprocessing and categorical action-token decoding.
 - `models/vla/gr00t_n17`: NVIDIA GR00T N1.7 as a single-forward package and a
   native vLLM-Omni/OpenPI provider path.
+- `models/vla/navila`: the official NaVILA 8B checkpoint loader, fixed
+  eight-frame preprocessing, and native textual navigation action.
 - `models/base.py`: the reusable
   `preprocess_one → collate → unbatch → postprocess_one` cardinality boundary.
 - `engine/providers`: the backend-injected local Provider and lazy Provider
@@ -142,6 +146,17 @@ checkpoint requires LeRobot 0.3.3:
 
 ```bash
 python -m pip install -e '.[dev,torch,smolvla]'
+```
+
+NaVILA also requires an independent Python 3.10 environment. Its pinned
+[official source](https://github.com/AnjieCheng/NaVILA/tree/76b98f233dd0fff05dfcd69435eec6740febff9d)
+uses a specific Transformers replacement, so do not copy that replacement into
+the shared Go2/Qwen/StreamVLN environment. The released checkpoint is
+[`a8cheng/navila-llama3-8b-8f`](https://huggingface.co/a8cheng/navila-llama3-8b-8f).
+Create the isolated, pinned eager-attention environment with:
+
+```bash
+bash scripts/setup_navila_navigation_env.sh
 ```
 
 Checkpoints are loaded from user-provided local paths or Hugging Face IDs. This

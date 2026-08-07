@@ -13,7 +13,7 @@ from embodied_runtime.tasks.navigation import PlanarVelocityLimits
 
 from .validation import nonempty, positive
 
-BACKENDS = ("qwen", "streamvln", "internvla")
+BACKENDS = ("qwen", "streamvln", "internvla", "navila")
 DEFAULT_GO2_CAMERA_URL = "http://127.0.0.1:8765"
 DEFAULT_GO2_CONTROL_URL = "http://127.0.0.1:8080"
 GO2_CONTROL_HARD_LIMITS = PlanarVelocityLimits(
@@ -68,11 +68,23 @@ class PolicySettings:
     internvla_model_path: str | None = None
     internvla_variant: str = "dualvln"
     internvla_device: str = "cuda:0"
+    navila_root: str | None = None
+    navila_model_path: str | None = None
+    navila_device: str = "cuda:0"
+    navila_cuda_memory_fraction: float | None = None
+    navila_max_new_tokens: int = 32
+    navila_local_files_only: bool = True
 
     def __post_init__(self) -> None:
         if self.backend not in BACKENDS:
             raise ValueError(f"backend must be one of {BACKENDS}")
-        for name in ("qwen_base_url", "qwen_model", "streamvln_device", "internvla_device"):
+        for name in (
+            "qwen_base_url",
+            "qwen_model",
+            "streamvln_device",
+            "internvla_device",
+            "navila_device",
+        ):
             object.__setattr__(self, name, nonempty(getattr(self, name), name))
         for name in (
             "qwen_api_key",
@@ -80,6 +92,8 @@ class PolicySettings:
             "streamvln_model_path",
             "internvla_root",
             "internvla_model_path",
+            "navila_root",
+            "navila_model_path",
         ):
             object.__setattr__(self, name, nonempty(getattr(self, name), name, optional=True))
         object.__setattr__(self, "qwen_timeout_s", positive(self.qwen_timeout_s, "qwen_timeout_s"))
@@ -88,14 +102,30 @@ class PolicySettings:
             if fraction > 1.0:
                 raise ValueError("cuda_memory_fraction must not exceed 1")
             object.__setattr__(self, "cuda_memory_fraction", fraction)
+        if self.navila_cuda_memory_fraction is not None:
+            fraction = positive(
+                self.navila_cuda_memory_fraction,
+                "navila_cuda_memory_fraction",
+            )
+            if fraction > 1.0:
+                raise ValueError("navila_cuda_memory_fraction must not exceed 1")
+            object.__setattr__(self, "navila_cuda_memory_fraction", fraction)
         if isinstance(self.max_new_tokens, bool) or not isinstance(self.max_new_tokens, int):
             raise TypeError("max_new_tokens must be a positive integer")
         if self.max_new_tokens < 1:
             raise ValueError("max_new_tokens must be a positive integer")
+        if isinstance(self.navila_max_new_tokens, bool) or not isinstance(
+            self.navila_max_new_tokens, int
+        ):
+            raise TypeError("navila_max_new_tokens must be a positive integer")
+        if not 1 <= self.navila_max_new_tokens <= 128:
+            raise ValueError("navila_max_new_tokens must be between 1 and 128")
         if self.internvla_variant not in {"dualvln", "navdp"}:
             raise ValueError("internvla_variant must be 'dualvln' or 'navdp'")
         if not isinstance(self.local_files_only, bool) or not isinstance(self.warmup, bool):
             raise TypeError("local_files_only and warmup must be booleans")
+        if not isinstance(self.navila_local_files_only, bool):
+            raise TypeError("navila_local_files_only must be a boolean")
 
 
 @dataclass(frozen=True, slots=True)

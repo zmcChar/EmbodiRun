@@ -5,14 +5,14 @@ max_runtime_s = 120.0
 control_hz = 10.0
 lease_duration_s = 10.0
 max_events = 256
-# auto uses one-action image-reactive replanning for StreamVLN. Use
+# auto uses one-action image-reactive replanning for StreamVLN and NaVILA. Use
 # continuous only when the robot exposes a trustworthy changing x/y pose.
 mode = "auto"
 
 # Select exactly one backend. Local backends are loaded in this process; the
 # existing Qwen endpoint is only called and is never started, stopped, or restarted.
 [policy]
-backend = "streamvln" # qwen, streamvln, or internvla
+backend = "streamvln" # qwen, streamvln, internvla, or navila
 
 [qwen]
 base_url = "http://127.0.0.1:15003/v1"
@@ -34,6 +34,14 @@ repository = "/path/to/InternNav"
 checkpoint = "/path/to/internvla-n1-dualvln"
 variant = "dualvln" # dualvln (RGB) or navdp (registered RGB-D)
 device = "cuda:0"
+
+[navila]
+repository = "/path/to/NaVILA"
+checkpoint = "/path/to/navila-llama3-8b-8f"
+device = "cuda:0"
+cuda_memory_fraction = 0.45
+max_new_tokens = 32
+local_files_only = true
 
 [go2]
 # Loopback is inert for a remote robot. Pass --robot-host/--robot-ip at runtime,

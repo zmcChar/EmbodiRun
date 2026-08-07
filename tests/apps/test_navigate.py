@@ -197,6 +197,77 @@ def test_streamvln_factory_forwards_local_runtime_options(monkeypatch) -> None:
     assert captured["cuda_memory_fraction"] == 0.4
 
 
+def test_navila_cli_and_factory_use_dedicated_model_settings(monkeypatch) -> None:
+    captured = {}
+    sentinel = object()
+
+    def fake_navila(**kwargs):
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(policies, "NaVILANavigationPolicy", fake_navila)
+    args = app.build_parser().parse_args(
+        [
+            "--backend",
+            "navila",
+            "--navila-root",
+            "/models/NaVILA",
+            "--model-path",
+            "/models/navila-8b",
+            "--device",
+            "cuda:1",
+            "--cuda-memory-fraction",
+            "0.4",
+            "--max-new-tokens",
+            "32",
+        ]
+    )
+    config = app.apply_cli_overrides(app.Go2NavigationAppConfig(), args)
+
+    assert config.policy.navila_root == "/models/NaVILA"
+    assert config.policy.navila_model_path == "/models/navila-8b"
+    assert config.policy.navila_device == "cuda:1"
+    assert config.policy.navila_cuda_memory_fraction == 0.4
+    assert config.policy.navila_max_new_tokens == 32
+    assert app.build_navigation_policy(config.policy) is sentinel
+    assert captured == {
+        "navila_root": "/models/NaVILA",
+        "model_path": "/models/navila-8b",
+        "device": "cuda:1",
+        "cuda_memory_fraction": 0.4,
+        "max_new_tokens": 32,
+        "local_files_only": True,
+    }
+
+
+def test_navila_toml_table_loads_without_reusing_streamvln_options(tmp_path) -> None:
+    path = _write_config(
+        tmp_path,
+        """
+[policy]
+backend = "navila"
+
+[navila]
+repository = "/models/NaVILA"
+checkpoint = "/models/navila-8b"
+device = "cuda:1"
+cuda_memory_fraction = 0.42
+max_new_tokens = 24
+local_files_only = true
+""",
+    )
+
+    policy = app.load_config(path).policy
+
+    assert policy.backend == "navila"
+    assert policy.navila_root == "/models/NaVILA"
+    assert policy.navila_model_path == "/models/navila-8b"
+    assert policy.navila_device == "cuda:1"
+    assert policy.navila_cuda_memory_fraction == pytest.approx(0.42)
+    assert policy.navila_max_new_tokens == 24
+    assert policy.navila_local_files_only is True
+
+
 @pytest.mark.parametrize("execute", [False, True])
 def test_composition_passes_explicit_execution_policy_and_emits_json(execute) -> None:
     policy = _Policy()
@@ -268,7 +339,8 @@ def test_composition_passes_explicit_execution_policy_and_emits_json(execute) ->
     assert "events" not in decoded[-1]
 
 
-def test_streamvln_auto_selects_image_reactive_session() -> None:
+@pytest.mark.parametrize("backend", ["streamvln", "navila"])
+def test_image_action_backends_auto_select_reactive_session(backend: str) -> None:
     policy = _Policy()
     constructed = {}
     lines: list[str] = []
@@ -289,7 +361,7 @@ def test_streamvln_auto_selects_image_reactive_session() -> None:
 
     config = app.Go2NavigationAppConfig(
         run=app.RunSettings(instruction="find the tripod"),
-        policy=app.PolicySettings(backend="streamvln"),
+        policy=app.PolicySettings(backend=backend),
     )
     asyncio.run(
         app.run_navigation(
@@ -305,6 +377,8 @@ def test_streamvln_auto_selects_image_reactive_session() -> None:
 
     assert constructed["config"].execute is True
     assert type(constructed["config"]).__name__ == "ReactiveNavigationSessionConfig"
+    expected_max_pulse_s = 2.5 if backend == "navila" else 1.5
+    assert constructed["config"].max_pulse_s == pytest.approx(expected_max_pulse_s)
     assert "follower" not in constructed
     assert json.loads(lines[0])["session_mode"] == "reactive"
 

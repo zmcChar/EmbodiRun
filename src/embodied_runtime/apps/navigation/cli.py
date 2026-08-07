@@ -42,6 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--qwen-api-key")
     parser.add_argument("--streamvln-root")
     parser.add_argument("--internvla-root")
+    parser.add_argument("--navila-root")
     parser.add_argument("--internvla-variant", choices=("dualvln", "navdp"))
     parser.add_argument("--model-path", "--checkpoint", dest="model_path")
     parser.add_argument("--device")
@@ -81,8 +82,7 @@ def _policy_overrides(config: Go2NavigationAppConfig, args: argparse.Namespace):
         "streamvln_root": args.streamvln_root,
         "internvla_root": args.internvla_root,
         "internvla_variant": args.internvla_variant,
-        "cuda_memory_fraction": args.cuda_memory_fraction,
-        "max_new_tokens": args.max_new_tokens,
+        "navila_root": args.navila_root,
     }
     policy = replace(
         config.policy,
@@ -93,16 +93,27 @@ def _policy_overrides(config: Go2NavigationAppConfig, args: argparse.Namespace):
             policy,
             streamvln_device=args.device,
             internvla_device=args.device,
+            navila_device=args.device,
         )
     if args.model_path is not None:
         field = {
             "qwen": "qwen_model",
             "streamvln": "streamvln_model_path",
             "internvla": "internvla_model_path",
+            "navila": "navila_model_path",
         }[policy.backend]
         policy = replace(policy, **{field: args.model_path})
+    if args.cuda_memory_fraction is not None:
+        field = (
+            "navila_cuda_memory_fraction" if policy.backend == "navila" else "cuda_memory_fraction"
+        )
+        policy = replace(policy, **{field: args.cuda_memory_fraction})
+    if args.max_new_tokens is not None:
+        field = "navila_max_new_tokens" if policy.backend == "navila" else "max_new_tokens"
+        policy = replace(policy, **{field: args.max_new_tokens})
     if args.allow_download:
-        policy = replace(policy, local_files_only=False)
+        field = "navila_local_files_only" if policy.backend == "navila" else "local_files_only"
+        policy = replace(policy, **{field: False})
     if args.no_warmup:
         policy = replace(policy, warmup=False)
     return policy

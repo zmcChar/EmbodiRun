@@ -10,9 +10,11 @@ import mimetypes
 import time
 from pathlib import Path
 
+from embodied_runtime.models.vla.navila import NaVILARuntime
 from embodied_runtime.models.vln.streamvln import StreamVLNRuntime
 from embodied_runtime.policies.navigation import (
     InternVLANavigationPolicy,
+    NaVILANavigationPolicy,
     QwenNavigationPolicy,
     StreamVLNNavigationPolicy,
 )
@@ -26,16 +28,21 @@ from embodied_runtime.tasks.navigation import (
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--backend", choices=("qwen", "streamvln", "internvla"), required=True)
+    parser.add_argument(
+        "--backend",
+        choices=("qwen", "streamvln", "internvla", "navila"),
+        required=True,
+    )
     parser.add_argument("--image", type=Path)
     parser.add_argument("--prompt", default="Move toward the visible target.")
     parser.add_argument("--episode-id", default="go2-model-smoke")
     parser.add_argument("--load-only", action="store_true")
     parser.add_argument("--streamvln-root", type=Path)
+    parser.add_argument("--navila-root", type=Path)
     parser.add_argument("--model-path")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--cuda-memory-fraction", type=float)
-    parser.add_argument("--max-new-tokens", type=int, default=64)
+    parser.add_argument("--max-new-tokens", type=int)
     parser.add_argument("--internvla-root", type=Path)
     parser.add_argument("--internvla-variant", choices=("dualvln", "navdp"), default="dualvln")
     parser.add_argument("--qwen-base-url", default="http://127.0.0.1:15003/v1")
@@ -52,9 +59,22 @@ def _stream_runtime(args: argparse.Namespace) -> StreamVLNRuntime:
         model_path=args.model_path,
         device=args.device,
         cuda_memory_fraction=args.cuda_memory_fraction,
-        max_new_tokens=args.max_new_tokens,
+        max_new_tokens=args.max_new_tokens or 64,
         local_files_only=True,
         warmup=True,
+    )
+
+
+def _navila_runtime(args: argparse.Namespace) -> NaVILARuntime:
+    if args.navila_root is None or args.model_path is None:
+        raise SystemExit("NaVILA requires --navila-root and --model-path")
+    return NaVILARuntime(
+        navila_root=args.navila_root,
+        model_path=args.model_path,
+        device=args.device,
+        cuda_memory_fraction=args.cuda_memory_fraction,
+        max_new_tokens=args.max_new_tokens or 32,
+        local_files_only=True,
     )
 
 
@@ -67,6 +87,8 @@ def _policy(args: argparse.Namespace):
         )
     if args.backend == "streamvln":
         return StreamVLNNavigationPolicy(runtime=_stream_runtime(args))
+    if args.backend == "navila":
+        return NaVILANavigationPolicy(runtime=_navila_runtime(args))
     return InternVLANavigationPolicy(
         variant=args.internvla_variant,
         model_path=args.model_path,
@@ -125,14 +147,21 @@ async def _infer(args: argparse.Namespace) -> None:
         await policy.aclose()
 
 
+async def _load_only(args: argparse.Namespace) -> None:
+    if args.backend not in {"streamvln", "internvla", "navila"}:
+        raise SystemExit("--load-only requires a local model backend")
+    policy = _policy(args)
+    try:
+        await policy.prepare()
+        print(json.dumps({"loaded": True, "backend": args.backend}))
+    finally:
+        await policy.aclose()
+
+
 def main() -> None:
     args = _parser().parse_args()
     if args.load_only:
-        if args.backend != "streamvln":
-            raise SystemExit("--load-only currently supports StreamVLN")
-        runtime = _stream_runtime(args)
-        runtime.load()
-        print(json.dumps({"loaded": True, "model": str(runtime.config.model_path)}))
+        asyncio.run(_load_only(args))
         return
     asyncio.run(_infer(args))
 

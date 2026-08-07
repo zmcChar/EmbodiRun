@@ -92,11 +92,12 @@ def test_runtime_modules_stay_below_size_guard() -> None:
 
 def test_navigation_policy_families_use_symmetric_packages() -> None:
     root = SOURCE_ROOT / "policies/navigation"
-    for family in ("qwen", "streamvln", "internvla"):
+    for family in ("qwen", "streamvln", "internvla", "navila"):
         assert (root / family / "__init__.py").is_file()
         assert (root / family / "policy.py").is_file()
     assert not (root / "streamvln.py").exists()
     assert not (root / "internvla.py").exists()
+    assert not (root / "navila.py").exists()
 
 
 def test_app_settings_do_not_import_concrete_models_or_backends() -> None:

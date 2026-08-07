@@ -37,30 +37,29 @@ It selects one policy, constructs task sessions, and connects them to the
 canonical Go2 clients:
 
 ```text
-Qwen endpoint
-StreamVLN model runtime ─────┐
-InternVLA model runtime ─────┼─> policies.navigation
-                            │       QwenNavigationPolicy
-Go2 RGB or RGB-D image ─────┘       StreamVLNNavigationPolicy
-Go2 state -------------------------- InternVLANavigationPolicy
-                                      │
-                                      v
-                         tasks.navigation.WaypointPlan
-                                      │
-                         task-owned navigation session
-                           ┌──────────┴──────────┐
-                           v                     v
-                  continuous follower    reactive pulse
-                           └──────────┬──────────┘
-                                      v
-                         PlanarVelocityCommand
-                          (vx, vy, yaw_rate)
-                                      │
-                                      v
-                     robots.unitree.go2.Go2ControlClient
-                                      │ HTTP velocity lease
-                                      v
-                       Go2 control service → Unitree SDK2
+Go2 RGB/RGB-D image + state
+              │
+              ├── Qwen endpoint ──────────> QwenNavigationPolicy ────────┐
+              ├── StreamVLN runtime ──────> StreamVLNNavigationPolicy ──┤
+              ├── InternVLA runtime ──────> InternVLANavigationPolicy ──┤
+              └── NaVILA runtime ─────────> NaVILANavigationPolicy ─────┘
+                                                                         │
+                                                                         v
+                                                    tasks.navigation.WaypointPlan
+                                                                         │
+                                                      task navigation session
+                                                        ┌────────────────┴──────┐
+                                                        v                       v
+                                               continuous follower       reactive pulse
+                                                        └────────────┬───────────┘
+                                                                     v
+                                           PlanarVelocityCommand(vx, vy, yaw_rate)
+                                                                     │
+                                                                     v
+                                      robots.unitree.go2.Go2ControlClient
+                                                                     │ HTTP lease
+                                                                     v
+                                           Go2 control service → Unitree SDK2
 ```
 
 The domain paths are:
@@ -69,8 +68,10 @@ The domain paths are:
   native discrete actions;
 - `models/vla/internvla_n1`: InternVLA DualVLN/NavDP loading, depth handling,
   and neutral copies of official native outputs;
-- `policies/navigation`: Qwen request adaptation plus StreamVLN/InternVLA
-  geometry mapping into task-owned plans;
+- `models/vla/navila`: NaVILA loading, eight-frame preprocessing, and its
+  native textual action;
+- `policies/navigation`: Qwen request adaptation plus StreamVLN, InternVLA,
+  and NaVILA geometry mapping into task-owned plans;
 - `tasks/navigation`: RGB-D observations, `WaypointPlan`, continuous/reactive
   sessions, waypoint tracking, velocity pulses, and lease control;
 - `robots/unitree/go2`: host camera/control clients and the robot-resident
@@ -81,14 +82,15 @@ The domain paths are:
 
 Qwen calls the existing OpenAI-compatible endpoint and asks for validated
 structured output. Closing the policy closes only its client transport; it
-does not start, stop, or restart Qwen. StreamVLN and InternVLA load the selected
-local checkpoint in the navigation process. InternVLA `dualvln` consumes RGB;
-`navdp` additionally requires registered depth.
+does not start, stop, or restart Qwen. StreamVLN, InternVLA, and NaVILA load the
+selected local checkpoint in the navigation process. InternVLA `dualvln`
+consumes RGB; `navdp` additionally requires registered depth.
 
 The application awaits each policy's `prepare()` lifecycle hook before it
 starts the task session. StreamVLN checkpoint loading and configured warmup,
-and InternVLA checkpoint loading, therefore do not consume `max_runtime_s`.
-Qwen preparation intentionally does not probe or manage the external server.
+plus InternVLA and NaVILA checkpoint loading, therefore do not consume
+`max_runtime_s`. Qwen preparation intentionally does not probe or manage the
+external server.
 
 Every policy returns a `WaypointPlan` in `base_link`: `x` is forward, `y` is
 left, and positive yaw is counter-clockwise. A policy never emits Unitree SDK
@@ -104,7 +106,7 @@ inference runs. This mode requires trustworthy changing planar pose state.
 
 On the current Go2 path, `SportModeState.position` may remain constant while
 the robot walks. Therefore `session.mode = "auto"` selects
-`ReactiveNavigationSession` for StreamVLN. The reactive loop is:
+`ReactiveNavigationSession` for StreamVLN and NaVILA. The reactive loop is:
 
 ```text
 capture image/state → infer WaypointPlan → use first waypoint
@@ -176,12 +178,33 @@ bash scripts/setup_go2_navigation_env.sh
 Only the selected local model is loaded by a run; large checkpoints do not all
 need to be resident at once.
 
+NaVILA must run from its own Python 3.10 environment. The pinned upstream
+installation replaces parts of Transformers, so applying it to the shared
+Go2/Qwen/StreamVLN environment can break the other model runtimes. Install the
+official dependencies and the fail-closed eager-attention overlay only in the
+dedicated environment:
+
+```bash
+bash scripts/setup_navila_navigation_env.sh
+
+.navila-navigation-runtime/env/bin/huggingface-cli download \
+  a8cheng/navila-llama3-8b-8f \
+  --local-dir /home/user/go2-nav-runtime/checkpoints/navila-llama3-8b-8f
+```
+
+The setup script pins the source revision, refuses to modify an unmarked
+existing environment, and never touches the shared StreamVLN environment.
+
 Pinned upstream inputs:
 
 - StreamVLN source: `e48f6ff7e9201d93aae003e8f64b04c00cec13bc`
 - StreamVLN real-world checkpoint:
   `7b0269ad28e7039a32627b950766c09b5a646f8e`
 - InternNav source: `1d8d078aa9031a4a02a1ae05844d49a1768a10e4`
+- NaVILA source:
+  [`76b98f233dd0fff05dfcd69435eec6740febff9d`](https://github.com/AnjieCheng/NaVILA/tree/76b98f233dd0fff05dfcd69435eec6740febff9d)
+- NaVILA checkpoint:
+  [`a8cheng/navila-llama3-8b-8f`](https://huggingface.co/a8cheng/navila-llama3-8b-8f)
 
 ## Configure
 
@@ -204,20 +227,21 @@ Command-line token overrides (`--camera-token`, `--control-token`, and
 Relevant overrides include:
 
 ```text
---backend qwen|streamvln|internvla
+--backend qwen|streamvln|internvla|navila
 --session-mode auto|reactive|continuous
 --instruction TEXT             --episode-id ID
 --max-runtime-s SECONDS        --control-hz HZ
 --camera-url URL               --control-url URL
 --robot-host HOST              --camera-port PORT --control-port PORT
 --streamvln-root PATH          --internvla-root PATH
+--navila-root PATH
 --model-path PATH_OR_MODEL_ID  --device cuda:0
 --cuda-memory-fraction 0.45    --max-new-tokens 64
 ```
 
 `--model-path` applies to the selected backend and acts as the Qwen model ID
-when `--backend qwen` is selected. `--cuda-memory-fraction` applies only to a
-newly loaded StreamVLN process.
+when `--backend qwen` is selected. `--cuda-memory-fraction` applies to a newly
+loaded StreamVLN or NaVILA process, according to the selected backend.
 
 ## Dry-run first
 
@@ -264,6 +288,50 @@ python examples/go2_navigation.py \
 
 The Qwen command above is also a dry-run because it has no `--execute` flag.
 
+NaVILA is also available through `nav.sh`. Run the generic CLI first without
+`--execute` from the dedicated environment:
+
+```bash
+PYTHONNOUSERSITE=1 CUDA_VISIBLE_DEVICES=1 \
+  .navila-navigation-runtime/env/bin/python \
+  examples/go2_navigation.py \
+  --config configs/go2_navigation.toml \
+  --backend navila \
+  --session-mode reactive \
+  --navila-root .navila-navigation-runtime/source/NaVILA \
+  --model-path /home/user/go2-nav-runtime/checkpoints/navila-llama3-8b-8f \
+  --device cuda:0 \
+  --instruction '找到三脚架并停在它前面'
+```
+
+After dry-run validation, the one-command path is:
+
+```bash
+bash nav.sh \
+  --backend navila \
+  --prompt '找到三脚架并停在它前面' \
+  --robot-host 192.168.137.34 \
+  --ssh-user unitree \
+  --camera-serial "$GO2_CAMERA_SERIAL" \
+  --depth-scale "$GO2_DEPTH_SCALE"
+```
+
+For each decision, the policy supplies exactly eight image slots: seven
+positions sampled uniformly from the retained episode plus the latest frame.
+An episode with fewer than eight observations is left-padded with black images.
+The accepted native action is exactly one of `STOP`, forward 25/50/75 cm, or
+left/right 15/30/45 degrees. Forward becomes positive `x_m`, left becomes
+positive yaw, right becomes negative yaw, and `STOP` becomes a terminal empty
+`WaypointPlan` before the existing reactive Go2 controller executes it.
+
+This adapter does not include NaVILA's official learned low-level locomotion
+policy. The released system describes that policy as the real-time
+obstacle-avoidance layer; this repository instead uses its existing bounded
+Go2 SDK2 velocity controller. Consequently, the integration validates the
+high-level NaVILA-to-Go2 contract but does not reproduce the paper's learned
+obstacle avoidance or whole-body locomotion. The omitted official component is
+[`legged-loco` at commit `87b0d3d`](https://github.com/yang-zj1026/legged-loco/tree/87b0d3d18404e784abc0a62227bc41c940f29ecc).
+
 ## Model-only StreamVLN check
 
 The dog is not needed for a checkpoint load test:
@@ -281,3 +349,16 @@ PYTHONNOUSERSITE=1 CUDA_VISIBLE_DEVICES=1 \
 
 Inspect the target GPU before loading the checkpoint. The command does not
 reallocate or terminate another process.
+
+The equivalent model-only NaVILA load check is:
+
+```bash
+PYTHONNOUSERSITE=1 CUDA_VISIBLE_DEVICES=1 \
+  .navila-navigation-runtime/env/bin/python \
+  examples/go2_navigation_infer.py \
+  --backend navila \
+  --navila-root .navila-navigation-runtime/source/NaVILA \
+  --model-path /home/user/go2-nav-runtime/checkpoints/navila-llama3-8b-8f \
+  --cuda-memory-fraction 0.44 \
+  --load-only
+```

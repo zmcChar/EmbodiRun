@@ -41,6 +41,7 @@ def load_config(path: str | Path) -> Go2NavigationAppConfig:
     qwen = _table(raw, "qwen")
     streamvln = _table(raw, "streamvln")
     internvla = _table(raw, "internvla")
+    navila = _table(raw, "navila")
     go2 = _table(raw, "go2")
     follower = _table(go2, "follower")
 
@@ -71,6 +72,12 @@ def load_config(path: str | Path) -> Go2NavigationAppConfig:
             internvla_model_path=internvla.get("checkpoint"),
             internvla_variant=str(internvla.get("variant", "dualvln")),
             internvla_device=str(internvla.get("device", "cuda:0")),
+            navila_root=navila.get("repository"),
+            navila_model_path=navila.get("checkpoint"),
+            navila_device=str(navila.get("device", "cuda:0")),
+            navila_cuda_memory_fraction=navila.get("cuda_memory_fraction"),
+            navila_max_new_tokens=int(navila.get("max_new_tokens", 32)),
+            navila_local_files_only=bool(navila.get("local_files_only", True)),
         ),
         go2=Go2Settings(
             camera_url=str(go2.get("camera_url", DEFAULT_GO2_CAMERA_URL)),
