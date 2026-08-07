@@ -108,9 +108,19 @@ PYTHONNOUSERSITE=1 "$environment_python" -m pip install --upgrade "pip>=25,<27"
 PYTHONNOUSERSITE=1 "$environment_python" -m pip install \
   torch==2.3.0 torchvision==0.18.0 \
   --index-url https://download.pytorch.org/whl/cu121
-PYTHONNOUSERSITE=1 "$environment_python" -m pip install -e "$source_path"
-PYTHONNOUSERSITE=1 "$environment_python" -m pip install --force-reinstall --no-deps \
-  "git+https://github.com/huggingface/transformers@$transformers_revision"
+PYTHONNOUSERSITE=1 "$environment_python" -m pip install \
+  "transformers @ git+https://github.com/huggingface/transformers@$transformers_revision" \
+  tokenizers==0.15.2 \
+  sentencepiece==0.1.99 \
+  accelerate==0.27.2 \
+  numpy==1.26.0 \
+  datasets==2.16.1 \
+  requests \
+  einops==0.6.1 \
+  timm==0.9.12 \
+  opencv-python-headless==4.8.0.74 \
+  decord==0.6.0 \
+  "s2wrapper @ git+https://github.com/bfshi/scaling_on_scales"
 PYTHONNOUSERSITE=1 "$environment_python" -m pip install -e "$repository_root"
 
 overlay_path="$source_path/llava/train/transformers_replace"
