@@ -1,6 +1,6 @@
-# Group 2 boundary
+# Distributed runtime boundary
 
-This domain will own all-to-all registration and communication among cloud,
+This domain owns registration and communication among cloud,
 edge, and robot runtimes:
 
 - `registry/`: leases, heartbeats, capability advertisement;
@@ -39,7 +39,7 @@ and shapes.
 
 This handshake is intentionally not called dynamic node registration. The
 cloud address is static and service-local; the leased `RuntimeRegistry`,
-heartbeats, discovery, and route selection remain future Group-2 work.
+heartbeats, discovery, and route selection remain future distributed-runtime work.
 
 `physical_resource_id` is only advertised metadata. It does not reserve or
 schedule hardware, and a selector such as `cuda:0` is meaningful only inside
@@ -55,5 +55,6 @@ but its OpenPI integration owns WebSocket and reset/session state. Use one
 Provider/WebSocket instance per robot session; those instances may all connect
 to the same shared vLLM-Omni server.
 
-It may import only `embodied_runtime.contracts`. It must not know π0.5
-internals or vendor SDK APIs.
+Distributed code may depend on public envelopes owned by `engine`, `models`,
+`tasks`, and `robots`. It must not depend on model-family internals, policy
+implementations, simulator details, or vendor robot SDK APIs.

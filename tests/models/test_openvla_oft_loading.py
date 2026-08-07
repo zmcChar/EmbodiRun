@@ -4,14 +4,12 @@ import json
 
 import pytest
 
-from embodied_runtime.contracts import ModelPackageError
-from embodied_runtime.models.vla.openvla_oft.modeling_openvla_oft import (
-    _load_checkpoint_components,
-    load_openvla_oft,
-)
-
 torch = pytest.importorskip("torch")
 safetensors = pytest.importorskip("safetensors.torch")
+
+from embodied_runtime.models.errors import ModelPackageError
+from embodied_runtime.models.vla.openvla_oft.checkpoint import load_checkpoint_components
+from embodied_runtime.models.vla.openvla_oft.loading import load_openvla_oft
 
 
 def test_sharded_loader_assigns_meta_parameters_in_requested_dtype(tmp_path) -> None:
@@ -35,7 +33,7 @@ def test_sharded_loader_assigns_meta_parameters_in_requested_dtype(tmp_path) -> 
         encoding="utf-8",
     )
 
-    _load_checkpoint_components(
+    load_checkpoint_components(
         tmp_path,
         vision_backbone=vision,
         projector=projector,

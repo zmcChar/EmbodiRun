@@ -6,9 +6,8 @@ from functools import wraps
 import numpy as np
 import pytest
 
-from embodied_runtime.contracts import InferenceRequest, InferenceResult
-from embodied_runtime.integrations.serving import InferenceProvider
-from embodied_runtime.integrations.serving.gr00t import (
+from embodied_runtime.engine import InferenceProvider, InferenceRequest, InferenceResult
+from embodied_runtime.integrations.gr00t import (
     HfLocalGr00tProvider,
     VllmOmniGr00tProvider,
 )

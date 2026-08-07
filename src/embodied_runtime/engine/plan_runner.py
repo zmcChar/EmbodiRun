@@ -7,9 +7,11 @@ from dataclasses import dataclass, field
 from threading import Event
 from typing import Protocol, runtime_checkable
 
-from embodied_runtime.contracts import ExecutionPlan, InferenceRequest, TensorTree
+from embodied_runtime.models.plans import ExecutionPlan
+from embodied_runtime.types import TensorTree
 
 from .errors import UnsupportedExecutionPlanError
+from .request import InferenceRequest
 
 
 class BatchAborted(Exception):

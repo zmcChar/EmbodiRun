@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from dataclasses import dataclass, field
 
-from embodied_runtime.contracts import RawRequest, RobotObservation
-
-from .profile import RobotProfile
+from embodied_runtime.types import Metadata, TensorTree
 
 
-@runtime_checkable
-class ObservationMapper(Protocol):
-    """Convert one robot's sensor schema into the model-facing request."""
+@dataclass(slots=True)
+class RobotObservation:
+    """Timestamped sensor state in one robot profile's observation schema."""
 
-    def map_observation(
-        self,
-        observation: RobotObservation,
-        profile: RobotProfile,
-    ) -> RawRequest: ...
+    timestamp_s: float
+    values: TensorTree
+    metadata: Metadata = field(default_factory=dict)
+
+
+__all__ = ["RobotObservation"]

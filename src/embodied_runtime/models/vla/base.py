@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import Any
 
-from embodied_runtime.contracts import ActionChunk, ModelPackageError, RawRequest, TensorTree
+from embodied_runtime.types import TensorTree
 
+from ..action import ActionChunk
 from ..base import BaseModelAdapter
+from ..errors import ModelPackageError
+from ..request import RawRequest
 
 
 def _actions_from(output: TensorTree) -> Any:
@@ -40,19 +43,6 @@ class VLAAdapterBase(BaseModelAdapter[RawRequest, ActionChunk]):
         if action_dim is not None:
             actions = actions[..., :action_dim]
         return ActionChunk(actions=actions)
-
-    def postprocess(self, outputs: TensorTree) -> Sequence[ActionChunk]:
-        """Temporary compatibility wrapper for the original prototype API."""
-
-        actions = _actions_from(outputs)
-        ndim = getattr(actions, "ndim", None)
-        if ndim is None:
-            raise ModelPackageError("VLA actions must be tensor-like")
-        if ndim >= 3:
-            samples = self.unbatch(outputs, int(actions.shape[0]))
-        else:
-            samples = (outputs,)
-        return tuple(self.postprocess_one(sample) for sample in samples)
 
 
 __all__ = ["VLAAdapterBase"]

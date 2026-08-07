@@ -6,9 +6,9 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RUNTIME_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
 PROMPT=""
-ROBOT_HOST="${GO2_ROBOT_HOST:-192.168.137.34}"
+ROBOT_HOST="${GO2_ROBOT_HOST:-}"
 SSH_PORT="${GO2_SSH_PORT:-22}"
-SSH_USER="${GO2_SSH_USER:-unitree}"
+SSH_USER="${GO2_SSH_USER:-}"
 SSH_CONNECT_TIMEOUT_S="${GO2_SSH_CONNECT_TIMEOUT_S:-5}"
 DEPLOY_ATTEMPTS="${GO2_DEPLOY_ATTEMPTS:-3}"
 PASSWORD_ENV_NAME="${GO2_PASSWORD_ENV_NAME:-GO2_SSH_PASSWORD}"
@@ -28,8 +28,8 @@ CUDA_MEMORY_FRACTION="${GO2_NAV_CUDA_MEMORY_FRACTION:-0.44}"
 
 CAMERA_PORT="${GO2_CAMERA_PORT:-8765}"
 CONTROL_PORT="${GO2_CONTROL_PORT:-8080}"
-CAMERA_SERIAL="${GO2_CAMERA_SERIAL:-254322072616}"
-DEPTH_SCALE="${GO2_DEPTH_SCALE:-0.0010000000474974513}"
+CAMERA_SERIAL="${GO2_CAMERA_SERIAL:-}"
+DEPTH_SCALE="${GO2_DEPTH_SCALE:-}"
 MAX_RUNTIME_S="${GO2_NAV_MAX_RUNTIME_S:-120}"
 CONTROL_TIMEOUT_S="${GO2_NAV_CONTROL_TIMEOUT_S:-3.0}"
 MAX_VX="${GO2_NAV_MAX_VX:-0.25}"
@@ -40,7 +40,9 @@ EXECUTE=1
 usage() {
   cat <<'EOF'
 Usage:
-  bash nav.sh --prompt "Find the tripod and stop in front of it."
+  bash nav.sh --prompt "Find the tripod and stop in front of it." \
+    --robot-host HOST --ssh-user USER \
+    --camera-serial SERIAL --depth-scale METERS_PER_UNIT
 
 Options:
   --prompt TEXT               Navigation instruction (required)
@@ -51,6 +53,8 @@ Options:
   --password-env NAME         Environment variable containing the SSH password
   --secrets-file PATH         File containing GO2_API_TOKEN/GO2_CAMERA_TOKEN
   --remote-root PATH          Dog-side installation root
+  --camera-serial SERIAL      RealSense device serial (required)
+  --depth-scale SCALE         Verified meters per raw depth unit (required)
   --streamvln-root PATH       Official StreamVLN repository
   --model-path PATH           StreamVLN checkpoint
   --cuda-device-index INDEX   Physical GPU exposed to the process
@@ -119,6 +123,16 @@ while (($#)); do
       REMOTE_ROOT="$2"
       shift 2
       ;;
+    --camera-serial)
+      require_value "$1" "${2-}"
+      CAMERA_SERIAL="$2"
+      shift 2
+      ;;
+    --depth-scale)
+      require_value "$1" "${2-}"
+      DEPTH_SCALE="$2"
+      shift 2
+      ;;
     --streamvln-root)
       require_value "$1" "${2-}"
       STREAMVLN_ROOT="$2"
@@ -174,6 +188,17 @@ while (($#)); do
 done
 
 [[ -n "${PROMPT//[[:space:]]/}" ]] || die '--prompt is required'
+[[ -n "${ROBOT_HOST//[[:space:]]/}" ]] || \
+  die '--robot-host is required (or set GO2_ROBOT_HOST)'
+[[ -n "${SSH_USER//[[:space:]]/}" ]] || \
+  die '--ssh-user is required (or set GO2_SSH_USER)'
+[[ -n "${CAMERA_SERIAL//[[:space:]]/}" ]] || \
+  die '--camera-serial is required (or set GO2_CAMERA_SERIAL)'
+if ! [[ "$DEPTH_SCALE" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$ ]]; then
+  die '--depth-scale must be a positive finite decimal'
+fi
+awk -v value="$DEPTH_SCALE" 'BEGIN { exit !(value > 0 && value < 1) }' || \
+  die '--depth-scale must be finite, greater than zero, and less than one'
 [[ "$PASSWORD_ENV_NAME" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die 'invalid --password-env name'
 [[ "$DEPLOY_ATTEMPTS" =~ ^[1-9][0-9]*$ ]] || die '--deploy-attempts must be positive'
 [[ -r "$SECRETS_FILE" ]] || die "cannot read secrets file: $SECRETS_FILE"
@@ -260,27 +285,30 @@ wait_until() {
   die "$description did not become ready"
 }
 
-if ! camera_ready; then
-  printf 'Starting Go2 camera service...\n'
-  run_deploy stop --service camera >/dev/null
-  run_deploy start \
-    --service camera \
-    --python "$ROBOT_PYTHON" \
-    --camera-backend realsense \
-    --realsense-serial "$CAMERA_SERIAL" \
-    --depth-scale "$DEPTH_SCALE" \
-    --camera-port "$CAMERA_PORT" \
-    --camera-width 640 \
-    --camera-height 360 \
-    --camera-fps 15 \
-    --jpeg-fps 5 \
-    --camera-token-env GO2_CAMERA_TOKEN >/dev/null
-  wait_until 'camera service' camera_ready
-fi
+printf 'Stopping installed Go2 services before refreshing agent code...\n'
+run_deploy stop --service all >/dev/null
+
+printf 'Installing the current repository-owned Go2 agent...\n'
+run_deploy install \
+  --package-root "$SCRIPT_DIR/src/embodied_runtime" >/dev/null
+
+printf 'Starting Go2 camera service...\n'
+run_deploy start \
+  --service camera \
+  --python "$ROBOT_PYTHON" \
+  --camera-backend realsense \
+  --realsense-serial "$CAMERA_SERIAL" \
+  --depth-scale "$DEPTH_SCALE" \
+  --camera-port "$CAMERA_PORT" \
+  --camera-width 640 \
+  --camera-height 360 \
+  --camera-fps 15 \
+  --jpeg-fps 5 \
+  --camera-token-env GO2_CAMERA_TOKEN >/dev/null
+wait_until 'camera service' camera_ready
 
 if ((EXECUTE)); then
   printf 'Re-arming Go2 control service...\n'
-  run_deploy stop --service control >/dev/null
   run_deploy start \
     --service control \
     --python "$ROBOT_PYTHON" \
@@ -292,9 +320,8 @@ if ((EXECUTE)); then
     --api-token-env GO2_API_TOKEN \
     --operator-ready >/dev/null
   wait_until 'armed control service' control_ready true
-elif ! control_ready false; then
+else
   printf 'Starting read-only Go2 control service...\n'
-  run_deploy stop --service control >/dev/null
   run_deploy start \
     --service control \
     --python "$ROBOT_PYTHON" \
@@ -310,7 +337,7 @@ fi
 printf 'Starting StreamVLN navigation: %s\n' "$PROMPT"
 
 NAVIGATION=(
-  "$HOST_PYTHON" "$SCRIPT_DIR/examples/go2_navigation.py"
+  "$HOST_PYTHON" -m embodied_runtime.apps.navigate
   --config "$SCRIPT_DIR/configs/go2_navigation.toml"
   --backend streamvln
   --session-mode reactive

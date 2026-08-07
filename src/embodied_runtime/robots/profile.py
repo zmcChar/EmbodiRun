@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from embodied_runtime.contracts import Metadata
+from embodied_runtime.types import Metadata
 
 
 @dataclass(frozen=True, slots=True)

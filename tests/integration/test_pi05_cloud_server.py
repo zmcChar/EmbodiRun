@@ -1,22 +1,29 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 from functools import wraps
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-import embodied_runtime.apps.pi05_cloud_server as cloud_server
 from embodied_runtime.apps.pi05_cloud_server import (
     Pi05CloudServerConfig,
-    _CloudRuntime,
     _build_cloud_runtime,
+    _CloudRuntime,
     _dispatch,
     _serve,
 )
-from embodied_runtime.contracts import InferenceResult
 from embodied_runtime.distributed.communication import TcpJsonRequestClient
+from embodied_runtime.engine import InferenceResult
+
+
+@pytest.fixture
+def free_tcp_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
 
 
 def async_test(function):
@@ -149,9 +156,7 @@ async def test_real_tcp_server_ping_and_shutdown_without_real_model(
     assert runtime._closed
 
 
-def test_build_runtime_closes_loaded_session_if_engine_construction_fails(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_build_runtime_closes_loaded_session_if_engine_construction_fails() -> None:
     session = SimpleNamespace(closed=False)
 
     def close() -> None:
@@ -169,16 +174,17 @@ def test_build_runtime_closes_loaded_session_if_engine_construction_fails(
         compile=lambda *_args, **_kwargs: object(),
         load=lambda _artifact: session,
     )
-    monkeypatch.setattr(cloud_server, "Pi05Adapter", lambda: adapter)
-    monkeypatch.setattr(cloud_server, "TorchCudaBackend", lambda: backend)
 
     def fail_engine(*_args, **_kwargs):
         raise RuntimeError("engine construction failed")
 
-    monkeypatch.setattr(cloud_server, "ExecutionEngine", fail_engine)
-
     with pytest.raises(RuntimeError, match="engine construction failed"):
-        _build_cloud_runtime(_config())
+        _build_cloud_runtime(
+            _config(),
+            adapter_factory=lambda: adapter,
+            backend_factory=lambda: backend,
+            engine_factory=fail_engine,
+        )
 
     assert session.closed
 

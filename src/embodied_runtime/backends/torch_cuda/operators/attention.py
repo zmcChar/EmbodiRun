@@ -2,7 +2,7 @@
 
 Adapted from ``vvla/layers/attention.py`` at vvla commit
 ``80b5cf48c8710c69ed97200903562e9787efe105`` (MIT).  The prototype keeps only
-the two operators needed to demonstrate the Group 3/Group 4 boundary.
+the two operators needed to demonstrate the engine/backend boundary.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ import difflib
 from typing import Any, Protocol
 
 import torch
-import torch.nn.functional as functional
+from torch.nn import functional
 
 
 class AttentionOperator(Protocol):

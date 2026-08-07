@@ -1,8 +1,7 @@
 """Local real-weight pi0.5 smoke run with tokenizer-free synthetic inputs.
 
-The checkpoint is loaded by the Group 1 adapter, execution is orchestrated by
-the Group 3 engine, and all device/dtype handling goes through the Group 4
-PyTorch backend.  A cached Hugging Face model id or a local snapshot directory
+The model adapter loads the checkpoint, the engine orchestrates execution, and
+the PyTorch backend owns device/dtype handling. A cached Hugging Face model id or local snapshot
 works without network access because loading is offline by default.
 """
 
@@ -14,8 +13,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from embodied_runtime.backends.compile import CompileOptions
 from embodied_runtime.backends.torch_cuda import TorchCudaBackend
-from embodied_runtime.contracts import CompileOptions
 from embodied_runtime.engine import ExecutionEngine
 from embodied_runtime.models.vla.pi05 import Pi05Adapter
 
@@ -63,7 +62,7 @@ def run_pi05(
     )
     load_time_s = time.perf_counter() - load_started
 
-    # Group 1 creates already-tokenized synthetic tensors.  No tokenizer model
+    # The model adapter creates already-tokenized synthetic tensors. No tokenizer model
     # or network lookup is involved in this smoke path.
     payload = adapter.synthetic_batch(
         batch_size=batch_size,

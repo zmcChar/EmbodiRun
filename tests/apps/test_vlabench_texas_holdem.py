@@ -5,18 +5,18 @@ from dataclasses import dataclass
 
 import pytest
 
-from embodied_runtime.apps.vlabench_texas_holdem import (
+from embodied_runtime.apps.vlabench.texas_holdem import (
     TEXAS_HOLDEM_COMPOSITE_PROMPT,
     EndpointPlaceControllerConfig,
     PokerCard,
     PokerDeal,
     TexasHoldemExperimentConfig,
-    _rotated_conditions,
-    _wrong_plan_cards,
     run_texas_holdem_experiment,
 )
-from embodied_runtime.contracts import RobotObservation
+from embodied_runtime.apps.vlabench.texas_holdem.composition import rotated_conditions
+from embodied_runtime.apps.vlabench.texas_holdem.planning import wrong_plan_cards
 from embodied_runtime.evaluation import ExperimentCondition
+from embodied_runtime.robots.observation import RobotObservation
 from embodied_runtime.simulators import EpisodeStep
 
 np = pytest.importorskip("numpy")
@@ -331,8 +331,8 @@ def test_wrong_plan_is_seeded_equal_length_and_replaces_exactly_one_target():
         hand_type="one_pair",
     )
 
-    first = _wrong_plan_cards(deal, seed=41)
-    repeated = _wrong_plan_cards(deal, seed=41)
+    first = wrong_plan_cards(deal, seed=41)
+    repeated = wrong_plan_cards(deal, seed=41)
 
     assert first == repeated
     assert len(first) == len(deal.targets)
@@ -343,17 +343,17 @@ def test_wrong_plan_is_seeded_equal_length_and_replaces_exactly_one_target():
 
 
 def test_three_condition_order_is_counterbalanced_by_rotation():
-    assert _rotated_conditions(0) == (
+    assert rotated_conditions(0) == (
         ExperimentCondition.EDGE_ONLY,
         ExperimentCondition.ORACLE_PLAN,
         ExperimentCondition.WRONG_PLAN,
     )
-    assert _rotated_conditions(1) == (
+    assert rotated_conditions(1) == (
         ExperimentCondition.ORACLE_PLAN,
         ExperimentCondition.WRONG_PLAN,
         ExperimentCondition.EDGE_ONLY,
     )
-    assert _rotated_conditions(2) == (
+    assert rotated_conditions(2) == (
         ExperimentCondition.WRONG_PLAN,
         ExperimentCondition.EDGE_ONLY,
         ExperimentCondition.ORACLE_PLAN,

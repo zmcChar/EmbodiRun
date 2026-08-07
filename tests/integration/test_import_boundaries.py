@@ -1,4 +1,4 @@
-"""Guard the five-group dependency direction at the source level."""
+"""Guard external provider integrations from local execution coupling."""
 
 from __future__ import annotations
 
@@ -6,16 +6,8 @@ import ast
 import importlib.util
 from pathlib import Path
 
-import pytest
-
 SOURCE_ROOT = Path(__file__).parents[2] / "src"
 PACKAGE_ROOT = SOURCE_ROOT / "embodied_runtime"
-
-DOMAINS = ("models", "distributed", "engine", "backends", "robots")
-FORBIDDEN = {
-    domain: tuple(f"embodied_runtime.{other}" for other in DOMAINS if other != domain)
-    for domain in DOMAINS
-}
 
 
 def _module_name(path: Path) -> str:
@@ -43,26 +35,12 @@ def _resolved_imports(path: Path) -> set[str]:
     return imports
 
 
-@pytest.mark.parametrize("domain", sorted(FORBIDDEN))
-def test_concrete_domains_do_not_import_each_other(domain: str) -> None:
-    violations: list[str] = []
-    for path in sorted((PACKAGE_ROOT / domain).rglob("*.py")):
-        for imported in sorted(_resolved_imports(path)):
-            if any(
-                imported == prefix or imported.startswith(prefix + ".")
-                for prefix in FORBIDDEN[domain]
-            ):
-                violations.append(f"{path.relative_to(SOURCE_ROOT)} imports {imported}")
-
-    assert not violations, "cross-domain imports found:\n" + "\n".join(violations)
-
-
 def test_vllm_omni_provider_does_not_import_local_execution_or_backends() -> None:
-    path = PACKAGE_ROOT / "integrations" / "serving" / "gr00t" / "vllm_omni.py"
+    path = PACKAGE_ROOT / "integrations" / "gr00t" / "vllm_omni.py"
     forbidden = (
         "embodied_runtime.backends",
-        "embodied_runtime.engine",
-        "embodied_runtime.integrations.serving.local",
+        "embodied_runtime.engine.execution_engine",
+        "embodied_runtime.engine.providers.local",
     )
     violations = [
         imported

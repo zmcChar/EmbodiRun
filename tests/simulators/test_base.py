@@ -4,7 +4,8 @@ from typing import Any
 
 import pytest
 
-from embodied_runtime.contracts import RobotAction, RobotObservation
+from embodied_runtime.robots.action import RobotAction
+from embodied_runtime.robots.observation import RobotObservation
 from embodied_runtime.simulators import (
     EpisodeStep,
     GymLikeSimulatorAdapter,

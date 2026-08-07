@@ -5,12 +5,14 @@ from functools import wraps
 
 import pytest
 
-from embodied_runtime.contracts import (
+from embodied_runtime.engine import (
+    EngineConfig,
+    ExecutionEngine,
     InferenceRequest,
+    QueueFullError,
     RequestCancelledError,
     RequestDeadlineExceededError,
 )
-from embodied_runtime.engine import EngineConfig, ExecutionEngine, QueueFullError
 
 from .fakes import (
     FAKE_FORWARD_PACKAGE_ID,

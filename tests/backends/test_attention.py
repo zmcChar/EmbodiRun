@@ -4,7 +4,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from embodied_runtime.backends.torch_cuda.operators import (  # noqa: E402
+from embodied_runtime.backends.torch_cuda.operators import (
     EagerAttention,
     SDPAAttention,
     get_attention_operator,

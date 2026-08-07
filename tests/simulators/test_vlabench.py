@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from embodied_runtime.contracts import RobotAction
+from embodied_runtime.robots.action import RobotAction
 from embodied_runtime.simulators.vlabench import (
     VLABenchSimulatorEndpoint,
     observation_fingerprint,

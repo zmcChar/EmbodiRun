@@ -5,9 +5,8 @@ import json
 
 import pytest
 
-from embodied_runtime.contracts import PlanRequest, TaskGoal
 from embodied_runtime.distributed import AsyncPlannerEndpoint
-from embodied_runtime.integrations.planning import (
+from embodied_runtime.integrations.planning.hf_texas_holdem import (
     HfTexasHoldemPlanner,
     HfTexasHoldemPlannerConfig,
     PlannerInputError,
@@ -17,6 +16,7 @@ from embodied_runtime.integrations.planning import (
     build_texas_holdem_prompt,
     parse_texas_holdem_selection,
 )
+from embodied_runtime.tasks.planning import PlanRequest, TaskGoal
 
 _CARDS = (
     TexasHoldemCard("ace_of_hearts", "ace", "hearts"),

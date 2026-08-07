@@ -9,8 +9,9 @@ import time
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from embodied_runtime.contracts import InferenceRequest
-from embodied_runtime.integrations.serving import InferenceProvider, ProviderRegistry
+from embodied_runtime.engine.provider import InferenceProvider
+from embodied_runtime.engine.providers import ProviderRegistry
+from embodied_runtime.engine.request import InferenceRequest
 from embodied_runtime.models.vla.gr00t_n17 import (
     DEFAULT_CHECKPOINT,
     Gr00tN17Adapter,
@@ -53,7 +54,7 @@ async def run_gr00t_n17(
     adapter = Gr00tN17Adapter()
 
     def create_hf() -> InferenceProvider:
-        from embodied_runtime.integrations.serving.gr00t.hf_local import (
+        from embodied_runtime.integrations.gr00t.hf_local import (
             HfLocalGr00tProvider,
         )
 
@@ -66,7 +67,7 @@ async def run_gr00t_n17(
         )
 
     def create_vllm_omni() -> InferenceProvider:
-        from embodied_runtime.integrations.serving.gr00t.vllm_omni import (
+        from embodied_runtime.integrations.gr00t.vllm_omni import (
             VllmOmniGr00tProvider,
         )
 

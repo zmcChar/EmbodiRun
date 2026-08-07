@@ -4,18 +4,16 @@ import os
 
 import pytest
 
+torch = pytest.importorskip("torch")
+
+from embodied_runtime.backends.compile import CompileOptions
 from embodied_runtime.backends.torch_cuda import TorchCudaBackend
-from embodied_runtime.contracts import (
-    CompileOptions,
-    ModelAdapter,
-    RawRequest,
-    SingleForwardPlan,
-)
 from embodied_runtime.engine import ExecutionEngine
 from embodied_runtime.models import available_models, get_model_adapter
+from embodied_runtime.models.interfaces import ModelAdapter
+from embodied_runtime.models.plans.single_forward import SingleForwardPlan
+from embodied_runtime.models.request import RawRequest
 from embodied_runtime.models.vla.openvla_oft import OpenVLAOFTAdapter
-
-torch = pytest.importorskip("torch")
 
 
 class _InjectedProcessor:

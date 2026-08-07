@@ -16,7 +16,8 @@ from typing import Any
 
 import torch
 
-from embodied_runtime.contracts import ModelPackageError, RawRequest
+from ...errors import ModelPackageError
+from ...request import RawRequest
 
 LANGUAGE_TOKENS = "observation.language.tokens"
 LANGUAGE_ATTENTION_MASK = "observation.language.attention_mask"

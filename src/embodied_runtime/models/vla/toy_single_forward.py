@@ -5,16 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from embodied_runtime.contracts import (
-    EntrypointSpec,
-    ModelPackage,
-    ModelPackageError,
-    ModelSpec,
-    RawRequest,
-    SingleForwardPlan,
-)
-
+from ..errors import ModelPackageError
+from ..package import ModelPackage
+from ..plans.single_forward import SingleForwardPlan
 from ..registry import register_model
+from ..request import RawRequest
+from ..spec import EntrypointSpec, ModelSpec
 from .base import VLAAdapterBase
 
 

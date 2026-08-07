@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 import pytest
 
-from embodied_runtime.contracts import ExecutionPlan, ModelPackage, ModelSpec, TensorTree
 from embodied_runtime.engine import (
     ExecutionEngine,
     PlanRunnerRegistry,
@@ -13,6 +12,10 @@ from embodied_runtime.engine import (
     RunnerRequest,
     UnsupportedExecutionPlanError,
 )
+from embodied_runtime.models.package import ModelPackage
+from embodied_runtime.models.plans import ExecutionPlan
+from embodied_runtime.models.spec import ModelSpec
+from embodied_runtime.types import TensorTree
 
 from .fakes import FakeSession
 

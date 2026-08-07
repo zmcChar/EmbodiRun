@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import struct
+from collections.abc import Mapping
 from typing import Any
 
 import torch
 
-from embodied_runtime.contracts import IterativeFlowPlan
+from ...plans.iterative_flow import IterativeFlowPlan
 
 ACTION = "action"
 LANGUAGE_TOKENS = "observation.language.tokens"

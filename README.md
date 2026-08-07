@@ -9,52 +9,117 @@ vLLM-Omni.
 The neutral Python namespace is `embodied_runtime`; VLA is one model family
 under `embodied_runtime.models.vla`, not the boundary of the runtime.
 
-## Five-group boundary
+## Architecture and ownership
+
+Runtime decisions flow through domain-owned values:
 
 ```text
-models ── ModelPackage ──┐
-                        v
-                 inference provider
-                    /         \
-      local provider           external provider
-      engine → Backend         vLLM-Omni / MaaS
-                    \         /
-                     distributed
-                          |
-                        robots
+model checkpoint/runtime
+        │
+        v
+     models ── model-native prediction ──> policies
+                                                │ task-owned plan
+                                                v
+                                              tasks
+                                          ┌─────┴─────┐
+                                          v           v
+                                       robots     simulators
 ```
 
-The initial implementation concentrates on Groups 1, 3, and 4:
+Observations travel in the reverse direction. `models` owns model semantics,
+portable packages, execution plans, and model adapters. `policies` is the
+model-coupled translation layer: it turns native predictions into values owned
+by a task, such as `WaypointPlan`. `tasks` owns robot-independent requests,
+plans, interfaces, controllers, and closed loops. Physical `robots` and
+`simulators` implement those task-facing boundaries; neither task sessions nor
+models import a concrete Go2 or VLABench implementation.
 
-- `models/vla/pi05`: builds a staged π0.5 package (`encode_prefix`,
-  `init_state`, `denoise_step`, `finalize`) and owns reference parity.
-- `models/vla/smolvla`: exposes the same staged contract for the pinned
-  LeRobot 0.3.3 SmolVLA checkpoint, including its legacy flow schedule and
+Local inference has a separate execution path:
+
+```text
+ModelAdapter → ModelPackage → ExecutionEngine → BackendSession → device
+                                  ^                    ^
+                         request lifecycle      hardware execution
+```
+
+`engine` owns inference requests/results, the Provider interface, scheduling,
+batching, cancellation, memory admission, and execution-plan runners.
+`backends` owns devices, compilation artifacts, loaded sessions, memory
+statistics, and concrete Torch/CUDA, Ascend, and Horizon implementations. The
+Ascend and Horizon backends are currently declared extension points; only the
+Torch backend executes packages. External providers such as vLLM-Omni can
+implement the same Provider interface without constructing a local engine or
+backend.
+
+The remaining packages have narrow ownership:
+
+- `distributed` owns endpoint coordination, routing, failover, session
+  identity, and prototype transports; it does not schedule kernels.
+- `deployment` installs and supervises robot-resident services; it does not
+  decide task actions.
+- `evaluation` owns metrics, trial records, comparisons, and replay reports.
+- `integrations` adapts external serving, training, planning, and LeRobot
+  frameworks to the domain APIs.
+- `apps` is the composition root allowed to wire models, policies, tasks,
+  robots, simulators, engine, backends, and transports into runnable programs.
+- `utils` contains small ownership-free geometry, HTTP, and image helpers.
+
+The current source layout is:
+
+```text
+src/embodied_runtime/
+├── models/                 # model specs, packages, plans, VLA/VLN runtimes
+├── policies/navigation/    # Qwen, StreamVLN, InternVLA task adapters
+├── tasks/                  # navigation and high-level planning loops
+├── robots/unitree/go2/     # Go2 host clients and robot-resident agent
+├── simulators/             # simulator endpoints, traces, VLABench adapters
+├── engine/                 # Provider API and single-node execution engine
+├── backends/               # hardware interfaces and implementations
+├── distributed/            # communication, routing, failover, sessions
+├── deployment/unitree/go2/ # Go2 installation and service lifecycle
+├── evaluation/             # metrics, reports, and benchmark comparisons
+├── integrations/           # GR00T, planning, LeRobot, and RLinf adapters
+├── apps/                   # runnable composition roots
+└── utils/                  # geometry, HTTP, and image primitives
+```
+
+The Go2 navigation composition follows the same ownership chain:
+
+```text
+Qwen / StreamVLN / InternVLA policy
+        → tasks.navigation.WaypointPlan
+        → NavigationSession or ReactiveNavigationSession
+        → bounded planar velocity
+        → robots.unitree.go2.Go2ControlClient
+        → robot HTTP control service → Unitree SDK2
+```
+
+Qwen calls an already-running OpenAI-compatible endpoint. StreamVLN and
+InternVLA load their selected local runtime in the navigation process. All
+three return a task-owned `WaypointPlan`; none emits SDK commands. See
+[Go2 navigation](docs/go2_navigation.md) for the closed loop and verified
+commands.
+
+Implemented model execution includes:
+
+- `models/vla/pi05`: staged π0.5 execution (`encode_prefix`, `init_state`,
+  `denoise_step`, `finalize`) with reference parity.
+- `models/vla/smolvla`: the pinned LeRobot 0.3.3 SmolVLA flow schedule and
   robot-native action unnormalization.
-- `models/vla/openvla_oft`: builds a full-forward categorical-action package
-  and supplies the image/text preprocessing and action-token semantics.
-- `models/vla/gr00t_n17`: exposes NVIDIA's official GR00T N1.7 policy as a
-  formal single-forward package with a named-action contract. The same adapter
-  also fronts native vLLM-Omni serving over OpenPI.
-- `models/base.py`: defines the optional adapter base and the explicit
+- `models/vla/openvla_oft`: one full causal forward with image/text
+  preprocessing and categorical action-token decoding.
+- `models/vla/gr00t_n17`: NVIDIA GR00T N1.7 as a single-forward package and a
+  native vLLM-Omni/OpenPI provider path.
+- `models/base.py`: the reusable
   `preprocess_one → collate → unbatch → postprocess_one` cardinality boundary.
-- `integrations/serving`: defines the common Provider capabilities, lazy
-  Provider factories, a Backend-injected local Provider, and external serving
-  integrations.
-- `engine`: remains an internal local-Provider primitive. It selects a runner
-  from the package's `ExecutionPlan`, then owns request lifecycle,
-  cancellation, cooperative safe points, and memory policy.
-- `backends/torch_cuda`: probes devices and compiles, loads, and executes
-  package entrypoints and state-update primitives without importing π0.5.
+- `engine/providers`: the backend-injected local Provider and lazy Provider
+  registry; `distributed/multitenant` owns shared-session serving, while
+  `integrations/gr00t` owns the external GR00T/vLLM-Omni adapter.
 
-Two plans are implemented: `SingleForwardPlan` and `IterativeFlowPlan`.
-Model-family semantics and execution pattern are independent: π0.5 is a VLA
-using iterative flow, while OpenVLA-OFT is a real VLA using one causal forward
-and a categorical action-token head.
-
-`distributed` now contains asynchronous endpoint coordination and prototype
-transports. `robots` and the RLinf integration remain explicit interface
-boundaries for their owning groups.
+`SingleForwardPlan` and `IterativeFlowPlan` have engine runners today.
+Model-family semantics and execution pattern remain independent: π0.5 uses an
+iterative flow plan, while OpenVLA-OFT uses one causal forward and a categorical
+action-token head.
 
 ## Development
 
@@ -85,12 +150,12 @@ by default at the outer checkpoint boundary. Models with nested upstream
 dependencies may require their own cached snapshots; GR00T's Cosmos backbone
 is documented explicitly in the GR00T guide.
 
-The dependency-free contracts and core runtime target Python 3.10+. The
+The domain-owned values and core runtime target Python 3.10+. The
 `smolvla` endpoint is verified with Python 3.10 and LeRobot 0.3.3. The `pi05`
 extra requires Python 3.12+ because that is LeRobot 0.5.1's declared minimum,
 so the two real models intentionally run in separate environments.
 
-Run the small cross-group contract fixture:
+Run the small local engine/backend fixture:
 
 ```bash
 python examples/toy_flow_local.py --device cpu
@@ -180,7 +245,7 @@ This path constructs SmolVLA once through
 the edge result while π0.5 remains in flight, the next tick may select a fresh
 cached cloud result, and a connection-epoch change immediately falls back to
 SmolVLA. The policies retain their native `[50, 6]` and `[50, 32]` action
-contracts. `async_blend` is rejected because equal horizon does not imply
+schemas. `async_blend` is rejected because equal horizon does not imply
 compatible robot actions.
 
 Copy the standalone client to an edge host with Python 3.10+ and PyTorch, then
@@ -280,7 +345,7 @@ compatible model-owned schema and shape.
 Every wire request carries `robot_id`, `edge_node_id`, `session_id`,
 `sequence_id`, `observation_id`, and the actual JSON numeric observation. The
 service namespaces otherwise identical request IDs before they enter the shared
-engine and echoes authoritative identity and action-contract metadata on every
+engine and echoes authoritative identity and action-schema metadata on every
 result. This JSON path proves that observations cross a real process or host
 boundary; it is not a production RGB/depth codec and does not preserve an
 efficient tensor representation.
@@ -315,7 +380,7 @@ A real four-model deployment is also provided: two SmolVLA edge processes on
 one RTX 5080, one SmolVLA edge process on an RTX 3070, and one shared CPU
 SmolVLA service. See
 [`docs/smolvla_four_model_demo.md`](docs/smolvla_four_model_demo.md) for the
-fixed model contract, launch commands, health probe, disconnect test, and
+fixed model schema, launch commands, health probe, disconnect test, and
 acceptance criteria.
 
 Run a synthetic-image OpenVLA-OFT smoke test:
@@ -329,7 +394,7 @@ python examples/openvla_oft_synthetic.py \
 
 The current OpenVLA-OFT slice uses deterministic greedy decoding around one
 complete causal-model forward. It establishes the model/engine/backend
-contract, but does not yet implement prefix-KV splitting, rollout
+boundary, but does not yet implement prefix-KV splitting, rollout
 log-probability output, or CUDA Graph capture. The reference BF16 checkpoint
 is roughly 15.1 GB before activations, so a 16 GB GPU has very little headroom;
 this first correctness path should be validated on a larger GPU until a

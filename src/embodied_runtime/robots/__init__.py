@@ -1,15 +1,21 @@
-"""Group 5: the last mile between model actions and physical robots."""
+"""Physical robot drivers, SDK bindings, and robot-resident services."""
 
 from __future__ import annotations
 
 from importlib import import_module
 from typing import Any
 
-__all__ = ["ActionMapper", "ObservationMapper", "RobotProfile"]
+__all__ = [
+    "RobotAction",
+    "RobotAdapter",
+    "RobotObservation",
+    "RobotProfile",
+]
 
 _SYMBOL_MODULES = {
-    "ActionMapper": ".action",
-    "ObservationMapper": ".observation",
+    "RobotAction": ".action",
+    "RobotObservation": ".observation",
+    "RobotAdapter": ".interfaces",
     "RobotProfile": ".profile",
 }
 

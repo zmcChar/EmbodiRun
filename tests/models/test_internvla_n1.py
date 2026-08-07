@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import math
 from types import SimpleNamespace
 
 import numpy as np
@@ -17,9 +16,8 @@ from embodied_runtime.models.vla.internvla_n1 import (
     InternVLAOutputError,
     InternVLARuntime,
     InternVLARuntimeError,
-    NativePrediction,
-    convert_native_prediction,
     decode_depth_payload,
+    normalize_discrete_actions,
 )
 
 RGB = np.array(
@@ -234,60 +232,8 @@ def test_depth_rejects_rgb_shape_mismatch() -> None:
         decode_depth_payload(payload, expected_shape=(2, 3))
 
 
-def test_trajectory_drops_warmup_prefix_and_uses_path_tangents() -> None:
-    output = convert_native_prediction(
-        NativePrediction(
-            trajectory=[
-                [0.0, 0.0],
-                [0.02, 0.0],
-                [0.05, 0.01],
-                [0.10, 0.02],
-                [0.30, 0.10],
-            ]
-        ),
-        7,
-    )
-
-    assert not output.terminal
-    assert [(point.x_m, point.y_m) for point in output.waypoints] == [
-        (0.1, 0.02),
-        (0.3, 0.1),
-    ]
-    expected_yaw = math.atan2(0.08, 0.2)
-    assert output.waypoints[0].yaw_rad == pytest.approx(expected_yaw)
-    assert output.waypoints[1].yaw_rad == pytest.approx(expected_yaw)
-    assert output.as_dict()["kind"] == "waypoint_plan"
-
-
-def test_discrete_actions_convert_to_go2_spatial_waypoints() -> None:
-    output = convert_native_prediction(
-        NativePrediction(discrete_action=np.array([1, 2, 1, 3])),
-        2,
-    )
-
-    assert len(output.waypoints) == 4
-    assert output.waypoints[0].x_m == pytest.approx(0.25)
-    assert output.waypoints[1].yaw_rad == pytest.approx(math.radians(15.0))
-    assert output.waypoints[2].x_m == pytest.approx(0.25 + 0.25 * math.cos(math.radians(15.0)))
-    assert output.waypoints[2].y_m > 0.0
-    assert output.waypoints[-1].yaw_rad == pytest.approx(0.0)
-
-
-def test_stop_is_terminal_and_malformed_native_unions_are_rejected() -> None:
-    stopped = convert_native_prediction(NativePrediction(discrete_action=[0]), 9)
-    assert stopped.terminal
-    assert stopped.waypoints == ()
-
-    invalid = (
-        NativePrediction(),
-        NativePrediction(trajectory=[[0, 0]] * 4, discrete_action=[1]),
-        NativePrediction(trajectory=[[0, 0]] * 3),
-        NativePrediction(trajectory=[[0, 0]] * 3 + [[True, 0]]),
-        NativePrediction(trajectory=[[0, 0]] * 3 + [["1", 0]]),
-        NativePrediction(discrete_action=[0, 1]),
-        NativePrediction(discrete_action=[5]),
-        NativePrediction(discrete_action=[9]),
-    )
-    for native in invalid:
+def test_native_discrete_actions_preserve_integer_tokens_without_float_coercion() -> None:
+    assert normalize_discrete_actions(np.array([1, 2, 3])) == [1, 2, 3]
+    for invalid in ([True], [1.0], [], [1] * 65):
         with pytest.raises(InternVLAOutputError):
-            convert_native_prediction(native, 0)
+            normalize_discrete_actions(invalid)

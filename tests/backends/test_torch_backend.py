@@ -4,24 +4,27 @@ from dataclasses import dataclass
 
 import pytest
 
-torch = pytest.importorskip("torch")
-
-from embodied_runtime.backends import TorchBackendSession, TorchCudaBackend  # noqa: E402
-from embodied_runtime.backends.torch_cuda.compiler import (  # noqa: E402
-    TorchArtifactPayload,
-    make_payload,
-)
-from embodied_runtime.contracts import (  # noqa: E402
+from embodied_runtime.backends import (
     BackendExecutionError,
     CompileOptions,
     DeviceInfo,
-    ExecutionContext,
-    IterativeFlowPlan,
-    ModelPackage,
-    ModelSpec,
-    RequestCancelledError,
+    TorchBackendSession,
+    TorchCudaBackend,
     UnsupportedBackendError,
 )
+from embodied_runtime.backends.torch_cuda.compiler import (
+    TorchArtifactPayload,
+    make_payload,
+)
+from embodied_runtime.engine import (
+    ExecutionContext,
+    RequestCancelledError,
+)
+from embodied_runtime.models.package import ModelPackage
+from embodied_runtime.models.plans import IterativeFlowPlan
+from embodied_runtime.models.spec import ModelSpec
+
+torch = pytest.importorskip("torch")
 
 
 class TinyStages(torch.nn.Module):

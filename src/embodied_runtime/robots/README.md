@@ -1,12 +1,9 @@
-# Group 5 boundary
+# Physical robot boundary
 
-This domain owns the physical last mile:
+This domain owns vendor SDK bindings, sensor and control clients, and the
+small services deployed on a robot. It implements task-facing interfaces such
+as `tasks.navigation.MobileBase` and `ObservationSource`.
 
-- sensor schema and time synchronization;
-- model-to-robot observation mapping;
-- action scaling, frame conversion, and calibration;
-- control-loop timing, watchdog, safety limits, and emergency stop.
-
-It does not load models or call hardware acceleration APIs. A composition root
-connects a `RobotAdapter`, an `ObservationMapper`, an execution engine, and an
-`ActionMapper`.
+It does not load models or translate model-native outputs. Model semantics
+belong to `models`; translating those outputs into task plans belongs to
+`policies`; closed-loop execution belongs to `tasks`.

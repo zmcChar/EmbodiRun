@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-torch = pytest.importorskip("torch")
-
-from embodied_runtime.apps.action_fusion import (  # noqa: E402
+from embodied_runtime.apps.action_fusion import (
     blend_action_results,
     make_action_result_fuser,
 )
-from embodied_runtime.contracts import InferenceResult  # noqa: E402
+from embodied_runtime.engine import InferenceResult
+
+torch = pytest.importorskip("torch")
 
 
 def _result(

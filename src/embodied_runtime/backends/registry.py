@@ -5,7 +5,11 @@ from __future__ import annotations
 from collections.abc import Iterable
 from threading import RLock
 
-from embodied_runtime.contracts import Backend, DeviceInfo, ModelPackage, SupportReport
+from embodied_runtime.models.package import ModelPackage
+
+from .device import DeviceInfo
+from .interfaces import Backend
+from .support import SupportReport
 
 
 class BackendRegistry:
@@ -83,7 +87,7 @@ class BackendRegistry:
     ) -> tuple[Backend, DeviceInfo, SupportReport]:
         """Return the first supported backend/device pair.
 
-        Routing policy belongs to Group 2.  This deterministic helper is only a
+        Routing policy belongs to ``distributed``. This deterministic helper is only a
         local bootstrap mechanism for examples and tests.
         """
 

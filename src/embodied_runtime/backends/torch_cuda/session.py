@@ -1,147 +1,22 @@
-"""Loaded PyTorch artifact session."""
+"""Lifecycle and coordination for one loaded PyTorch artifact session."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import fields, is_dataclass, replace
+from collections.abc import Callable, Mapping
 from threading import RLock
 from typing import Any
 
-from embodied_runtime.contracts import (
-    BackendExecutionError,
-    DeviceInfo,
-    ExecutionContext,
-    MemoryStats,
-    RequestCancelledError,
-)
+from embodied_runtime.engine.context import ExecutionContext
+from embodied_runtime.engine.errors import RequestCancelledError
 
+from ..device import DeviceInfo
+from ..errors import BackendExecutionError
+from ..memory import MemoryStats
 from .compiler import TorchArtifactPayload
 from .cuda_graph import CudaGraphExecutor
 from .memory import memory_stats as read_memory_stats
-
-
-def _move_tensor_tree(
-    torch: Any,
-    value: Any,
-    *,
-    device: Any,
-    dtype: Any | None,
-    non_blocking: bool,
-) -> Any:
-    """Recursively move tensors while preserving the surrounding tree shape."""
-
-    if isinstance(value, torch.Tensor):
-        target_dtype = dtype if dtype is not None and value.is_floating_point() else None
-        return value.to(
-            device=device,
-            dtype=target_dtype,
-            non_blocking=non_blocking,
-        )
-    if isinstance(value, Mapping):
-        return {
-            key: _move_tensor_tree(
-                torch,
-                item,
-                device=device,
-                dtype=dtype,
-                non_blocking=non_blocking,
-            )
-            for key, item in value.items()
-        }
-    if isinstance(value, tuple):
-        moved = tuple(
-            _move_tensor_tree(
-                torch,
-                item,
-                device=device,
-                dtype=dtype,
-                non_blocking=non_blocking,
-            )
-            for item in value
-        )
-        if hasattr(value, "_fields"):
-            return type(value)(*moved)
-        return moved
-    if isinstance(value, list):
-        return [
-            _move_tensor_tree(
-                torch,
-                item,
-                device=device,
-                dtype=dtype,
-                non_blocking=non_blocking,
-            )
-            for item in value
-        ]
-    if is_dataclass(value) and not isinstance(value, type):
-        updates = {
-            field.name: _move_tensor_tree(
-                torch,
-                getattr(value, field.name),
-                device=device,
-                dtype=dtype,
-                non_blocking=non_blocking,
-            )
-            for field in fields(value)
-        }
-        return replace(value, **updates)
-    return value
-
-
-def _add_scaled_tree(torch: Any, state: Any, update: Any, scale: float) -> Any:
-    """Apply ``state + scale * update`` without moving arithmetic off-device."""
-
-    if isinstance(state, Mapping):
-        if not isinstance(update, Mapping) or state.keys() != update.keys():
-            raise TypeError("state and update mappings must have identical keys")
-        return type(state)(
-            (key, _add_scaled_tree(torch, state[key], update[key], scale)) for key in state
-        )
-    if isinstance(state, tuple):
-        if not isinstance(update, tuple) or len(state) != len(update):
-            raise TypeError("state and update tuples must have identical lengths")
-        values = tuple(
-            _add_scaled_tree(torch, left, right, scale) for left, right in zip(state, update)
-        )
-        if hasattr(state, "_fields"):
-            return type(state)(*values)
-        return values
-    if isinstance(state, list):
-        if not isinstance(update, list) or len(state) != len(update):
-            raise TypeError("state and update lists must have identical lengths")
-        return [_add_scaled_tree(torch, left, right, scale) for left, right in zip(state, update)]
-    if isinstance(state, Sequence) and not isinstance(state, (str, bytes, bytearray)):
-        if not isinstance(update, type(state)) or len(state) != len(update):
-            raise TypeError("state and update sequences must have identical lengths")
-        return type(state)(
-            _add_scaled_tree(torch, left, right, scale) for left, right in zip(state, update)
-        )
-    if is_dataclass(state) and not isinstance(state, type):
-        if not is_dataclass(update) or type(update) is not type(state):
-            raise TypeError("state and update dataclasses must have identical types")
-        return replace(
-            state,
-            **{
-                field.name: _add_scaled_tree(
-                    torch,
-                    getattr(state, field.name),
-                    getattr(update, field.name),
-                    scale,
-                )
-                for field in fields(state)
-            },
-        )
-    try:
-        if isinstance(state, torch.Tensor) and isinstance(update, torch.Tensor):
-            # Preserve the engine's declared Euler operation order exactly.
-            # ``torch.add(..., alpha=scale)`` may fuse multiply-add and round
-            # differently from the model/reference expression.
-            return state + update * scale
-        return state + update * scale
-    except (TypeError, ValueError, RuntimeError) as error:
-        raise TypeError(
-            f"cannot add scaled leaves {type(state).__name__} and {type(update).__name__}"
-        ) from error
+from .session_stage import actual_execution_mode, execute_stage, synchronize_if_needed
+from .session_transfer import add_scaled_tree, move_tensor_tree
 
 
 class TorchBackendSession:
@@ -158,8 +33,8 @@ class TorchBackendSession:
         self._torch = torch
         self._device_info = device
         self._torch_device = torch.device(payload.device_id)
-        # Compilation artifacts are reusable.  All dictionaries changed by
-        # deferred fallback or close must therefore belong to this session.
+        # Artifacts are reusable; deferred fallback and close mutate only this
+        # session-owned payload copy.
         self._payload = payload.for_session()
         self._release_module = release_module or (lambda: None)
         self._cuda_graph_lock = RLock()
@@ -203,90 +78,11 @@ class TorchBackendSession:
 
     @property
     def actual_mode(self) -> str:
-        modes = {
-            self._payload.entrypoints[name] is self._payload.eager_entrypoints[name]
-            for name in self._payload.entrypoints
-        }
-        if modes == {True}:
-            return "eager"
-        if modes == {False}:
-            return "compile"
-        return "mixed"
+        return actual_execution_mode(self._payload)
 
     def _ensure_open(self) -> None:
         if self._closed:
             raise BackendExecutionError("PyTorch backend session is closed")
-
-    def _invoke(self, entrypoint: str, inputs: Any) -> Any:
-        try:
-            function = self._payload.entrypoints[entrypoint]
-        except KeyError as error:
-            available = ", ".join(sorted(self._payload.entrypoints))
-            raise BackendExecutionError(
-                f"unknown model entrypoint {entrypoint!r}; available: {available}"
-            ) from error
-
-        try:
-            return function(inputs)
-        except Exception as compiled_error:
-            eager = self._payload.eager_entrypoints[entrypoint]
-            is_compiled = function is not eager
-            if not (is_compiled and self._payload.fallback_to_eager):
-                raise BackendExecutionError(
-                    f"PyTorch entrypoint {entrypoint!r} failed on "
-                    f"{self._payload.device_id}: {type(compiled_error).__name__}: "
-                    f"{compiled_error}"
-                ) from compiled_error
-            try:
-                output = eager(inputs)
-            except Exception as eager_error:
-                raise BackendExecutionError(
-                    f"compiled and eager execution both failed for {entrypoint!r}; "
-                    f"compiled={type(compiled_error).__name__}: {compiled_error}; "
-                    f"eager={type(eager_error).__name__}: {eager_error}"
-                ) from eager_error
-            self._payload.entrypoints[entrypoint] = eager
-            self._payload.compile_failures[entrypoint] = (
-                f"deferred {type(compiled_error).__name__}: {compiled_error}"
-            )
-            return output
-
-    def _synchronize_if_needed(self) -> None:
-        if self._payload.synchronize_on_submit and self._payload.device_id.startswith("cuda"):
-            self._torch.cuda.synchronize(self._torch_device)
-
-    def _execute_moved(self, entrypoint: str, moved_inputs: Any, *, use_cuda_graph: bool) -> Any:
-        try:
-            if use_cuda_graph:
-                assert self._cuda_graphs is not None
-
-                def invoke(inputs: Any) -> Any:
-                    return self._invoke(entrypoint, inputs)
-
-                if self._payload.inference_mode:
-                    with self._torch.inference_mode():
-                        output = self._cuda_graphs.execute(entrypoint, moved_inputs, invoke)
-                else:  # rejected when CUDA Graph entrypoints are configured
-                    output = self._cuda_graphs.execute(entrypoint, moved_inputs, invoke)
-            elif self._payload.inference_mode:
-                with self._torch.inference_mode():
-                    output = self._invoke(entrypoint, moved_inputs)
-            else:
-                output = self._invoke(entrypoint, moved_inputs)
-        except (BackendExecutionError, RequestCancelledError):
-            raise
-        except Exception as error:
-            raise BackendExecutionError(
-                f"PyTorch entrypoint {entrypoint!r} failed: {type(error).__name__}: {error}"
-            ) from error
-        try:
-            self._synchronize_if_needed()
-        except Exception as error:
-            raise BackendExecutionError(
-                f"CUDA synchronization failed after entrypoint {entrypoint!r}: "
-                f"{type(error).__name__}: {error}"
-            ) from error
-        return output
 
     def _submit_impl(
         self,
@@ -297,7 +93,7 @@ class TorchBackendSession:
         self._ensure_open()
         if context.cancelled:
             raise RequestCancelledError(f"request cancelled before entrypoint {entrypoint!r}")
-        moved_inputs = _move_tensor_tree(
+        moved_inputs = move_tensor_tree(
             self._torch,
             inputs,
             device=self._torch_device,
@@ -305,7 +101,11 @@ class TorchBackendSession:
             non_blocking=self._payload.non_blocking,
         )
         use_cuda_graph = self._cuda_graphs is not None and self._cuda_graphs.handles(entrypoint)
-        output = self._execute_moved(
+        output = execute_stage(
+            self._torch,
+            self._torch_device,
+            self._payload,
+            self._cuda_graphs,
             entrypoint,
             moved_inputs,
             use_cuda_graph=use_cuda_graph,
@@ -323,9 +123,8 @@ class TorchBackendSession:
         context: ExecutionContext,
     ) -> Any:
         if self._cuda_graphs is not None:
-            # Static graph buffers and capture must not overlap another
-            # operation in this session. Include non-captured stages, input
-            # movement, and final synchronization in the same critical section.
+            # Static buffers, transfer, non-captured stages, and final sync all
+            # share one session-local critical section.
             with self._cuda_graph_lock:
                 return self._submit_impl(entrypoint, inputs, context)
         return self._submit_impl(entrypoint, inputs, context)
@@ -337,19 +136,17 @@ class TorchBackendSession:
         scale: float,
         context: ExecutionContext,
     ) -> Any:
-        """Execute an Euler state update on the session's device."""
-
         self._ensure_open()
         if context.cancelled:
             raise RequestCancelledError("request cancelled before backend state update")
-        moved_state = _move_tensor_tree(
+        moved_state = move_tensor_tree(
             self._torch,
             state,
             device=self._torch_device,
             dtype=self._payload.dtype,
             non_blocking=self._payload.non_blocking,
         )
-        moved_update = _move_tensor_tree(
+        moved_update = move_tensor_tree(
             self._torch,
             update,
             device=self._torch_device,
@@ -357,8 +154,8 @@ class TorchBackendSession:
             non_blocking=self._payload.non_blocking,
         )
         try:
-            output = _add_scaled_tree(self._torch, moved_state, moved_update, scale)
-            self._synchronize_if_needed()
+            output = add_scaled_tree(self._torch, moved_state, moved_update, scale)
+            synchronize_if_needed(self._torch, self._torch_device, self._payload)
         except Exception as error:
             raise BackendExecutionError(
                 f"PyTorch state update failed on {self._payload.device_id}: "
@@ -402,18 +199,18 @@ class TorchBackendSession:
                     or self._payload.empty_cache_on_close
                 ):
                     self._torch.cuda.synchronize(self._torch_device)
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001
                 failure = error
             try:
                 if self._cuda_graphs is not None:
                     self._cuda_graphs.close()
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001
                 if failure is None:
                     failure = error
             try:
                 if is_cuda and self._payload.offload_module_on_close and module is not None:
                     module.to(device=self._torch.device("cpu"))
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001
                 if failure is None:
                     failure = error
             try:
@@ -424,11 +221,11 @@ class TorchBackendSession:
                 if is_cuda and self._payload.empty_cache_on_close:
                     try:
                         self._torch.cuda.empty_cache()
-                    except Exception as error:
+                    except Exception as error:  # noqa: BLE001
                         if failure is None:
                             failure = error
                 self._release_module()
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001
                 if failure is None:
                     failure = error
         if failure is not None:
@@ -436,3 +233,6 @@ class TorchBackendSession:
                 f"could not release PyTorch session on {self._payload.device_id}: "
                 f"{type(failure).__name__}: {failure}"
             ) from failure
+
+
+__all__ = ["TorchBackendSession"]

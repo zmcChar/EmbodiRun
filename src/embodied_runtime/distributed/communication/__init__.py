@@ -2,9 +2,9 @@
 
 from .base import AsyncInferenceEndpoint, AsyncRemoteInferenceEndpoint, Transport
 from .cloud_session import (
+    MULTI_ROBOT_PROTOCOL_VERSION,
     CloudSessionProtocolError,
     CloudSessionRemoteError,
-    MULTI_ROBOT_PROTOCOL_VERSION,
     MultiTenantTcpEndpoint,
     json_compatible,
 )
@@ -31,13 +31,13 @@ from .tcp_json import (
 )
 
 __all__ = [
+    "MULTI_ROBOT_PROTOCOL_VERSION",
     "AsyncInferenceEndpoint",
     "AsyncRemoteInferenceEndpoint",
     "CloudSessionProtocolError",
     "CloudSessionRemoteError",
     "DummyLink",
     "DummyRemoteInferenceEndpoint",
-    "MULTI_ROBOT_PROTOCOL_VERSION",
     "MultiTenantTcpEndpoint",
     "OpenPIConnectionFactory",
     "OpenPIDependencyError",

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+import inspect
 import math
 import sys
 import types
@@ -9,38 +11,23 @@ from unittest import mock
 
 import pytest
 
+import embodied_runtime.models.vln.streamvln as streamvln_package
 from embodied_runtime.models.vln.streamvln import (
+    StreamVLNConfig,
     StreamVLNEvaluator,
     StreamVLNInferenceError,
     StreamVLNLoadError,
     StreamVLNNativeOutputError,
     StreamVLNRuntime,
-    actions_to_cumulative_waypoints,
+    normalize_native_actions,
 )
-
-
-def test_native_actions_form_cumulative_go2_path_and_stop_truncates() -> None:
-    plan = actions_to_cumulative_waypoints([1, 2, 1, 0])
-
-    assert plan.terminal
-    assert len(plan.waypoints) == 3
-    assert plan.waypoints[0].as_dict() == {"x_m": 0.25, "y_m": 0.0, "yaw_rad": 0.0}
-    assert plan.waypoints[1].x_m == pytest.approx(0.25)
-    assert plan.waypoints[1].yaw_rad == pytest.approx(math.pi / 12.0)
-    assert plan.waypoints[2].x_m == pytest.approx(0.25 + 0.25 * math.cos(math.pi / 12.0))
-    assert plan.waypoints[2].y_m == pytest.approx(0.25 * math.sin(math.pi / 12.0))
-
-    stopped = actions_to_cumulative_waypoints([0])
-    assert stopped.terminal
-    assert stopped.waypoints == ()
-    assert actions_to_cumulative_waypoints([1, 0, 99]).terminal
-    assert actions_to_cumulative_waypoints([1, 0, 99, 99, 99]).terminal
+from embodied_runtime.models.vln.streamvln.history import compact_aligned_history
 
 
 @pytest.mark.parametrize("actions", [[], [True], [1.0], [4], [1, 1, 1, 1, 1]])
 def test_invalid_native_actions_are_not_coerced(actions: list[object]) -> None:
     with pytest.raises(StreamVLNNativeOutputError):
-        actions_to_cumulative_waypoints(actions)
+        normalize_native_actions(actions)
 
 
 def test_official_text_action_parser_preserves_order() -> None:
@@ -75,6 +62,68 @@ def test_memory_rollover_retains_effective_history_and_bounds_all_aligned_lists(
     assert evaluator.depth_list == [("depth", step) for step in evaluator.frame_ids]
     assert evaluator.pose_list == [("pose", step) for step in evaluator.frame_ids]
     assert evaluator.intrinsic_list == [("intrinsic", step) for step in evaluator.frame_ids]
+
+
+def test_history_compaction_is_model_independent_and_keeps_payloads_aligned() -> None:
+    compacted = compact_aligned_history(
+        list(range(12)),
+        ([f"rgb-{step}" for step in range(12)], [f"pose-{step}" for step in range(12)]),
+        next_step_id=12,
+        num_history=3,
+    )
+
+    assert compacted.frame_ids == [0, 4, 8]
+    assert compacted.aligned == (
+        ["rgb-0", "rgb-4", "rgb-8"],
+        ["pose-0", "pose-4", "pose-8"],
+    )
+
+
+def test_checkpoint_names_preserve_hub_ids_and_materialize_existing_paths(tmp_path: Path) -> None:
+    local_checkpoint = tmp_path / "checkpoint"
+    local_checkpoint.mkdir()
+
+    remote = StreamVLNConfig(streamvln_root=tmp_path, model_path="  org/model  ", warmup=False)
+    local = StreamVLNConfig(
+        streamvln_root=tmp_path,
+        model_path=local_checkpoint,
+        warmup=False,
+    )
+
+    assert remote.model_path == "org/model"
+    assert local.model_path == str(local_checkpoint.resolve())
+
+
+def test_streamvln_package_drops_engine_alias_and_model_domain_dependencies() -> None:
+    legacy_engine_name = "Lazy" + "StreamVLN" + "Engine"
+    assert legacy_engine_name not in streamvln_package.__all__
+    assert not hasattr(streamvln_package, legacy_engine_name)
+
+    package_dir = Path(inspect.getfile(streamvln_package)).parent
+    forbidden = (
+        "embodied_runtime.backends",
+        "embodied_runtime.engine",
+        "embodied_runtime.policies",
+        "embodied_runtime.tasks",
+    )
+    for source_path in package_dir.glob("*.py"):
+        tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+        imported = [
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module is not None
+        ]
+        imported.extend(
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        )
+        assert not any(
+            module == prefix or module.startswith(f"{prefix}.")
+            for module in imported
+            for prefix in forbidden
+        ), source_path
 
 
 class _FakeNativeModel:
@@ -355,9 +404,11 @@ def test_predict_preserves_image_instruction_actions_and_official_four_step_cade
     assert prediction.actions == (1, 2, 1, 0)
     assert prediction.raw_output == "↑←↑STOP"
     assert prediction.generation_time_s == pytest.approx(0.125)
-    assert prediction.terminal
-    assert len(prediction.waypoints) == 3
-    assert prediction.as_dict()["waypoints"][0]["x_m"] == pytest.approx(0.25)
+    assert prediction.as_dict() == {
+        "actions": [1, 2, 1, 0],
+        "raw_output": "↑←↑STOP",
+        "generation_time_s": pytest.approx(0.125),
+    }
 
 
 def test_partial_cadence_is_discarded_and_requires_explicit_reset(tmp_path: Path) -> None:

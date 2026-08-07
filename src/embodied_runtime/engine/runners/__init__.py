@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from embodied_runtime.contracts import IterativeFlowPlan, SingleForwardPlan
+from embodied_runtime.models.plans import IterativeFlowPlan, SingleForwardPlan
 
 from ..plan_runner import PlanRunnerRegistry
 from .iterative_flow import IterativeFlowRunner

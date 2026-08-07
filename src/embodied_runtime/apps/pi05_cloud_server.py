@@ -7,20 +7,17 @@ import asyncio
 import contextlib
 import math
 import socket
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from embodied_runtime.backends.torch_cuda import TorchCudaBackend
-from embodied_runtime.contracts import CompileOptions, InferenceRequest
 from embodied_runtime.distributed.communication import (
     read_json_message,
     write_json_message,
 )
-from embodied_runtime.engine import ExecutionEngine
-from embodied_runtime.models.vla.pi05 import Pi05Adapter
+from embodied_runtime.engine.request import InferenceRequest
 
-from .pi05_cpu_gpu_collaboration import load_pi05_cpu_gpu_config
+from .cloud_edge.pi05_settings import load_pi05_cpu_gpu_config
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,8 +53,8 @@ class Pi05CloudServerConfig:
 
 @dataclass(slots=True)
 class _CloudRuntime:
-    adapter: Pi05Adapter
-    engine: ExecutionEngine
+    adapter: Any
+    engine: Any
     payload: Mapping[str, Any]
     _closed: bool = False
 
@@ -79,13 +76,34 @@ def run_pi05_cloud_server(config: Pi05CloudServerConfig) -> None:
         runtime.close()
 
 
-def _build_cloud_runtime(config: Pi05CloudServerConfig) -> _CloudRuntime:
-    adapter = Pi05Adapter()
+def _build_cloud_runtime(
+    config: Pi05CloudServerConfig,
+    *,
+    adapter_factory: Callable[[], Any] | None = None,
+    backend_factory: Callable[[], Any] | None = None,
+    engine_factory: Callable[..., Any] | None = None,
+) -> _CloudRuntime:
+    from embodied_runtime.backends.compile import CompileOptions
+
+    if adapter_factory is None:
+        from embodied_runtime.models.vla.pi05 import Pi05Adapter
+
+        adapter_factory = Pi05Adapter
+    if backend_factory is None:
+        from embodied_runtime.backends.torch_cuda import TorchCudaBackend
+
+        backend_factory = TorchCudaBackend
+    if engine_factory is None:
+        from embodied_runtime.engine import ExecutionEngine
+
+        engine_factory = ExecutionEngine
+
+    adapter = adapter_factory()
     package = adapter.build_package(
         config.checkpoint,
         local_files_only=config.local_files_only,
     )
-    backend = TorchCudaBackend()
+    backend = backend_factory()
     devices = {device.device_id: device for device in backend.probe()}
     try:
         device = devices[config.device]
@@ -112,7 +130,7 @@ def _build_cloud_runtime(config: Pi05CloudServerConfig) -> _CloudRuntime:
     )
     session = backend.load(artifact)
     try:
-        engine = ExecutionEngine(
+        engine = engine_factory(
             package,
             session,
             batcher=adapter.collate,
@@ -148,7 +166,7 @@ async def _serve(
                 timeout_s=config.request_timeout_s,
             )
             response = await _dispatch(runtime, config, request)
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - serialize request failure to peer
             response = {
                 "ok": False,
                 "error_type": type(error).__name__,

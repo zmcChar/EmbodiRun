@@ -6,11 +6,13 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from embodied_runtime.apps.pi05_cpu_gpu_collaboration import (  # noqa: E402
-    Pi05CpuGpuConfig,
+from embodied_runtime.apps.cloud_edge.pi05_collaboration import (
     run_pi05_cpu_gpu_collaboration,
 )
-from embodied_runtime.distributed import FailoverConfig, FailoverMode  # noqa: E402
+from embodied_runtime.apps.cloud_edge.pi05_settings import (
+    Pi05CpuGpuConfig,
+)
+from embodied_runtime.distributed import FailoverConfig, FailoverMode
 
 
 @pytest.mark.pi05

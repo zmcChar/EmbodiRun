@@ -4,18 +4,16 @@ import time
 
 import pytest
 
-from embodied_runtime.contracts import (
-    InferenceRequest,
-    MemoryStats,
-    RawRequest,
-    RequestDeadlineExceededError,
-)
+from embodied_runtime.backends import MemoryStats
 from embodied_runtime.engine import (
     EngineConfig,
     EnginePayloadError,
     ExecutionEngine,
+    InferenceRequest,
     MemoryBudgetExceededError,
+    RequestDeadlineExceededError,
 )
+from embodied_runtime.models.request import RawRequest
 
 from .fakes import (
     FAKE_FORWARD_PACKAGE_ID,

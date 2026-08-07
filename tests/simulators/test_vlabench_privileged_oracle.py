@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from embodied_runtime.contracts import RobotObservation
+from embodied_runtime.robots.observation import RobotObservation
 from embodied_runtime.simulators import EpisodeStep
 from embodied_runtime.simulators.vlabench_privileged_oracle import (
     SIMULATOR_ORACLE_UPPER_BOUND,

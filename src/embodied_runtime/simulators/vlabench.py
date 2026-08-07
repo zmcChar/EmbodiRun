@@ -7,17 +7,37 @@ not require the dedicated simulation environment.
 
 from __future__ import annotations
 
-import hashlib
 import random
 import time
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from embodied_runtime.contracts import RobotAction, RobotObservation
+from embodied_runtime.robots.action import RobotAction
+from embodied_runtime.robots.observation import RobotObservation
 
+from ._vlabench_environment import (
+    VLABENCH_ACTION_DIM,
+)
+from ._vlabench_environment import (
+    action_array as _action_array,
+)
+from ._vlabench_environment import (
+    extract_instruction as _extract_instruction,
+)
+from ._vlabench_environment import (
+    make_environment as _make_environment,
+)
+from ._vlabench_environment import (
+    success_from_info as _success_from_info,
+)
+from ._vlabench_environment import (
+    unpack_reset as _unpack_reset,
+)
+from ._vlabench_environment import (
+    unpack_step as _unpack_step,
+)
 from .base import EpisodeStep, SimulatorCapabilities
-
-VLABENCH_ACTION_DIM = 7
+from .vlabench_fingerprint import observation_fingerprint
 
 
 class VLABenchSimulatorEndpoint:
@@ -251,120 +271,6 @@ class VLABenchSimulatorEndpoint:
     def _ensure_open(self) -> None:
         if self._closed:
             raise RuntimeError("VLABench endpoint is closed")
-
-
-def observation_fingerprint(values: Any) -> str:
-    """Return a stable content digest for paired-reset validation."""
-
-    digest = hashlib.sha256()
-    _update_digest(digest, values)
-    return digest.hexdigest()
-
-
-def _update_digest(digest: Any, value: Any) -> None:
-    if isinstance(value, Mapping):
-        digest.update(b"mapping:")
-        for key in sorted(value, key=str):
-            digest.update(str(key).encode("utf-8"))
-            digest.update(b"=")
-            _update_digest(digest, value[key])
-        return
-    if isinstance(value, (tuple, list)):
-        digest.update(f"sequence:{len(value)}:".encode())
-        for item in value:
-            _update_digest(digest, item)
-        return
-
-    shape = getattr(value, "shape", None)
-    dtype = getattr(value, "dtype", None)
-    tobytes = getattr(value, "tobytes", None)
-    if shape is not None and dtype is not None and callable(tobytes):
-        digest.update(f"array:{tuple(shape)}:{dtype}:".encode())
-        digest.update(tobytes())
-        return
-    if isinstance(value, bytes):
-        digest.update(b"bytes:")
-        digest.update(value)
-        return
-    digest.update(f"scalar:{type(value).__name__}:{value!r}".encode())
-
-
-def _make_environment(**kwargs: Any) -> Any:
-    from embodied_runtime.integrations.lerobot.vlabench_camera import (
-        make_semantic_vlabench_environment,
-    )
-
-    return make_semantic_vlabench_environment(**kwargs)
-
-
-def _extract_instruction(environment: Any, *, fallback: str) -> str:
-    task_object = getattr(getattr(environment, "_env", None), "task", None)
-    get_instruction = getattr(task_object, "get_instruction", None)
-    if callable(get_instruction):
-        instruction = get_instruction()
-        if isinstance(instruction, str) and instruction.strip():
-            return instruction.strip()
-        if isinstance(instruction, (tuple, list)):
-            for candidate in instruction:
-                if isinstance(candidate, str) and candidate.strip():
-                    return candidate.strip()
-
-    for owner in (task_object, environment):
-        for name in ("task_description", "language_instruction", "instruction"):
-            candidate = getattr(owner, name, None)
-            if isinstance(candidate, str) and candidate.strip() and candidate != fallback:
-                return candidate.strip()
-        candidates = getattr(owner, "instructions", None)
-        if isinstance(candidates, (tuple, list)):
-            for candidate in candidates:
-                if isinstance(candidate, str) and candidate.strip():
-                    return candidate.strip()
-    return fallback
-
-
-def _action_array(values: Any) -> Any:
-    raw = values.get("action") if isinstance(values, Mapping) and "action" in values else values
-    try:
-        import numpy as np
-    except ImportError as error:
-        raise RuntimeError(
-            "VLABench execution requires NumPy in the isolated simulator environment"
-        ) from error
-    action = np.asarray(raw, dtype=np.float32)
-    if action.shape != (VLABENCH_ACTION_DIM,):
-        raise ValueError(
-            f"VLABench action must have shape ({VLABENCH_ACTION_DIM},), got {action.shape}"
-        )
-    if not np.isfinite(action).all():
-        raise ValueError("VLABench action must contain only finite values")
-    return action
-
-
-def _unpack_reset(result: Any) -> tuple[Any, Mapping[str, Any]]:
-    if isinstance(result, tuple) and len(result) == 2:
-        observation, info = result
-        if not isinstance(info, Mapping):
-            raise TypeError("VLABench reset info must be a mapping")
-        return observation, info
-    return result, {}
-
-
-def _unpack_step(
-    result: Any,
-) -> tuple[Any, float, bool, bool, Mapping[str, Any]]:
-    if not isinstance(result, tuple) or len(result) != 5:
-        raise ValueError("VLABench step must return five values")
-    observation, reward, terminated, truncated, info = result
-    if not isinstance(info, Mapping):
-        raise TypeError("VLABench step info must be a mapping")
-    return observation, float(reward), bool(terminated), bool(truncated), dict(info)
-
-
-def _success_from_info(info: Mapping[str, Any]) -> bool | None:
-    value = info.get("is_success", info.get("success"))
-    if value is None:
-        return None
-    return bool(value)
 
 
 __all__ = [

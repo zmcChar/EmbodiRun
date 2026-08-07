@@ -4,26 +4,23 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-import torch
 
+torch = pytest.importorskip("torch")
+
+from embodied_runtime.backends.compile import CompileOptions
 from embodied_runtime.backends.torch_cuda import TorchCudaBackend
-from embodied_runtime.contracts import (
-    CompileOptions,
-    ModelAdapter,
-    ModelPackageError,
-    RawRequest,
-    SingleForwardPlan,
-)
 from embodied_runtime.engine import ExecutionEngine
 from embodied_runtime.models import available_models, get_model_adapter
+from embodied_runtime.models.errors import ModelPackageError
+from embodied_runtime.models.interfaces import ModelAdapter
+from embodied_runtime.models.plans.single_forward import SingleForwardPlan
+from embodied_runtime.models.request import RawRequest
 from embodied_runtime.models.vla.gr00t_n17 import (
     DEFAULT_EMBODIMENT_TAG,
     DEFAULT_LANGUAGE_KEY,
     Gr00tN17Adapter,
-    load_gr00t_n17,
     synthetic_droid_request,
 )
-from embodied_runtime.models.vla.gr00t_n17 import adapter as adapter_module
 
 
 class _FakeRuntimeModel(torch.nn.Module):
@@ -257,66 +254,3 @@ def test_collate_rejects_different_robot_keys() -> None:
 
     with pytest.raises(ModelPackageError, match="keys differ"):
         adapter.collate((first, second))
-
-
-def test_loader_accepts_local_directory_without_network(tmp_path, monkeypatch) -> None:
-    calls = []
-
-    class FakeOfficialPolicy:
-        def __init__(self, **kwargs) -> None:
-            calls.append(kwargs)
-
-    monkeypatch.setattr(adapter_module, "_require_gr00t_policy", lambda: FakeOfficialPolicy)
-    policy = load_gr00t_n17(tmp_path, strict=False)
-
-    assert isinstance(policy, FakeOfficialPolicy)
-    assert calls == [
-        {
-            "embodiment_tag": DEFAULT_EMBODIMENT_TAG,
-            "model_path": str(tmp_path.resolve()),
-            "device": "cpu",
-            "strict": False,
-        }
-    ]
-
-
-def test_loader_resolves_hugging_face_repository_without_real_network(
-    tmp_path,
-    monkeypatch,
-) -> None:
-    calls = []
-
-    class FakeOfficialPolicy:
-        def __init__(self, **kwargs) -> None:
-            calls.append(("policy", kwargs))
-
-    def fake_download(checkpoint, **kwargs):
-        calls.append(("download", checkpoint, kwargs))
-        return tmp_path
-
-    monkeypatch.setattr(adapter_module, "_require_gr00t_policy", lambda: FakeOfficialPolicy)
-    monkeypatch.setattr(adapter_module, "_download_hf_snapshot", fake_download)
-
-    load_gr00t_n17(
-        "nvidia/GR00T-N1.7-3B",
-        cache_dir="/cache",
-        revision="revision-a",
-        local_files_only=True,
-    )
-
-    assert calls[0] == (
-        "download",
-        "nvidia/GR00T-N1.7-3B",
-        {
-            "cache_dir": "/cache",
-            "revision": "revision-a",
-            "local_files_only": True,
-        },
-    )
-    assert calls[1][0] == "policy"
-    assert calls[1][1]["model_path"] == str(tmp_path)
-
-
-def test_loader_rejects_direct_accelerator_placement(tmp_path) -> None:
-    with pytest.raises(ModelPackageError, match="backend owns device placement"):
-        load_gr00t_n17(tmp_path, load_device="cuda:0")

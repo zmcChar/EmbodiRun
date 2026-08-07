@@ -6,9 +6,10 @@ import argparse
 from collections.abc import Sequence
 from typing import Any
 
+from embodied_runtime.backends.compile import CompileOptions
 from embodied_runtime.backends.torch_cuda import TorchCudaBackend
-from embodied_runtime.contracts import CompileOptions, RawRequest
 from embodied_runtime.engine import ExecutionEngine
+from embodied_runtime.models.request import RawRequest
 from embodied_runtime.models.vla.toy_flow import ToyFlowAdapter
 
 
@@ -32,7 +33,7 @@ def run_toy_flow(
     num_steps: int = 4,
     seed: int = 0,
 ) -> dict[str, Any]:
-    """Compose Group 1, Group 3, and Group 4 and return one inference summary."""
+    """Compose a model adapter, execution engine, and backend."""
 
     adapter = ToyFlowAdapter(action_horizon=3, action_dim=len(target))
     package = adapter.build_package()

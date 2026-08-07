@@ -19,7 +19,11 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from typing import Any, Generic, TypeVar
 
-from embodied_runtime.contracts import ModelPackage, ModelPackageError, ModelSpec, TensorTree
+from embodied_runtime.types import TensorTree
+
+from .errors import ModelPackageError
+from .package import ModelPackage
+from .spec import ModelSpec
 
 RequestT = TypeVar("RequestT")
 ResultT = TypeVar("ResultT")
@@ -143,8 +147,9 @@ def _unbatch_tree(value: Any, index: int, batch_size: int, *, path: str = "outpu
 class BaseModelAdapter(ABC, Generic[RequestT, ResultT]):
     """Optional internal base class implementing the public adapter protocol.
 
-    External adapters only need to satisfy ``contracts.ModelAdapter`` and are
-    not required to inherit this class.
+    External adapters only need to satisfy
+    :class:`embodied_runtime.models.interfaces.ModelAdapter` and are not
+    required to inherit this class.
     """
 
     @abstractmethod
@@ -176,18 +181,6 @@ class BaseModelAdapter(ABC, Generic[RequestT, ResultT]):
     @abstractmethod
     def postprocess_one(self, output: TensorTree) -> ResultT:
         """Interpret one output after its batch dimension has been removed."""
-
-    # These two wrappers preserve source compatibility with the prototype's
-    # original API. New integrations should call the four cardinality-explicit
-    # methods above.
-    def preprocess(self, requests: Sequence[RequestT]) -> TensorTree:
-        return self.collate(tuple(self.preprocess_one(request) for request in requests))
-
-    def postprocess(self, outputs: TensorTree) -> Sequence[ResultT]:
-        raise NotImplementedError(
-            "legacy postprocess cannot infer generic output cardinality; call "
-            "unbatch(outputs, batch_size) and postprocess_one(output)"
-        )
 
 
 __all__ = ["BaseModelAdapter"]

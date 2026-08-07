@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -14,8 +14,6 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
     import tomli as tomllib
 
-from embodied_runtime.backends.torch_cuda import TorchCudaBackend
-from embodied_runtime.contracts import CompileOptions, InferenceRequest, RawRequest
 from embodied_runtime.distributed import (
     AsyncFailoverCoordinator,
     FailoverConfig,
@@ -26,8 +24,8 @@ from embodied_runtime.distributed.communication import (
     DummyLink,
     DummyRemoteInferenceEndpoint,
 )
-from embodied_runtime.engine import ExecutionEngine
-from embodied_runtime.models.vla.toy_single_forward import ToySingleForwardAdapter
+from embodied_runtime.engine.request import InferenceRequest
+from embodied_runtime.models.request import RawRequest
 
 from .action_fusion import make_action_result_fuser
 
@@ -39,7 +37,9 @@ class DemoConfig:
     disconnect_tick: int | None = 5
     reconnect_tick: int | None = 8
     one_way_latency_s: float = 0.04
-    failover: FailoverConfig = FailoverConfig(max_cloud_sequence_lag=4)
+    failover: FailoverConfig = field(
+        default_factory=lambda: FailoverConfig(max_cloud_sequence_lag=4)
+    )
     cloud_weight: float = 0.5
 
     def __post_init__(self) -> None:
@@ -146,7 +146,13 @@ async def run_cloud_edge_failover_demo(config: DemoConfig) -> list[dict[str, Any
     return records
 
 
-def _build_toy_engine() -> tuple[ToySingleForwardAdapter, ExecutionEngine]:
+def _build_toy_engine() -> tuple[Any, Any]:
+    # Keep optional model/backend dependencies behind the actual build path.
+    from embodied_runtime.backends.compile import CompileOptions
+    from embodied_runtime.backends.torch_cuda import TorchCudaBackend
+    from embodied_runtime.engine import ExecutionEngine
+    from embodied_runtime.models.vla.toy_single_forward import ToySingleForwardAdapter
+
     adapter = ToySingleForwardAdapter(action_horizon=1, action_dim=2)
     package = adapter.build_package()
     backend = TorchCudaBackend()

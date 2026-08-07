@@ -7,8 +7,8 @@ from typing import Any
 
 import torch
 
-from embodied_runtime.contracts import ModelPackageError, RawRequest
-
+from ...errors import ModelPackageError
+from ...request import RawRequest
 from .modeling_smolvla import LANGUAGE_ATTENTION_MASK, LANGUAGE_TOKENS
 
 OBSERVATION_STATE = "observation.state"

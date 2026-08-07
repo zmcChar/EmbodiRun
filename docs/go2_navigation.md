@@ -1,79 +1,175 @@
-# Go2 unified navigation runtime
+# Go2 visual navigation runtime
 
-## One-command StreamVLN navigation
+## One-command StreamVLN run
 
-On the dual-4090 host, the wrapper checks the camera service, re-arms the
-control service, and starts the image-reactive StreamVLN loop:
+On the dual-4090 host, the wrapper checks or deploys the Go2 camera service,
+re-arms the control service for a live run, and starts the image-reactive
+StreamVLN loop:
 
 ```bash
 cd /home/user/go2-nav-runtime/RLinf-deploy
-bash nav.sh --prompt "Find the tripod and stop in front of it."
+bash nav.sh \
+  --prompt "Find the tripod and stop in front of it." \
+  --robot-host 192.168.137.34 \
+  --ssh-user unitree \
+  --camera-serial '<verified RealSense serial>' \
+  --depth-scale '<verified meters per raw depth unit>'
 ```
 
-If `GO2_SSH_PASSWORD` is not already exported, the wrapper prompts for it
-without echoing it. Use `--dry-run` to exercise camera and model inference
-without sending motion commands. `bash nav.sh --help` lists overrides for the
-robot host, SSH user, model paths, timeout, GPU, and velocity bounds.
+`nav.sh` first stops only the repository-owned Go2 camera/control services,
+installs the current checkout, and then restarts those services. It does not
+inspect, stop, or restart a model server. Motion is enabled by default. Pass
+`--dry-run` to run camera plus model inference without sending motion commands.
+If `GO2_SSH_PASSWORD` is not exported, the wrapper prompts for it without
+echoing it. `bash nav.sh --help` lists robot host, SSH, checkpoint, GPU,
+timeout, camera calibration, and velocity overrides. Robot host, SSH user,
+RealSense serial, and depth scale have no checked-in laboratory defaults; pass
+them on the command line or set `GO2_ROBOT_HOST`, `GO2_SSH_USER`,
+`GO2_CAMERA_SERIAL`, and `GO2_DEPTH_SCALE`.
 
-The navigation command composes a Go2 RGB-D camera, odometry/control client,
-metric waypoint follower, and exactly one Qwen, StreamVLN, or InternVLA
-provider. It runs on the dual-4090 host and talks to the Go2-side services over
-HTTP:
+The generic Python CLI behaves differently: `examples/go2_navigation.py` is
+observation-only unless `--execute` is present.
+
+## Current ownership and closed loop
+
+The runnable composition is assembled in `embodied_runtime.apps.navigation`.
+It selects one policy, constructs task sessions, and connects them to the
+canonical Go2 clients:
+
+```text
+Qwen endpoint
+StreamVLN model runtime ─────┐
+InternVLA model runtime ─────┼─> policies.navigation
+                            │       QwenNavigationPolicy
+Go2 RGB or RGB-D image ─────┘       StreamVLNNavigationPolicy
+Go2 state -------------------------- InternVLANavigationPolicy
+                                      │
+                                      v
+                         tasks.navigation.WaypointPlan
+                                      │
+                         task-owned navigation session
+                           ┌──────────┴──────────┐
+                           v                     v
+                  continuous follower    reactive pulse
+                           └──────────┬──────────┘
+                                      v
+                         PlanarVelocityCommand
+                          (vx, vy, yaw_rate)
+                                      │
+                                      v
+                     robots.unitree.go2.Go2ControlClient
+                                      │ HTTP velocity lease
+                                      v
+                       Go2 control service → Unitree SDK2
+```
+
+The domain paths are:
+
+- `models/vln/streamvln`: StreamVLN loading, recurrent inference, and normalized
+  native discrete actions;
+- `models/vla/internvla_n1`: InternVLA DualVLN/NavDP loading, depth handling,
+  and neutral copies of official native outputs;
+- `policies/navigation`: Qwen request adaptation plus StreamVLN/InternVLA
+  geometry mapping into task-owned plans;
+- `tasks/navigation`: RGB-D observations, `WaypointPlan`, continuous/reactive
+  sessions, waypoint tracking, velocity pulses, and lease control;
+- `robots/unitree/go2`: host camera/control clients and the robot-resident
+  camera/control agent;
+- `deployment/unitree/go2`: SSH installation and service lifecycle; and
+- `apps/navigation`: configuration, CLI composition, session selection, and
+  JSON Lines output.
+
+Qwen calls the existing OpenAI-compatible endpoint and asks for validated
+structured output. Closing the policy closes only its client transport; it
+does not start, stop, or restart Qwen. StreamVLN and InternVLA load the selected
+local checkpoint in the navigation process. InternVLA `dualvln` consumes RGB;
+`navdp` additionally requires registered depth.
+
+Every policy returns a `WaypointPlan` in `base_link`: `x` is forward, `y` is
+left, and positive yaw is counter-clockwise. A policy never emits Unitree SDK
+commands. The task session validates the observation sequence and converts the
+accepted plan into bounded planar velocity.
+
+## Continuous and reactive sessions
+
+`session.mode = "continuous"` uses `NavigationSession`. It captures image and
+state, anchors the base-frame plan at the capture-time odometry pose, and lets a
+10 Hz control loop follow the latest accepted plan while the next model
+inference runs. This mode requires trustworthy changing planar pose state.
+
+On the current Go2 path, `SportModeState.position` may remain constant while
+the robot walks. Therefore `session.mode = "auto"` selects
+`ReactiveNavigationSession` for StreamVLN. The reactive loop is:
+
+```text
+capture image/state → infer WaypointPlan → use first waypoint
+       → bounded timed velocity pulse → stop → settle → capture again
+```
+
+The pulse duration is limited, and a new observation is required before the
+next action. A terminal plan with no waypoint stops the episode. If a terminal
+plan also contains a waypoint, the session executes its first waypoint, lets
+the bounded lease expire, and captures and infers again; it stops when a later
+plan is empty and terminal.
+
+For Qwen and InternVLA, `auto` currently selects continuous mode. Choose
+`reactive` explicitly if the robot does not expose usable translational
+odometry. The runtime does not provide a global map, SLAM, or a separate
+obstacle-avoidance planner; model waypoints and the available camera/state are
+the implemented navigation signal.
+
+## Hosts and services
+
+The navigation process runs on the dual-4090 host and reaches two HTTP services
+on the Go2:
 
 ```text
 192.168.137.44                         192.168.137.34 (Go2)
-Go2NavigationSession                  camera :8765 / control :8080
-  camera capture   <----------------  RGB-D observation
-  provider inference
-  waypoint follower
-  10 Hz controller ---------------->  bounded SDK2 velocity lease
+navigation process                    camera :8765 / control :8080
+  capture RGB-D  <------------------- encoded observation
+  policy inference
+  task session
+  velocity lease -------------------> bounded SDK2 motion
 ```
 
-Models return `WaypointPlan` values in `base_link` (`x` forward, `y` left,
-yaw counter-clockwise). They do not emit SDK commands. The Go2 follower anchors
-each capture-time plan in odometry and continuously converts it to bounded
-`vx`, `vy`, and `yaw_rate` while the next inference runs.
+The camera service owns RealSense/V4L2 capture and image encoding. The control
+service owns Unitree SDK2 access, current robot state, the operator-ready
+interlock, hard velocity bounds, and lease expiry. The host-side
+`Go2ControlClient` uses `stream_move`, `update_move`, and stop through that
+service; it never imports the Unitree SDK.
 
-For StreamVLN on the current Go2 image, `SportModeState.position` may remain
-constant even while the robot walks. The default `session.mode = "auto"`
-therefore selects an image-reactive controller for StreamVLN: execute only the
-first native 0.25 m/15 degree action as a timed pulse, wait for `StopMove`,
-capture a new image, and infer again. A `STOP` with no preceding waypoint ends
-the episode; `terminal=true` with a final waypoint executes that waypoint and
-then captures once more. This gives a real visual search loop without relying
-on unavailable translational odometry.
+## Motion boundary
 
-## Safety boundary and modes
-
-The command is **dry-run by default**. Dry-run captures camera/state data and
-runs the selected model, but never calls `stream_move`, `update_move`, or
-`stop`. The only way this command enables control writes is the explicit
-`--execute` flag; TOML cannot enable motion.
-
-The deployed control API rejects commands beyond these hard limits, which are
-also the checked-in defaults and maximum accepted configuration values:
+The Go2 control API rejects commands above its configured hard maxima:
 
 ```text
 |vx| <= 0.35 m/s    |vy| <= 0.35 m/s    |yaw_rate| <= 0.7 rad/s
 ```
 
-During execution, interruption or failure causes the session to stop its
-velocity lease. Keep the physical emergency stop available for every live run.
+The checked-in Python configuration uses those maxima. `nav.sh` chooses lower
+live defaults of `0.25 m/s`, `0.25 m/s`, and `0.50 rad/s` unless overridden.
+Task-side clamping does not replace the robot-side check.
+
+The Python CLI requires `--execute` before it calls preflight or creates a
+velocity lease. `nav.sh` adds `--execute` unless `--dry-run` is supplied. During
+a live run, preflight requires fresh robot state, an idle action slot, and the
+operator-motion-ready interlock. Completion, timeout, interruption, or failure
+stops the active lease. Keep the physical emergency stop available for every
+live run.
 
 ## Environment
 
-The additive setup script does not inspect, stop, or restart Qwen:
+The additive setup script creates a Python 3.10 environment for the task,
+policy, and selected local model code. It does not inspect, stop, or restart an
+existing Qwen process:
 
 ```bash
 export GO2_NAV_RUNTIME_ROOT=/home/user/go2-nav-runtime
 bash scripts/setup_go2_navigation_env.sh
 ```
 
-The unified Python 3.10 environment contains the common contracts and model
-adapters. It does not require every large checkpoint to be resident at once.
-The selected local model is loaded in the navigation process. Qwen remains an
-external OpenAI-compatible endpoint; closing a Qwen provider only releases its
-client transport and never manages the existing server process.
+Only the selected local model is loaded by a run; large checkpoints do not all
+need to be resident at once.
 
 Pinned upstream inputs:
 
@@ -85,10 +181,11 @@ Pinned upstream inputs:
 ## Configure
 
 Edit `configs/go2_navigation.toml` on the 4090 host or override individual
-values on the command line. The real camera default is
-`http://192.168.137.34:8765`; control defaults to port `8080`.
+values on the command line. The checked-in service URLs are loopback-only and
+therefore inert for a remote Go2. Pass `--robot-host` or set explicit
+camera/control URLs when invoking the generic Python CLI.
 
-Keep credentials out of the file when possible:
+Keep credentials out of the TOML file when possible:
 
 ```bash
 export GO2_CAMERA_TOKEN='<camera token>'
@@ -107,14 +204,15 @@ Relevant overrides include:
 --instruction TEXT             --episode-id ID
 --max-runtime-s SECONDS        --control-hz HZ
 --camera-url URL               --control-url URL
+--robot-host HOST              --camera-port PORT --control-port PORT
 --streamvln-root PATH          --internvla-root PATH
 --model-path PATH_OR_MODEL_ID  --device cuda:0
 --cuda-memory-fraction 0.45    --max-new-tokens 64
 ```
 
-`--model-path` applies to the selected backend (and acts as the Qwen model id
-for `qwen`). InternVLA `navdp` requires the camera service's registered depth;
-`dualvln`, StreamVLN, and Qwen use RGB, while Qwen also receives depth metadata.
+`--model-path` applies to the selected backend and acts as the Qwen model ID
+when `--backend qwen` is selected. `--cuda-memory-fraction` applies only to a
+newly loaded StreamVLN process.
 
 ## Dry-run first
 
@@ -131,11 +229,12 @@ PYTHONNOUSERSITE=1 CUDA_VISIBLE_DEVICES=1 \
   --instruction '导航到画面中的黄色立柱前，保持约 0.8 米距离'
 ```
 
-This is observation-only because `--execute` is absent. Each event is printed
-as one UTF-8 JSON object, followed by `navigation_summary`. This makes the same
-output readable in a terminal and consumable as JSON Lines.
+This is observation-only because `--execute` is absent. Each event is emitted
+as one UTF-8 JSON object followed by `navigation_summary`, so the output is
+readable in a terminal and consumable as JSON Lines.
 
-After checking camera/state freshness and model plans, enable the live lease:
+After checking service health, observation freshness, and model plans, enable
+the live lease:
 
 ```bash
 PYTHONNOUSERSITE=1 CUDA_VISIBLE_DEVICES=1 \
@@ -158,6 +257,8 @@ python examples/go2_navigation.py \
   --instruction '导航到三脚架前'
 ```
 
+The Qwen command above is also a dry-run because it has no `--execute` flag.
+
 ## Model-only StreamVLN check
 
 The dog is not needed for a checkpoint load test:
@@ -173,6 +274,5 @@ PYTHONNOUSERSITE=1 CUDA_VISIBLE_DEVICES=1 \
   --load-only
 ```
 
-`--cuda-memory-fraction` applies only to the newly selected StreamVLN process.
-Inspect the target GPU before loading it; the command never reallocates or
-terminates another process.
+Inspect the target GPU before loading the checkpoint. The command does not
+reallocate or terminate another process.

@@ -3,15 +3,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from embodied_runtime.apps import multi_robot_edge as multi_robot_edge_app
+from embodied_runtime.apps.cloud_edge.pi05_settings import load_pi05_cpu_gpu_config
 from embodied_runtime.apps.cloud_edge_failover import load_demo_config
-from embodied_runtime.apps.multi_robot_cloud import load_multi_robot_cloud_config
-from embodied_runtime.apps.multi_robot_edge import (
+from embodied_runtime.apps.multi_robot.cloud_settings import load_multi_robot_cloud_config
+from embodied_runtime.apps.multi_robot.edge_demo import build_demo_observation
+from embodied_runtime.apps.multi_robot.edge_settings import (
     MultiRobotEdgeConfig,
-    _build_demo_observation,
     load_multi_robot_edge_config,
-)
-from embodied_runtime.apps.pi05_cpu_gpu_collaboration import (
-    load_pi05_cpu_gpu_config,
 )
 from embodied_runtime.distributed import FailoverMode, RobotSessionIdentity
 
@@ -138,7 +136,7 @@ def test_adapter_synthetic_observation_uses_tick_scoped_seed() -> None:
         observation_language_length=48,
     )
 
-    observation = _build_demo_observation(runtime, config, tick=3)
+    observation = build_demo_observation(runtime, config, tick=3)
 
     assert observation == {"synthetic": 102}
     assert adapter.calls == [
@@ -169,7 +167,7 @@ def test_target_vector_observation_remains_the_default() -> None:
         observation_offset=10.0,
     )
 
-    assert _build_demo_observation(runtime, config, tick=2) == {"target": [12.0, 12.5]}
+    assert build_demo_observation(runtime, config, tick=2) == {"target": [12.0, 12.5]}
 
 
 def test_multi_robot_edge_cli_overrides_model_and_synthetic_input(

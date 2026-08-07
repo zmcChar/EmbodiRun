@@ -2,6 +2,5 @@
 
 from embodied_runtime.apps.local_openvla_oft import main
 
-
 if __name__ == "__main__":
     raise SystemExit(main())

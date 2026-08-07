@@ -5,23 +5,21 @@ commit ``80b5cf48c8710c69ed97200903562e9787efe105`` (MIT,
 Copyright 2026 Longxmas). The BOS relocation follows RLinf's
 ``PrismaticProcessor`` (Apache-2.0, Copyright 2025 The RLinf Authors).
 
-One :class:`~embodied_runtime.contracts.RawRequest` becomes a tensor-tree whose
+One :class:`~embodied_runtime.models.request.RawRequest` becomes a tensor-tree whose
 leaves retain ``B=1`` so the generic model adapter can collate requests without
 knowing OpenVLA-OFT semantics.
 """
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 import torch
 
-from embodied_runtime.contracts import ModelPackageError, RawRequest
-
-PROMPT_TEMPLATE = "In: What action should the robot take to {task}?\nOut: "
-SPACE_TOKEN = 29_871
+from ...errors import ModelPackageError
+from ...request import RawRequest
+from .constants import PROMPT_TEMPLATE, SPACE_TOKEN
 
 
 def _require_torchvision():
@@ -92,74 +90,19 @@ class OpenVLAOFTProcessor:
     ) -> OpenVLAOFTProcessor:
         """Load tokenizer and image normalization metadata from a checkpoint."""
 
-        try:
-            from transformers import AutoTokenizer
-            from transformers.utils import cached_file
-        except ImportError as exc:  # pragma: no cover - install-time guard
-            raise ModelPackageError(
-                "OpenVLA-OFT tokenization requires transformers; "
-                "install the OpenVLA-OFT model dependencies"
-            ) from exc
+        from .processor_loading import load_processor_assets
 
-        source = str(Path(checkpoint).expanduser()) if isinstance(checkpoint, Path) else checkpoint
-        local = Path(source).expanduser()
-        if local.is_dir():
-            preprocessor_file = local / "preprocessor_config.json"
-            if not preprocessor_file.is_file():
-                raise ModelPackageError(
-                    "local OpenVLA-OFT checkpoint has no preprocessor_config.json"
-                )
-        elif local.is_absolute():
-            raise ModelPackageError(
-                f"local OpenVLA-OFT checkpoint directory does not exist: {local}"
-            )
-        else:
-            try:
-                resolved = cached_file(
-                    source,
-                    "preprocessor_config.json",
-                    cache_dir=cache_dir,
-                    revision=revision,
-                    local_files_only=local_files_only,
-                )
-            except Exception as exc:
-                raise ModelPackageError(
-                    f"could not resolve OpenVLA-OFT preprocessor_config.json for {source!r}: {exc}"
-                ) from exc
-            if resolved is None:
-                raise ModelPackageError(
-                    f"could not resolve OpenVLA-OFT preprocessor_config.json for {source!r}"
-                )
-            preprocessor_file = Path(resolved)
-
-        try:
-            with preprocessor_file.open(encoding="utf-8") as handle:
-                config = json.load(handle)
-            means = config["means"]
-            stds = config["stds"]
-            image_size = int(config["input_sizes"][0][-1])
-        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            raise ModelPackageError(
-                f"invalid OpenVLA-OFT preprocessor config {preprocessor_file}: {exc}"
-            ) from exc
-
-        try:
-            tokenizer = AutoTokenizer.from_pretrained(
-                source,
-                padding_side="left",
-                cache_dir=cache_dir,
-                revision=revision,
-                local_files_only=local_files_only,
-            )
-        except Exception as exc:
-            raise ModelPackageError(
-                f"could not load OpenVLA-OFT tokenizer from {source!r}: {exc}"
-            ) from exc
+        assets = load_processor_assets(
+            checkpoint,
+            cache_dir=cache_dir,
+            revision=revision,
+            local_files_only=local_files_only,
+        )
         return cls(
-            tokenizer,
-            means,
-            stds,
-            image_size=image_size,
+            assets.tokenizer,
+            assets.means,
+            assets.stds,
+            image_size=assets.image_size,
             max_length=max_length,
         )
 
@@ -195,9 +138,7 @@ class OpenVLAOFTProcessor:
 
         # The action model expects the final real prefix token to be the Llama
         # space token. Reserve that position when truncating long prompts.
-        if not ids or ids[-1] != SPACE_TOKEN:
-            ids = ids[: self.max_length - 1] + [SPACE_TOKEN]
-        elif len(ids) > self.max_length:
+        if not ids or ids[-1] != SPACE_TOKEN or len(ids) > self.max_length:
             ids = ids[: self.max_length - 1] + [SPACE_TOKEN]
         padding = self.max_length - len(ids)
         pad_token_id = self.tokenizer.pad_token_id
@@ -290,7 +231,7 @@ class OpenVLAOFTProcessor:
 
 
 __all__ = [
-    "OpenVLAOFTProcessor",
     "PROMPT_TEMPLATE",
     "SPACE_TOKEN",
+    "OpenVLAOFTProcessor",
 ]

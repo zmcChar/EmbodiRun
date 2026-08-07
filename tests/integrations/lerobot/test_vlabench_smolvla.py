@@ -12,7 +12,7 @@ from typing import Any, ClassVar
 
 import pytest
 
-from embodied_runtime.integrations.lerobot import (
+from embodied_runtime.integrations.lerobot.vlabench_smolvla import (
     VLABENCH_CAMERA_RENAME_MAP,
     LeRobotBindings,
     LeRobotRunnerError,

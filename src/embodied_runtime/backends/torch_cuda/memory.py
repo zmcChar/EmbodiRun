@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from embodied_runtime.contracts import MemoryStats
+from ..memory import MemoryStats
 
 
 def _cpu_memory() -> tuple[int | None, int | None]:

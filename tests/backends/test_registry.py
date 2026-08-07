@@ -5,10 +5,13 @@ import pytest
 from embodied_runtime.backends import (
     AscendBackend,
     BackendRegistry,
+    DeviceInfo,
     HorizonBackend,
     TorchCudaBackend,
 )
-from embodied_runtime.contracts import DeviceInfo, IterativeFlowPlan, ModelPackage, ModelSpec
+from embodied_runtime.models.package import ModelPackage
+from embodied_runtime.models.plans import IterativeFlowPlan
+from embodied_runtime.models.spec import ModelSpec
 
 
 def _identity_package() -> ModelPackage:
@@ -30,6 +33,8 @@ def test_registry_rejects_duplicate_backend_names() -> None:
 
 def test_registry_selects_local_cpu_reference_device() -> None:
     backend = TorchCudaBackend()
+    if not backend.probe():
+        pytest.skip("PyTorch is not installed")
     registry = BackendRegistry([backend])
     selected, device, report = registry.select(_identity_package())
     assert selected is backend

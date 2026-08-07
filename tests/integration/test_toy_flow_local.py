@@ -4,7 +4,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from embodied_runtime.apps.local_toy_flow import run_toy_flow  # noqa: E402
+from embodied_runtime.apps.local_toy_flow import run_toy_flow
 
 
 def test_model_package_runs_through_engine_and_torch_backend() -> None:

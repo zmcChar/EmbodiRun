@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import pytest
 
-from embodied_runtime.contracts import ModelAdapter, RawRequest, SingleForwardPlan
 from embodied_runtime.models import get_model_adapter
+from embodied_runtime.models.interfaces import ModelAdapter
+from embodied_runtime.models.plans.single_forward import SingleForwardPlan
+from embodied_runtime.models.request import RawRequest
 
 torch = pytest.importorskip("torch")
 
 
-def test_single_forward_package_is_not_a_flow_recipe() -> None:
+def test_single_forward_package_declares_its_execution_plan() -> None:
     adapter = get_model_adapter(
         "toy_single_forward",
         action_horizon=2,
@@ -18,8 +20,6 @@ def test_single_forward_package_is_not_a_flow_recipe() -> None:
     package = adapter.build_package()
     assert isinstance(package.plan, SingleForwardPlan)
     assert package.plan.required_entrypoints() == ("forward",)
-    with pytest.raises(AttributeError, match="iterative-flow"):
-        _ = package.recipe
 
 
 def test_single_forward_adapter_cardinality_and_action_semantics() -> None:

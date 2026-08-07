@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from embodied_runtime.contracts import ExecutionPlan, IterativeFlowPlan, TensorTree
+from embodied_runtime.models.plans import ExecutionPlan, IterativeFlowPlan
+from embodied_runtime.types import TensorTree
 
 from ..plan_runner import BatchAborted, RunnerHost, RunnerRequest
 

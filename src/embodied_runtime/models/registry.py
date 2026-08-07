@@ -12,7 +12,8 @@ import importlib
 from collections.abc import Callable
 from typing import Any
 
-from embodied_runtime.contracts import ModelAdapter, ModelPackageError
+from .errors import ModelPackageError
+from .interfaces import ModelAdapter
 
 AdapterFactory = Callable[..., ModelAdapter]
 

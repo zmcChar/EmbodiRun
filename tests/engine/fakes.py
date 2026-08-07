@@ -4,17 +4,11 @@ import time
 from threading import Event, Lock
 from typing import Any
 
-from embodied_runtime.contracts import (
-    DeviceInfo,
-    EntrypointSpec,
-    ExecutionContext,
-    IterativeFlowPlan,
-    MemoryStats,
-    ModelPackage,
-    ModelSpec,
-    RequestCancelledError,
-    SingleForwardPlan,
-)
+from embodied_runtime.backends import DeviceInfo, MemoryStats
+from embodied_runtime.engine import ExecutionContext, RequestCancelledError
+from embodied_runtime.models.package import ModelPackage
+from embodied_runtime.models.plans import IterativeFlowPlan, SingleForwardPlan
+from embodied_runtime.models.spec import EntrypointSpec, ModelSpec
 
 FAKE_PACKAGE_ID = "engine-fake-flow-package"
 FAKE_FORWARD_PACKAGE_ID = "engine-fake-forward-package"

@@ -10,19 +10,18 @@ import mimetypes
 import time
 from pathlib import Path
 
-from embodied_runtime.contracts import (
+from embodied_runtime.models.vln.streamvln import StreamVLNRuntime
+from embodied_runtime.policies.navigation import (
+    InternVLANavigationPolicy,
+    QwenNavigationPolicy,
+    StreamVLNNavigationPolicy,
+)
+from embodied_runtime.tasks.navigation import (
     EncodedRGBFrame,
-    InferenceRequest,
     NavigationObservation,
     NavigationRequest,
     WaypointPlan,
 )
-from embodied_runtime.integrations.serving.navigation import (
-    InternVLANavigationProvider,
-    QwenNavigationProvider,
-    StreamVLNNavigationProvider,
-)
-from embodied_runtime.models.vln.streamvln import StreamVLNRuntime
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -59,16 +58,16 @@ def _stream_runtime(args: argparse.Namespace) -> StreamVLNRuntime:
     )
 
 
-def _provider(args: argparse.Namespace):
+def _policy(args: argparse.Namespace):
     if args.backend == "qwen":
-        return QwenNavigationProvider(
+        return QwenNavigationPolicy(
             base_url=args.qwen_base_url,
             model=args.qwen_model,
             api_key=args.api_key,
         )
     if args.backend == "streamvln":
-        return StreamVLNNavigationProvider(runtime=_stream_runtime(args))
-    return InternVLANavigationProvider(
+        return StreamVLNNavigationPolicy(runtime=_stream_runtime(args))
+    return InternVLANavigationPolicy(
         variant=args.internvla_variant,
         model_path=args.model_path,
         device=args.device,
@@ -76,7 +75,7 @@ def _provider(args: argparse.Namespace):
     )
 
 
-def _request(args: argparse.Namespace) -> InferenceRequest:
+def _request(args: argparse.Namespace) -> NavigationRequest:
     if args.image is None:
         raise SystemExit("inference requires --image")
     image_path = args.image.expanduser().resolve()
@@ -98,7 +97,7 @@ def _request(args: argparse.Namespace) -> InferenceRequest:
             ),
         ),
     )
-    return InferenceRequest(payload=NavigationRequest(args.prompt, observation))
+    return NavigationRequest(args.prompt, observation)
 
 
 def _plan_json(plan: WaypointPlan) -> dict[str, object]:
@@ -116,14 +115,14 @@ def _plan_json(plan: WaypointPlan) -> dict[str, object]:
 
 
 async def _infer(args: argparse.Namespace) -> None:
-    provider = _provider(args)
+    policy = _policy(args)
     try:
-        result = await provider.infer_async(_request(args))
-        if not isinstance(result.output, WaypointPlan):
-            raise TypeError(f"provider returned {type(result.output).__name__}, not WaypointPlan")
-        print(json.dumps(_plan_json(result.output), ensure_ascii=False, indent=2))
+        plan = await policy.plan(_request(args))
+        if not isinstance(plan, WaypointPlan):
+            raise TypeError(f"policy returned {type(plan).__name__}, not WaypointPlan")
+        print(json.dumps(_plan_json(plan), ensure_ascii=False, indent=2))
     finally:
-        await provider.aclose()
+        await policy.aclose()
 
 
 def main() -> None:

@@ -5,12 +5,12 @@ from dataclasses import dataclass
 
 import pytest
 
-from embodied_runtime.apps.vlabench_big_small_brain import (
+from embodied_runtime.apps.vlabench.big_small_brain import (
     VLABenchPilotConfig,
     run_vlabench_pilot,
 )
-from embodied_runtime.contracts import RobotObservation
 from embodied_runtime.evaluation import ExperimentCondition
+from embodied_runtime.robots.observation import RobotObservation
 from embodied_runtime.simulators import EpisodeStep
 
 np = pytest.importorskip("numpy")

@@ -6,8 +6,7 @@ from threading import Lock
 from typing import Any
 from weakref import ref
 
-from embodied_runtime.contracts import UnsupportedBackendError
-
+from ..errors import UnsupportedBackendError
 
 _ACTIVE_MODULES: dict[int, tuple[ref[Any], object]] = {}
 _MODULE_DTYPE_POLICIES: dict[int, tuple[ref[Any], str]] = {}

@@ -4,7 +4,7 @@ import json
 import time
 from types import SimpleNamespace
 
-from embodied_runtime.apps.vlabench_texas_holdem_skill_gate import (
+from embodied_runtime.apps.vlabench.skill_gate import (
     PlannerPokerDeal,
     PlannerSkillCondition,
     PlannerSkillGateConfig,
@@ -12,8 +12,9 @@ from embodied_runtime.apps.vlabench_texas_holdem_skill_gate import (
     deterministic_wrong_card_selection,
     run_planner_skill_gate,
 )
-from embodied_runtime.contracts import PlanEnvelope, PlanStep, RobotObservation
-from embodied_runtime.integrations.planning import TexasHoldemCard
+from embodied_runtime.integrations.planning.hf_texas_holdem import TexasHoldemCard
+from embodied_runtime.robots.observation import RobotObservation
+from embodied_runtime.tasks.planning import PlanEnvelope, PlanStep
 
 _DEAL = PlannerPokerDeal(
     cards=(

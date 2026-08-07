@@ -1,7 +1,7 @@
 """Run a real OpenVLA-OFT checkpoint through the local runtime.
 
-The Group 1 adapter owns image/text preprocessing and categorical action-token
-semantics. Group 3 executes its ``SingleForwardPlan`` and Group 4 owns concrete
+The model adapter owns image/text preprocessing and categorical action-token
+semantics. The engine executes its ``SingleForwardPlan`` and the backend owns concrete
 device placement. Checkpoint access is offline unless the caller explicitly
 passes ``--allow-download``.
 """
@@ -14,9 +14,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from embodied_runtime.backends.compile import CompileOptions
 from embodied_runtime.backends.torch_cuda import TorchCudaBackend
-from embodied_runtime.contracts import CompileOptions, RawRequest
 from embodied_runtime.engine import ExecutionEngine
+from embodied_runtime.models.request import RawRequest
 from embodied_runtime.models.vla.openvla_oft import OpenVLAOFTAdapter
 
 

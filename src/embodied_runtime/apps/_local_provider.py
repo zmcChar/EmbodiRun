@@ -4,14 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from embodied_runtime.backends import BackendRegistry
-from embodied_runtime.backends.torch_cuda import TorchCudaBackend
-from embodied_runtime.contracts import CompileOptions
-from embodied_runtime.engine import EngineConfig
-from embodied_runtime.integrations.serving import LocalBackendProvider
-from embodied_runtime.models import get_model_adapter
+from embodied_runtime.engine.config import EngineConfig
+
+if TYPE_CHECKING:
+    from embodied_runtime.engine.providers import LocalBackendProvider
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +108,14 @@ class LocalProviderConfig:
 
 def build_local_provider(config: LocalProviderConfig) -> LocalBackendProvider:
     """Build one local Provider without hiding model or device placement."""
+
+    # Concrete backends and model adapters stay behind the runtime construction
+    # boundary so config parsing works in installations without PyTorch/model extras.
+    from embodied_runtime.backends.compile import CompileOptions
+    from embodied_runtime.backends.registry import BackendRegistry
+    from embodied_runtime.backends.torch_cuda import TorchCudaBackend
+    from embodied_runtime.engine.providers import LocalBackendProvider
+    from embodied_runtime.models.registry import get_model_adapter
 
     if config.backend != "torch_cuda":
         raise ValueError(

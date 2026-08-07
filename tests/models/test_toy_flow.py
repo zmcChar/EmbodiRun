@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from embodied_runtime.contracts import ModelPackageError, RawRequest
 from embodied_runtime.models import get_model_adapter
+from embodied_runtime.models.errors import ModelPackageError
+from embodied_runtime.models.request import RawRequest
 
 torch = pytest.importorskip("torch")
 

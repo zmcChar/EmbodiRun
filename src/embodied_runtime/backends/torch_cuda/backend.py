@@ -6,15 +6,13 @@ import importlib
 import platform
 from typing import Any
 
-from embodied_runtime.contracts import (
-    ArtifactVariant,
-    CompileOptions,
-    DeviceInfo,
-    ModelPackage,
-    SupportReport,
-    UnsupportedBackendError,
-)
+from embodied_runtime.models.package import ModelPackage
 
+from ..artifact import ArtifactVariant
+from ..compile import CompileOptions
+from ..device import DeviceInfo
+from ..errors import UnsupportedBackendError
+from ..support import SupportReport
 from .compiler import (
     TorchArtifactPayload,
     make_payload,

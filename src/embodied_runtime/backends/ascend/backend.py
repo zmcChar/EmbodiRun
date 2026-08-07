@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import importlib.util
 
-from embodied_runtime.contracts import (
-    ArtifactVariant,
-    BackendSession,
-    CompileOptions,
-    DeviceInfo,
-    ModelPackage,
-    SupportReport,
-    UnsupportedBackendError,
-)
+from embodied_runtime.models.package import ModelPackage
+
+from ..artifact import ArtifactVariant
+from ..compile import CompileOptions
+from ..device import DeviceInfo
+from ..errors import UnsupportedBackendError
+from ..interfaces import BackendSession
+from ..support import SupportReport
 
 
 class AscendBackend:

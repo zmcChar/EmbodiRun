@@ -14,12 +14,12 @@ import socket
 import struct
 import time
 import uuid
+from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass, replace
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Any
 
 import torch
-
 
 _HEADER = struct.Struct("!I")
 _MAX_MESSAGE_BYTES = 64 * 1024 * 1024
@@ -38,7 +38,7 @@ class ClientConfig:
     action_dim: int = 32
     observation_dim: int = 64
     hidden_dim: int = 128
-    failure_probe_port: Optional[int] = None
+    failure_probe_port: int | None = None
 
     def __post_init__(self) -> None:
         if not self.cloud_host:
@@ -99,26 +99,24 @@ class LightweightEdgePolicy(torch.nn.Module):
 async def _read_json_message(
     reader: asyncio.StreamReader,
     timeout_s: float,
-) -> Tuple[Dict[str, Any], int]:
+) -> tuple[dict[str, Any], int]:
     header = await asyncio.wait_for(reader.readexactly(_HEADER.size), timeout=timeout_s)
     (size,) = _HEADER.unpack(header)
     if size > _MAX_MESSAGE_BYTES:
-        raise RuntimeError(
-            "cloud response size {} exceeds limit {}".format(size, _MAX_MESSAGE_BYTES)
-        )
+        raise RuntimeError(f"cloud response size {size} exceeds limit {_MAX_MESSAGE_BYTES}")
     encoded = await asyncio.wait_for(reader.readexactly(size), timeout=timeout_s)
     try:
         value = json.loads(encoded.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise RuntimeError("cloud returned invalid JSON: {}".format(error)) from error
+        raise RuntimeError(f"cloud returned invalid JSON: {error}") from error
     if not isinstance(value, dict):
-        raise RuntimeError("cloud response must be a JSON object")
+        raise TypeError("cloud response must be a JSON object")
     return value, size
 
 
 async def _write_json_message(
     writer: asyncio.StreamWriter,
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     timeout_s: float,
 ) -> int:
     encoded = json.dumps(
@@ -128,9 +126,7 @@ async def _write_json_message(
         allow_nan=False,
     ).encode("utf-8")
     if len(encoded) > _MAX_MESSAGE_BYTES:
-        raise RuntimeError(
-            "request size {} exceeds limit {}".format(len(encoded), _MAX_MESSAGE_BYTES)
-        )
+        raise RuntimeError(f"request size {len(encoded)} exceeds limit {_MAX_MESSAGE_BYTES}")
     writer.write(_HEADER.pack(len(encoded)))
     writer.write(encoded)
     await asyncio.wait_for(writer.drain(), timeout=timeout_s)
@@ -140,7 +136,7 @@ async def _write_json_message(
 async def _request_cloud(
     config: ClientConfig,
     request_id: str,
-) -> Tuple[Dict[str, Any], float, int, int]:
+) -> tuple[dict[str, Any], float, int, int]:
     started = time.perf_counter()
     reader, writer = await asyncio.wait_for(
         asyncio.open_connection(config.cloud_host, config.cloud_port),
@@ -166,7 +162,7 @@ async def _request_cloud(
     if not response.get("ok"):
         error_type = response.get("error_type", "CloudError")
         error = response.get("error", "cloud request failed")
-        raise RuntimeError("{}: {}".format(error_type, error))
+        raise RuntimeError(f"{error_type}: {error}")
     if response.get("kind") != "inference_result":
         raise RuntimeError("unexpected cloud response kind: {!r}".format(response.get("kind")))
     if response.get("request_id") != request_id:
@@ -189,7 +185,7 @@ def _edge_tick(
     config: ClientConfig,
     device: torch.device,
     tick: int,
-) -> Tuple[torch.Tensor, float]:
+) -> tuple[torch.Tensor, float]:
     observation = _make_observation(config, device, tick)
     _synchronize(device)
     started = time.perf_counter()
@@ -200,7 +196,7 @@ def _edge_tick(
 
 
 def _cloud_actions_on_edge(
-    response: Dict[str, Any],
+    response: dict[str, Any],
     edge_actions: torch.Tensor,
 ) -> torch.Tensor:
     if "actions" not in response:
@@ -214,17 +210,14 @@ def _cloud_actions_on_edge(
         cloud_actions = cloud_actions.squeeze(0)
     if tuple(cloud_actions.shape) != tuple(edge_actions.shape):
         raise RuntimeError(
-            "cloud action shape {} does not match edge action shape {}".format(
-                tuple(cloud_actions.shape),
-                tuple(edge_actions.shape),
-            )
+            f"cloud action shape {tuple(cloud_actions.shape)} does not match edge action shape {tuple(edge_actions.shape)}"
         )
     if not bool(torch.isfinite(cloud_actions).all().item()):
         raise RuntimeError("cloud actions contain non-finite values")
     return cloud_actions
 
 
-async def run_wifi_edge_client(config: ClientConfig) -> Dict[str, Any]:
+async def run_wifi_edge_client(config: ClientConfig) -> dict[str, Any]:
     """Run edge-first async inference and fall back to edge on any cloud error."""
 
     device = torch.device(config.edge_device)
@@ -244,7 +237,7 @@ async def run_wifi_edge_client(config: ClientConfig) -> Dict[str, Any]:
 
     # Warm up the small edge policy before timing the control ticks.
     _edge_tick(model, config, device, tick=0)
-    request_id = "wifi-{}".format(uuid.uuid4().hex)
+    request_id = f"wifi-{uuid.uuid4().hex}"
 
     first_tick_started = time.perf_counter()
     cloud_request_started = first_tick_started
@@ -259,14 +252,14 @@ async def run_wifi_edge_client(config: ClientConfig) -> Dict[str, Any]:
     first_tick_time_s = time.perf_counter() - first_tick_started
     cloud_in_flight_after_first = not cloud_task.done()
 
-    response: Dict[str, Any] = {}
-    cloud_rtt_s: Optional[float] = None
-    request_bytes: Optional[int] = None
-    response_bytes: Optional[int] = None
-    cloud_error: Optional[Exception] = None
+    response: dict[str, Any] = {}
+    cloud_rtt_s: float | None = None
+    request_bytes: int | None = None
+    response_bytes: int | None = None
+    cloud_error: Exception | None = None
     try:
         response, cloud_rtt_s, request_bytes, response_bytes = await cloud_task
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - any link failure falls back to edge
         cloud_error = error
         cloud_rtt_s = time.perf_counter() - cloud_request_started
 
@@ -278,11 +271,11 @@ async def run_wifi_edge_client(config: ClientConfig) -> Dict[str, Any]:
         2,
     )
     parameter_count = sum(parameter.numel() for parameter in model.parameters())
-    edge_gpu_name: Optional[str] = None
+    edge_gpu_name: str | None = None
     if device.type == "cuda":
         edge_gpu_name = torch.cuda.get_device_name(device)
 
-    summary: Dict[str, Any] = {
+    summary: dict[str, Any] = {
         "protocol": "length_prefixed_json_v1",
         "mode": "async_blend",
         "cloud_host": config.cloud_host,
@@ -347,7 +340,7 @@ async def run_wifi_edge_client(config: ClientConfig) -> Dict[str, Any]:
                     "final_action_mean": fused.float().mean().item(),
                 }
             )
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - malformed cloud output falls back to edge
             summary.update(
                 {
                     "cloud_request_succeeded": False,
@@ -372,7 +365,7 @@ async def _run_failure_probe(
     config: ClientConfig,
     model: LightweightEdgePolicy,
     device: torch.device,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run a real bad-port request while still producing the next edge action."""
 
     assert config.failure_probe_port is not None
@@ -381,7 +374,7 @@ async def _run_failure_probe(
         cloud_port=config.failure_probe_port,
         failure_probe_port=None,
     )
-    request_id = "failure-probe-{}".format(uuid.uuid4().hex)
+    request_id = f"failure-probe-{uuid.uuid4().hex}"
     started = time.perf_counter()
     cloud_task = asyncio.create_task(_request_cloud(probe_config, request_id))
     edge_actions, edge_execution_time_s = await asyncio.to_thread(
@@ -393,10 +386,10 @@ async def _run_failure_probe(
     )
     edge_tick_time_s = time.perf_counter() - started
     cloud_in_flight_after_edge = not cloud_task.done()
-    cloud_error: Optional[Exception] = None
+    cloud_error: Exception | None = None
     try:
         await cloud_task
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - probe records every transport failure
         cloud_error = error
 
     return {
@@ -443,7 +436,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     config = ClientConfig(
         cloud_host=args.cloud_host,

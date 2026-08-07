@@ -4,14 +4,15 @@ from dataclasses import dataclass
 
 import pytest
 
-from embodied_runtime.contracts import ModelPackageError, RawRequest
+torch = pytest.importorskip("torch")
+
+from embodied_runtime.models.errors import ModelPackageError
+from embodied_runtime.models.request import RawRequest
 from embodied_runtime.models.vla.pi05.processing_pi05 import (
     LANGUAGE_ATTENTION_MASK,
     LANGUAGE_TOKENS,
     Pi05Processor,
 )
-
-torch = pytest.importorskip("torch")
 
 
 @dataclass

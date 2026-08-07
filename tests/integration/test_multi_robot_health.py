@@ -7,18 +7,19 @@ import socket
 import pytest
 
 from embodied_runtime.apps import multi_robot_cloud
-from embodied_runtime.apps.multi_robot_cloud import (
-    MultiRobotCloudConfig,
-    dispatch_multi_robot_request,
+from embodied_runtime.apps.multi_robot.cloud_codec import dispatch_multi_robot_request
+from embodied_runtime.apps.multi_robot.cloud_health import (
     probe_multi_robot_cloud_health,
-    serve_multi_robot_cloud,
     validate_multi_robot_health_response,
 )
-from embodied_runtime.contracts import DeviceInfo, ModelSpec
-from embodied_runtime.integrations.serving import ProviderCapabilities
-from embodied_runtime.integrations.serving.multitenant import (
+from embodied_runtime.apps.multi_robot.cloud_server import serve_multi_robot_cloud
+from embodied_runtime.apps.multi_robot.cloud_settings import MultiRobotCloudConfig
+from embodied_runtime.backends import DeviceInfo
+from embodied_runtime.distributed.multitenant import (
     MultiTenantInferenceService,
 )
+from embodied_runtime.engine import ProviderCapabilities
+from embodied_runtime.models.spec import ModelSpec
 
 
 class _HealthProvider:

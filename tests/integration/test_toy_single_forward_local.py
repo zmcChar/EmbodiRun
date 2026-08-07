@@ -4,7 +4,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from embodied_runtime.apps.local_toy_single_forward import (  # noqa: E402
+from embodied_runtime.apps.local_toy_single_forward import (
     run_toy_single_forward,
 )
 

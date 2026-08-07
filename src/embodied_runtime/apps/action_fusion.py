@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from embodied_runtime.contracts import InferenceResult
+from embodied_runtime.engine.result import InferenceResult
 
 
 def make_action_result_fuser(

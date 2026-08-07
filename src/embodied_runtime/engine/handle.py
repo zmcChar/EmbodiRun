@@ -6,7 +6,8 @@ import asyncio
 from collections.abc import Callable, Generator
 from typing import Any
 
-from embodied_runtime.contracts import InferenceResult, RequestStatus
+from .result import InferenceResult
+from .status import RequestStatus
 
 
 class RequestHandle:

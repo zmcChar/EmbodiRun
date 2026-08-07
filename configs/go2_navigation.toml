@@ -11,7 +11,7 @@ mode = "auto"
 
 # Select exactly one backend. Local backends are loaded in this process; the
 # existing Qwen endpoint is only called and is never started, stopped, or restarted.
-[provider]
+[policy]
 backend = "streamvln" # qwen, streamvln, or internvla
 
 [qwen]

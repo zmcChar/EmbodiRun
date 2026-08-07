@@ -6,9 +6,10 @@ import argparse
 from collections.abc import Sequence
 from typing import Any
 
+from embodied_runtime.backends.compile import CompileOptions
 from embodied_runtime.backends.torch_cuda import TorchCudaBackend
-from embodied_runtime.contracts import CompileOptions, RawRequest
 from embodied_runtime.engine import ExecutionEngine
+from embodied_runtime.models.request import RawRequest
 from embodied_runtime.models.vla.toy_single_forward import ToySingleForwardAdapter
 
 

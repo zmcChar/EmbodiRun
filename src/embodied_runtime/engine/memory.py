@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from embodied_runtime.contracts import MemoryStats
+from embodied_runtime.backends.memory import MemoryStats
 
 from .errors import MemoryBudgetExceededError
 
@@ -13,7 +13,7 @@ from .errors import MemoryBudgetExceededError
 class MemoryBudgetPolicy:
     """Decide whether another request may enter an already-loaded session.
 
-    Group 3 owns the policy (budget and headroom); Group 4 owns the numbers
+    The engine owns the policy (budget and headroom); the backend owns the numbers
     returned by :meth:`BackendSession.memory_stats`.  This prototype deliberately
     does not allocate or free device memory itself.
     """

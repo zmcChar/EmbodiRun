@@ -22,99 +22,15 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 
-
-def _rotate_half(x: torch.Tensor) -> torch.Tensor:
-    first = x[..., : x.shape[-1] // 2]
-    second = x[..., x.shape[-1] // 2 :]
-    return torch.cat((-second, first), dim=-1)
-
-
-def _apply_rope(
-    query: torch.Tensor,
-    key: torch.Tensor,
-    cosine: torch.Tensor,
-    sine: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    cosine = cosine.unsqueeze(1)
-    sine = sine.unsqueeze(1)
-    return (
-        query * cosine + _rotate_half(query) * sine,
-        key * cosine + _rotate_half(key) * sine,
-    )
-
-
-def _gated_residual(
-    residual: torch.Tensor,
-    update: torch.Tensor,
-    gate: torch.Tensor | None,
-) -> torch.Tensor:
-    return residual + update if gate is None else residual + update * gate
-
-
-def _rmsnorm(norm: Any, x: torch.Tensor, condition: torch.Tensor | None):
-    """PiGemma RMSNorm semantics, including optional adaRMS modulation."""
-
-    variance = torch.mean(torch.square(x.float()), dim=-1, keepdim=True)
-    normalized = x * torch.rsqrt(variance + norm.eps)
-    if condition is None or norm.dense is None:
-        return (normalized * (1.0 + norm.weight.float())).type_as(x), None
-    modulation = norm.dense(condition)
-    if x.ndim == 3:
-        modulation = modulation.unsqueeze(1)
-    scale, shift, gate = modulation.chunk(3, dim=-1)
-    normalized = normalized * (1 + scale.float()) + shift.float()
-    return normalized.to(x.dtype), gate.to(x.dtype)
-
-
-def _mlp(mlp: Any, x: torch.Tensor) -> torch.Tensor:
-    return mlp.down_proj(mlp.act_fn(mlp.gate_proj(x)) * mlp.up_proj(x))
-
-
-def _repeat_kv(x: torch.Tensor, repetitions: int) -> torch.Tensor:
-    if repetitions == 1:
-        return x
-    batch, kv_heads, sequence, head_dim = x.shape
-    return (
-        x[:, :, None, :, :]
-        .expand(batch, kv_heads, repetitions, sequence, head_dim)
-        .reshape(batch, kv_heads * repetitions, sequence, head_dim)
-    )
-
-
-def _reference_attention(
-    query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
-    *,
-    mask: torch.Tensor | None,
-    scaling: float,
-) -> torch.Tensor:
-    """Plain Torch attention matching Hugging Face Gemma eager semantics.
-
-    This is intentionally not an ``AttentionBackend``.  It is the numerical
-    reference that a Group-4 implementation must match when replacing it with
-    SDPA, TensorRT, CANN, BPU kernels, or another provider.
-    """
-
-    repetitions = query.shape[1] // key.shape[1]
-    key = _repeat_kv(key, repetitions)
-    value = _repeat_kv(value, repetitions)
-    if mask is not None:
-        mask = mask[..., : key.shape[-2]]
-        if mask.is_floating_point() and mask.dtype != query.dtype:
-            mask = mask.to(query.dtype)
-    attention = torch.matmul(query, key.transpose(-2, -1)) * scaling
-    if mask is not None:
-        attention = attention + mask
-    attention = F.softmax(attention, dim=-1, dtype=torch.float32).to(query.dtype)
-    return torch.matmul(attention, value)
+from .reference_ops import apply_rope, gated_residual, mlp, reference_attention, rmsnorm
 
 
 class Pi05ReferenceModule(torch.nn.Module):
     """Four eager/reference entrypoints over one loaded LeRobot PI05Policy.
 
     Every public entrypoint accepts one mapping because
-    :class:`embodied_runtime.contracts.BackendSession` submits a single ``TensorTree``.
+    :class:`embodied_runtime.backends.interfaces.BackendSession` submits one
+    ``TensorTree``.
     ``denoise_step`` returns only the velocity field.  Applying
     ``state += dt * velocity`` belongs to the generic execution engine.
     """
@@ -167,14 +83,14 @@ class Pi05ReferenceModule(torch.nn.Module):
         query = attention.q_proj(hidden).view(batch, sequence, -1, head_dim).transpose(1, 2)
         key = attention.k_proj(hidden).view(batch, sequence, -1, head_dim).transpose(1, 2)
         value = attention.v_proj(hidden).view(batch, sequence, -1, head_dim).transpose(1, 2)
-        query, key = _apply_rope(query, key, cosine, sine)
+        query, key = apply_rope(query, key, cosine, sine)
         if collected is not None:
             collected.append((key, value))
         if prefix_kv is not None:
             prefix_key, prefix_value = prefix_kv
             key = torch.cat((prefix_key, key), dim=2)
             value = torch.cat((prefix_value, value), dim=2)
-        output = _reference_attention(
+        output = reference_attention(
             query,
             key,
             value,
@@ -200,7 +116,7 @@ class Pi05ReferenceModule(torch.nn.Module):
         collected: list[tuple[torch.Tensor, torch.Tensor]] | None = [] if collect else None
         for index, layer in enumerate(tower.layers):
             residual = hidden
-            normalized, gate = _rmsnorm(
+            normalized, gate = rmsnorm(
                 layer.input_layernorm,
                 hidden,
                 adarms_condition,
@@ -214,15 +130,15 @@ class Pi05ReferenceModule(torch.nn.Module):
                 None if prefix_kv is None else prefix_kv[index],
                 collected,
             )
-            hidden = _gated_residual(residual, update, gate)
+            hidden = gated_residual(residual, update, gate)
             residual = hidden
-            normalized, gate = _rmsnorm(
+            normalized, gate = rmsnorm(
                 layer.post_attention_layernorm,
                 hidden,
                 adarms_condition,
             )
-            hidden = _gated_residual(residual, _mlp(layer.mlp, normalized), gate)
-        hidden, _ = _rmsnorm(tower.norm, hidden, adarms_condition)
+            hidden = gated_residual(residual, mlp(layer.mlp, normalized), gate)
+        hidden, _ = rmsnorm(tower.norm, hidden, adarms_condition)
         return hidden, None if collected is None else tuple(collected)
 
     def encode_prefix(self, inputs: Mapping[str, Any]) -> Mapping[str, Any]:

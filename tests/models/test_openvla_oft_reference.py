@@ -4,14 +4,14 @@ from types import SimpleNamespace
 
 import pytest
 
+torch = pytest.importorskip("torch")
+
 from embodied_runtime.models.vla.openvla_oft import OpenVLAOFTReferenceModule
 from embodied_runtime.models.vla.openvla_oft.head import CategoricalActionHead
-from embodied_runtime.models.vla.openvla_oft.modeling_openvla_oft import (
-    _default_dtype,
-    _materialize_language_buffers,
+from embodied_runtime.models.vla.openvla_oft.loading import (
+    default_dtype,
+    materialize_language_buffers,
 )
-
-torch = pytest.importorskip("torch")
 
 
 class _TinyVision(torch.nn.Module):
@@ -151,12 +151,12 @@ def test_meta_initialized_llama_rotary_buffers_are_materialized() -> None:
         num_key_value_heads=2,
         max_position_embeddings=32,
     )
-    with torch.device("meta"), _default_dtype(torch.bfloat16):
+    with torch.device("meta"), default_dtype(torch.bfloat16):
         language_model = transformers.LlamaForCausalLM(config)
 
     assert any(value.is_meta for _, value in language_model.named_buffers())
 
-    _materialize_language_buffers(
+    materialize_language_buffers(
         language_model,
         config,
         load_device="cpu",

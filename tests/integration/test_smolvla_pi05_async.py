@@ -8,16 +8,17 @@ from typing import Any
 
 import pytest
 
-from embodied_runtime.apps.smolvla_pi05_async import (
+from embodied_runtime.apps.cloud_edge.pi05_codec import pi05_response_to_result
+from embodied_runtime.apps.cloud_edge.smolvla_runtime import (
+    EdgeRuntime,
     Pi05TcpEndpoint,
-    SmolVLAPi05AsyncConfig,
-    _build_edge_runtime,
-    _EdgeRuntime,
-    _pi05_response_to_result,
-    _run_async_scenario,
+    build_edge_runtime,
 )
-from embodied_runtime.contracts import InferenceResult, IterativeFlowPlan
+from embodied_runtime.apps.cloud_edge.smolvla_scenario import run_async_scenario
+from embodied_runtime.apps.cloud_edge.smolvla_settings import SmolVLAPi05AsyncConfig
 from embodied_runtime.distributed import FailoverConfig, FailoverMode
+from embodied_runtime.engine import InferenceResult
+from embodied_runtime.models.plans import IterativeFlowPlan
 
 
 def async_test(function):
@@ -115,8 +116,8 @@ def _config(**changes: Any) -> SmolVLAPi05AsyncConfig:
     return SmolVLAPi05AsyncConfig(**values)
 
 
-def _runtime(engine: _FakeEdgeEngine) -> _EdgeRuntime:
-    return _EdgeRuntime(
+def _runtime(engine: _FakeEdgeEngine) -> EdgeRuntime:
+    return EdgeRuntime(
         adapter=object(),
         engine=engine,
         session=SimpleNamespace(device=SimpleNamespace(device_id="cuda:0")),
@@ -131,7 +132,7 @@ async def test_first_tick_does_not_wait_for_cloud_then_cache_preempts_and_discon
     cloud = _FakeCloudEndpoint()
     runtime = _runtime(engine)
 
-    summary = await _run_async_scenario(runtime, cloud, _config())
+    summary = await run_async_scenario(runtime, cloud, _config())
 
     assert summary["first_tick"]["source"] == "edge"
     assert summary["first_tick"]["selected_action_shape"] == [50, 6]
@@ -162,7 +163,7 @@ async def test_edge_only_never_calls_tcp_endpoint() -> None:
         failover=FailoverConfig(mode=FailoverMode.EDGE_ONLY),
     )
 
-    summary = await _run_async_scenario(runtime, cloud, config)
+    summary = await run_async_scenario(runtime, cloud, config)
 
     assert cloud.calls == 0
     assert summary["cloud_in_flight_after_first"] is False
@@ -224,7 +225,7 @@ async def test_tcp_wrapper_validates_response_and_observes_logical_disconnect() 
 
 def test_cloud_response_rejects_action_shape_mismatch() -> None:
     with pytest.raises(RuntimeError, match="must have shape"):
-        _pi05_response_to_result(
+        pi05_response_to_result(
             {
                 "ok": True,
                 "kind": "inference_result",
@@ -282,7 +283,7 @@ def test_edge_builder_uses_adapter_backend_engine_once_and_preserves_dtype() -> 
             self.closed = True
             session.close()
 
-    runtime = _build_edge_runtime(
+    runtime = build_edge_runtime(
         _config(),
         adapter_factory=lambda: adapter,
         backend_factory=lambda: backend,

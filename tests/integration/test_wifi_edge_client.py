@@ -7,6 +7,8 @@ from functools import wraps
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 from embodied_runtime.distributed.communication import (
     read_json_message,
     write_json_message,
@@ -14,6 +16,7 @@ from embodied_runtime.distributed.communication import (
 
 
 def _load_client() -> ModuleType:
+    pytest.importorskip("torch", reason="standalone Wi-Fi edge client requires PyTorch")
     path = Path(__file__).parents[2] / "examples" / "wifi_edge_client_py310.py"
     spec = importlib.util.spec_from_file_location("wifi_edge_client_py310", path)
     assert spec is not None

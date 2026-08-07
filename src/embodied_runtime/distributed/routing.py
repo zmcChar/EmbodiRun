@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
-from embodied_runtime.contracts import InferenceRequest
+from embodied_runtime.engine.request import InferenceRequest
 
 from .discovery import RuntimeEndpoint
 

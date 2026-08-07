@@ -3,14 +3,16 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-import torch
 
-from embodied_runtime.contracts import ModelPackageError, RawRequest
+torch = pytest.importorskip("torch")
+
+from embodied_runtime.models.errors import ModelPackageError
+from embodied_runtime.models.request import RawRequest
 from embodied_runtime.models.vla.openvla_oft.head import CategoricalActionHead
 from embodied_runtime.models.vla.openvla_oft.processing_openvla_oft import (
-    OpenVLAOFTProcessor,
     PROMPT_TEMPLATE,
     SPACE_TOKEN,
+    OpenVLAOFTProcessor,
 )
 
 

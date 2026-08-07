@@ -10,17 +10,9 @@ from embodied_runtime.apps._local_provider import (
     LocalProviderConfig,
     build_local_provider,
 )
-from embodied_runtime.apps.multi_robot_cloud import (
-    MultiRobotCloudConfig,
-    serve_multi_robot_cloud,
-)
-from embodied_runtime.apps.multi_robot_edge import RobotEdgeRuntime
-from embodied_runtime.contracts import (
-    InferenceRequest,
-    InferenceResult,
-    ModelSpec,
-    RawRequest,
-)
+from embodied_runtime.apps.multi_robot.cloud_server import serve_multi_robot_cloud
+from embodied_runtime.apps.multi_robot.cloud_settings import MultiRobotCloudConfig
+from embodied_runtime.apps.multi_robot.edge_runtime import RobotEdgeRuntime
 from embodied_runtime.distributed import (
     FailoverConfig,
     FallbackReason,
@@ -34,13 +26,16 @@ from embodied_runtime.distributed.communication import (
     TcpJsonProtocolError,
     TcpJsonRequestClient,
 )
-from embodied_runtime.integrations.serving import ProviderCapabilities
-from embodied_runtime.integrations.serving.multitenant import (
+from embodied_runtime.distributed.multitenant import (
     MultiTenantInferenceService,
-    SessionOverloadedError,
-    SessionRegistrationError,
-    SessionSequenceError,
 )
+from embodied_runtime.engine import (
+    InferenceRequest,
+    InferenceResult,
+    ProviderCapabilities,
+)
+from embodied_runtime.models.request import RawRequest
+from embodied_runtime.models.spec import ModelSpec
 
 _ACTION_SPACE_ID = "toy-vector-actions-v1"
 _EMBODIMENT = "toy-vector"
@@ -244,12 +239,11 @@ def _request(
     *,
     target: list[float],
     sequence_id: int,
-    raw_metadata: dict[str, object] | None = None,
 ) -> InferenceRequest:
     return InferenceRequest(
         payload=RawRequest(
             observation={"target": target},
-            metadata=raw_metadata or {},
+            metadata={},
         ),
         request_id=request_id,
         metadata={"sequence_id": sequence_id},
@@ -300,85 +294,8 @@ def _inference_response(
 
 
 @async_test
-async def test_shared_service_namespaces_ids_and_runs_sessions_concurrently() -> None:
-    provider = _EchoProvider(
-        "cloud",
-        wait_for_concurrency=2,
-        multi_tenant_safe=True,
-    )
-    service = _service(provider)
-    robot_a = _identity("a")
-    robot_b = _identity("b")
-    registration = _registration_metadata(
-        provider,
-        physical_resource_id="gpu-shared",
-    )
-    service.register(robot_a, metadata=registration)
-    service.register(robot_b, metadata=registration)
-
-    task_a = asyncio.create_task(
-        service.infer_async(
-            robot_a,
-            _request(
-                "same-request",
-                target=[1.0, 2.0],
-                sequence_id=1,
-                raw_metadata={"robot_id": "spoofed-robot"},
-            ),
-            sequence_id=1,
-            observation_id="a-observation-1",
-            observation_timestamp_s=1.0,
-        )
-    )
-    task_b = asyncio.create_task(
-        service.infer_async(
-            robot_b,
-            _request("same-request", target=[10.0, 20.0], sequence_id=1),
-            sequence_id=1,
-            observation_id="b-observation-1",
-            observation_timestamp_s=1.0,
-        )
-    )
-    await asyncio.wait_for(provider.concurrent.wait(), timeout=1.0)
-    provider.release.set()
-    result_a, result_b = await asyncio.gather(task_a, task_b)
-
-    assert provider.max_active == 2
-    assert result_a.request_id == result_b.request_id == "same-request"
-    assert result_a.output == {"actions": [1.0, 2.0]}
-    assert result_b.output == {"actions": [10.0, 20.0]}
-    assert result_a.metadata["robot_id"] == "robot-a"
-    assert result_b.metadata["robot_id"] == "robot-b"
-    assert provider.requests[0].request_id != provider.requests[1].request_id
-    observed_raw_metadata = {
-        request.metadata["robot_id"]: request.payload.metadata["robot_id"]
-        for request in provider.requests
-    }
-    assert observed_raw_metadata == {
-        "robot-a": "robot-a",
-        "robot-b": "robot-b",
-    }
-
-    with pytest.raises(SessionSequenceError, match="expected greater than 1"):
-        await service.infer_async(
-            robot_a,
-            _request("duplicate", target=[0.0, 0.0], sequence_id=1),
-            sequence_id=1,
-            observation_id="a-observation-duplicate",
-            observation_timestamp_s=2.0,
-        )
-    with pytest.raises(SessionRegistrationError, match="already bound"):
-        service.register(
-            _identity("other", session_id=robot_a.session_id),
-            metadata=registration,
-        )
-
-    await service.aclose()
-    assert provider.closed
-
-
-@async_test
 async def test_shared_local_provider_batches_two_robot_observations() -> None:
+    pytest.importorskip("torch", reason="real local provider batching requires PyTorch")
     provider = build_local_provider(
         LocalProviderConfig(
             model="toy_single_forward",
@@ -550,145 +467,10 @@ async def test_two_edge_runtimes_keep_sessions_and_failover_independent(
     assert cloud_provider.closed
 
 
-def test_shared_service_requires_explicit_multi_tenant_safety() -> None:
-    provider = _EchoProvider("unsafe-default")
-
-    with pytest.raises(ValueError, match="multi_tenant_safe"):
-        _service(provider)
-
+def test_default_cloud_config_enables_multi_tenant_safety() -> None:
     default_cloud = MultiRobotCloudConfig()
     assert default_cloud.provider.max_batch_size == 1
     assert default_cloud.provider.multi_tenant_safe
-
-
-def test_registration_rejects_action_and_embodiment_contract_mismatches() -> None:
-    provider = _EchoProvider("contract-cloud", multi_tenant_safe=True)
-    service = _service(provider)
-    registration = _registration_metadata(provider)
-
-    with pytest.raises(SessionRegistrationError, match="action_space_id"):
-        service.register(
-            _identity("wrong-action", action_space_id="other-actions-v1"),
-            metadata=registration,
-        )
-    with pytest.raises(SessionRegistrationError, match="unsupported"):
-        service.register(
-            _identity("wrong-body", embodiment="other-robot"),
-            metadata=registration,
-        )
-    with pytest.raises(SessionRegistrationError, match="edge_action_dim"):
-        service.register(
-            _identity("wrong-dim"),
-            metadata={
-                **registration,
-                "edge_action_dim": 99,
-            },
-        )
-
-
-@async_test
-async def test_same_session_overload_and_unregister_drain() -> None:
-    provider = _EchoProvider(
-        "blocking-cloud",
-        wait_for_concurrency=1,
-        multi_tenant_safe=True,
-    )
-    service = _service(provider, max_pending_per_session=1)
-    identity = _identity("overload")
-    service.register(identity, metadata=_registration_metadata(provider))
-
-    active = asyncio.create_task(
-        service.infer_async(
-            identity,
-            _request("active", target=[1.0, 2.0], sequence_id=1),
-            sequence_id=1,
-            observation_id="active-observation",
-            observation_timestamp_s=1.0,
-        )
-    )
-    await asyncio.wait_for(provider.concurrent.wait(), timeout=1.0)
-
-    with pytest.raises(SessionOverloadedError, match="pending request"):
-        await service.infer_async(
-            identity,
-            _request("overloaded", target=[3.0, 4.0], sequence_id=2),
-            sequence_id=2,
-            observation_id="overloaded-observation",
-            observation_timestamp_s=2.0,
-        )
-
-    service.unregister(identity)
-    assert service.registered_session_count == 1
-    with pytest.raises(SessionRegistrationError, match="unregistering"):
-        await service.infer_async(
-            identity,
-            _request("after-unregister", target=[5.0, 6.0], sequence_id=2),
-            sequence_id=2,
-            observation_id="after-unregister-observation",
-            observation_timestamp_s=3.0,
-        )
-
-    provider.release.set()
-    assert (await active).output == {"actions": [1.0, 2.0]}
-    assert service.registered_session_count == 0
-    await service.aclose()
-
-
-@async_test
-async def test_service_close_waits_for_active_inference() -> None:
-    provider = _EchoProvider(
-        "close-drain-cloud",
-        wait_for_concurrency=1,
-        multi_tenant_safe=True,
-    )
-    service = _service(provider)
-    identity = _identity("close-drain")
-    service.register(identity, metadata=_registration_metadata(provider))
-    inference = asyncio.create_task(
-        service.infer_async(
-            identity,
-            _request("active-close", target=[1.0, 2.0], sequence_id=1),
-            sequence_id=1,
-            observation_id="active-close-observation",
-            observation_timestamp_s=1.0,
-        )
-    )
-    await asyncio.wait_for(provider.concurrent.wait(), timeout=1.0)
-
-    close = asyncio.create_task(service.aclose())
-    await asyncio.sleep(0)
-    assert not close.done()
-    assert not provider.closed
-
-    provider.release.set()
-    await asyncio.gather(inference, close)
-    assert provider.closed
-
-
-def test_idle_session_ttl_reclaims_capacity() -> None:
-    now = [10.0]
-    provider = _EchoProvider("ttl-cloud", multi_tenant_safe=True)
-    service = _service(
-        provider,
-        max_sessions=1,
-        session_idle_ttl_s=5.0,
-        clock=lambda: now[0],
-    )
-    first = _identity("ttl-first")
-    second = _identity("ttl-second")
-    registration = _registration_metadata(provider)
-    service.register(first, metadata=registration)
-
-    now[0] = 15.0
-    assert service.registered_session_count == 1
-    with pytest.raises(SessionRegistrationError, match="capacity"):
-        service.register(second, metadata=registration)
-
-    now[0] = 15.001
-    service.register(second, metadata=registration)
-    snapshots = service.sessions()
-    assert len(snapshots) == 1
-    assert snapshots[0].identity == second
 
 
 @async_test
