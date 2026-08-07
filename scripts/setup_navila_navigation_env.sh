@@ -16,7 +16,6 @@ conda_command=${NAVILA_NAV_CONDA:-}
 
 navila_repository=https://github.com/AnjieCheng/NaVILA.git
 navila_commit=76b98f233dd0fff05dfcd69435eec6740febff9d
-transformers_revision=v4.37.2
 environment_marker="$environment_path/.embodied-runtime-navila-navigation"
 marker_value="embodied-runtime-navila-navigation:$navila_commit"
 
@@ -109,7 +108,7 @@ PYTHONNOUSERSITE=1 "$environment_python" -m pip install \
   torch==2.3.0 torchvision==0.18.0 \
   --index-url https://download.pytorch.org/whl/cu121
 PYTHONNOUSERSITE=1 "$environment_python" -m pip install \
-  "transformers @ git+https://github.com/huggingface/transformers@$transformers_revision" \
+  transformers==4.37.2 \
   tokenizers==0.15.2 \
   sentencepiece==0.1.99 \
   accelerate==0.27.2 \
