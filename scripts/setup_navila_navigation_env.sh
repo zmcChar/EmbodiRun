@@ -12,6 +12,7 @@ runtime_root=${NAVILA_NAV_RUNTIME_ROOT:-"$repository_root/.navila-navigation-run
 environment_path=${NAVILA_NAV_ENV_PATH:-"$runtime_root/env"}
 source_path=${NAVILA_NAV_SOURCE_PATH:-"$runtime_root/source/NaVILA"}
 python_command=${NAVILA_NAV_PYTHON:-python3.10}
+conda_command=${NAVILA_NAV_CONDA:-}
 
 navila_repository=https://github.com/AnjieCheng/NaVILA.git
 navila_commit=76b98f233dd0fff05dfcd69435eec6740febff9d
@@ -27,16 +28,6 @@ if ! command -v git >/dev/null 2>&1; then
   echo "git is required to install the pinned NaVILA source" >&2
   exit 2
 fi
-if ! command -v "$python_command" >/dev/null 2>&1; then
-  echo "Python command not found: $python_command" >&2
-  exit 2
-fi
-python_version=$("$python_command" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-if [[ "$python_version" != 3.10 ]]; then
-  echo "NaVILA requires Python 3.10, found $python_version" >&2
-  exit 2
-fi
-
 if [[ -e "$environment_path" ]]; then
   if [[ ! -d "$environment_path" || ! -f "$environment_marker" ]]; then
     echo "refusing to modify an existing unmarked environment: $environment_path" >&2
@@ -52,7 +43,29 @@ if [[ -e "$environment_path" ]]; then
   fi
 else
   mkdir -p -- "$(dirname -- "$environment_path")"
-  "$python_command" -m venv "$environment_path"
+  if command -v "$python_command" >/dev/null 2>&1 && \
+    [[ $("$python_command" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")') == 3.10 ]] && \
+    "$python_command" -m ensurepip --version >/dev/null 2>&1; then
+    "$python_command" -m venv "$environment_path"
+  else
+    if [[ -z "$conda_command" ]]; then
+      for candidate in \
+        "$(command -v conda 2>/dev/null || true)" \
+        "$HOME/.local/miniforge3/bin/conda" \
+        "$HOME/miniforge3/bin/conda" \
+        "$HOME/miniconda3/bin/conda"; do
+        if [[ -n "$candidate" && -x "$candidate" ]]; then
+          conda_command="$candidate"
+          break
+        fi
+      done
+    fi
+    if [[ -z "$conda_command" || ! -x "$conda_command" ]]; then
+      echo "Python 3.10 with ensurepip or a Conda executable is required" >&2
+      exit 2
+    fi
+    "$conda_command" create --yes --prefix "$environment_path" python=3.10 pip
+  fi
   printf '%s\n' "$marker_value" >"$environment_marker"
 fi
 
