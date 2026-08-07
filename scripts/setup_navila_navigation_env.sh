@@ -16,6 +16,8 @@ conda_command=${NAVILA_NAV_CONDA:-}
 
 navila_repository=https://github.com/AnjieCheng/NaVILA.git
 navila_commit=76b98f233dd0fff05dfcd69435eec6740febff9d
+s2wrapper_repository=https://github.com/bfshi/scaling_on_scales
+s2wrapper_commit=9c008a37540e761f53574b488979db6e49a64312
 environment_marker="$environment_path/.embodied-runtime-navila-navigation"
 marker_value="embodied-runtime-navila-navigation:$navila_commit"
 
@@ -104,7 +106,7 @@ fi
 
 environment_python="$environment_path/bin/python"
 PYTHONNOUSERSITE=1 "$environment_python" -m pip install --upgrade "pip>=25,<27"
-PYTHONNOUSERSITE=1 "$environment_python" -m pip install \
+PYTHONNOUSERSITE=1 DS_BUILD_OPS=0 "$environment_python" -m pip install \
   torch==2.3.0 torchvision==0.18.0 \
   --index-url https://download.pytorch.org/whl/cu121
 PYTHONNOUSERSITE=1 "$environment_python" -m pip install \
@@ -120,8 +122,27 @@ PYTHONNOUSERSITE=1 "$environment_python" -m pip install \
   opencv-python-headless==4.8.0.74 \
   decord==0.6.0 \
   deepspeed==0.9.5 \
-  loguru==0.7.3 \
-  "s2wrapper @ git+https://github.com/bfshi/scaling_on_scales"
+  loguru==0.7.3
+if ! PYTHONNOUSERSITE=1 "$environment_python" - "$s2wrapper_commit" <<'PY'
+import importlib
+import importlib.metadata
+import json
+import sys
+
+expected_commit = sys.argv[1]
+try:
+    distribution = importlib.metadata.distribution("s2wrapper")
+    direct_url = json.loads(distribution.read_text("direct_url.json") or "{}")
+    commit = direct_url.get("vcs_info", {}).get("commit_id")
+    importlib.import_module("s2wrapper")
+except (ImportError, importlib.metadata.PackageNotFoundError, json.JSONDecodeError):
+    raise SystemExit(1)
+raise SystemExit(0 if commit == expected_commit else 1)
+PY
+then
+  PYTHONNOUSERSITE=1 "$environment_python" -m pip install \
+    "s2wrapper @ git+$s2wrapper_repository@$s2wrapper_commit"
+fi
 PYTHONNOUSERSITE=1 "$environment_python" -m pip install -e "$repository_root"
 
 overlay_path="$source_path/llava/train/transformers_replace"
@@ -173,9 +194,12 @@ from pathlib import Path
 
 import flash_attn
 import deepspeed
+import deepspeed.comm as deepspeed_dist
 import llava
+import llava.model.builder
 import torch
 import transformers
+from llava.train.sequence_parallel import globals as sequence_parallel_globals
 
 environment = Path(sys.argv[1])
 source = Path(sys.argv[2]).resolve()
@@ -196,6 +220,9 @@ assert torch.__version__.split("+", 1)[0] == "2.3.0"
 assert transformers.__version__ == "4.37.2"
 assert deepspeed.__version__ == "0.9.5"
 assert flash_attn.__version__ == "0+navila-eager-disabled"
+assert sequence_parallel_globals.dist is deepspeed_dist
+assert not torch.distributed.is_initialized()
+assert not deepspeed_dist.is_initialized()
 
 print(f"NaVILA source ready: {source}@{source_revision}")
 print(
