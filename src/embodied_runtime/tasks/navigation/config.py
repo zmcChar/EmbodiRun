@@ -63,6 +63,8 @@ class ReactiveNavigationSessionConfig:
     state_retry_delay_s: float = 0.15
     max_events: int = 256
     limits: PlanarVelocityLimits = DEFAULT_PLANAR_VELOCITY_LIMITS
+    max_waypoints_per_observation: int = 1
+    terminal_after_waypoints: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.limits, PlanarVelocityLimits):
@@ -88,7 +90,10 @@ class ReactiveNavigationSessionConfig:
             raise ValueError("yaw_rate_rps exceeds planar velocity limits")
         if not isinstance(self.execute, bool):
             raise TypeError("execute must be a boolean")
+        if not isinstance(self.terminal_after_waypoints, bool):
+            raise TypeError("terminal_after_waypoints must be a boolean")
         _require_positive_int(self, "state_attempts")
+        _require_positive_int(self, "max_waypoints_per_observation")
         _require_positive_int(self, "max_events")
 
 

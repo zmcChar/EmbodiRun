@@ -5,14 +5,26 @@ max_runtime_s = 120.0
 control_hz = 10.0
 lease_duration_s = 10.0
 max_events = 256
-# auto uses one-action image-reactive replanning for StreamVLN and NaVILA. Use
-# continuous only when the robot exposes a trustworthy changing x/y pose.
+# auto uses image-reactive replanning. StreamVLN/NaVILA execute one waypoint;
+# ActiveVLN executes its complete bounded chunk (at most three) before recapture.
+# Use continuous only with a trustworthy changing x/y pose.
 mode = "auto"
 
-# Select exactly one backend. Local backends are loaded in this process; the
-# existing Qwen endpoint is only called and is never started, stopped, or restarted.
+# Select a model and its inference runtime independently. Transformers is the
+# default and loads local navigation checkpoints in this process. --backend is
+# retained as a CLI/config compatibility alias for model.
 [policy]
-backend = "streamvln" # qwen, streamvln, internvla, or navila
+model = "streamvln" # qwen, streamvln, internvla, navila, or activevln
+runtime = "transformers" # transformers, vllm-omni, or vvla
+
+# Used only when runtime = "vllm-omni". This is an experimental connection to
+# an already-running external OpenPI-compatible service; the navigation client
+# never starts, stops, or restarts that service. Its handshake and messages must
+# match this repository's navigation protocol adapter.
+[vllm_omni]
+url = "ws://127.0.0.1:8000/v1/realtime/robot/openpi"
+timeout_s = 120.0
+# session_id = "optional-stable-session-id"
 
 [qwen]
 base_url = "http://127.0.0.1:15003/v1"
@@ -42,6 +54,24 @@ device = "cuda:0"
 cuda_memory_fraction = 0.45
 max_new_tokens = 32
 local_files_only = true
+
+# ActiveVLN supports runtime="transformers" (stock-HF full history) and
+# runtime="vvla" (incremental episode KV). Both use this pinned submodule for
+# source/checkpoint verification; initialize it before selecting either route.
+[activevln]
+repository = "third_party/vvla"
+checkpoint = "Arvil/Qwen2.5-VL-3B_rl_r2r_4000"
+revision = "160987313e3e869705f42400d1b8f28177044518"
+device = "cuda:0"
+# The pinned checkpoint is fp32 (~16.3 GB). BF16 avoids a guaranteed OOM on a
+# 16 GB RTX 5080. Equal BF16 inputs produced different greedy actions between
+# stock HF and VVLA locally, so this is not an output-parity setting.
+dtype = "bfloat16"
+attention = "eager" # eager/sdpa for both; eager_bc is VVLA-only
+max_new_tokens = 64
+max_context = 32768
+allow_download = false
+do_sample = false
 
 [go2]
 # Loopback is inert for a remote robot. Pass --robot-host/--robot-ip at runtime,

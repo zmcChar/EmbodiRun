@@ -30,6 +30,42 @@ them on the command line or set `GO2_ROBOT_HOST`, `GO2_SSH_USER`,
 The generic Python CLI behaves differently: `examples/go2_navigation.py` is
 observation-only unless `--execute` is present.
 
+## Model and inference runtime selection
+
+The generic navigation CLI treats the model and inference runtime as separate
+choices. `--model` selects `qwen`, `streamvln`, `internvla`, `navila`, or
+`activevln`; `--runtime` selects `transformers`, `vllm-omni`, or `vvla`. The old
+`--backend` spelling remains a compatibility alias for `--model`. If both are
+supplied, they must select the same model.
+
+`transformers` is the default. StreamVLN, InternVLA, NaVILA, and ActiveVLN then
+load their local checkpoint in the navigation process using their
+model-specific runtime. ActiveVLN uses stock-HF full-history generation in this
+mode. Qwen continues to call its configured OpenAI-compatible endpoint.
+
+The `vllm-omni` choice is currently an experimental protocol integration for
+StreamVLN and NaVILA. It connects over WebSocket to an already-running external
+OpenPI-compatible service. The navigation client never installs, launches,
+stops, or restarts that service. The server must be configured for the selected
+model and must implement the handshake, session/reset behavior, request fields,
+and response schema expected by this repository's adapter. Upstream vLLM-Omni
+does not natively advertise these two models, so this option must not be read as
+a claim of upstream model support or an automatic acceleration path. Selecting
+`vllm-omni` with Qwen or InternVLA fails before policy construction.
+The complete handshake and numeric action schema are defined in
+[Navigation through vLLM-Omni/OpenPI](navigation_vllm_omni.md).
+
+ActiveVLN supports two in-process, batch-one routes backed by the same pinned
+checkpoint contract. `activevln + transformers` reconstructs and re-encodes the
+complete multimodal history each turn; `activevln + vvla` keeps incremental KV
+in an explicit episode session. Both enforce the same R2R action grammar. The
+paired RTX 5080 BF16 benchmark produced different greedy action texts, so its
+latency comparison is not an output-parity result. VVLA does not provide
+StreamVLN or NaVILA adapters, and upstream vLLM-Omni does not advertise
+ActiveVLN/Qwen2.5-VL. Setup, commands, benchmark caveats and real Habitat
+requirements are documented in
+[ActiveVLN navigation through Transformers and VVLA](navigation_vvla_activevln.md).
+
 ## Current ownership and closed loop
 
 The runnable composition is assembled in `embodied_runtime.apps.navigation`.
@@ -42,7 +78,9 @@ Go2 RGB/RGB-D image + state
               ├── Qwen endpoint ──────────> QwenNavigationPolicy ────────┐
               ├── StreamVLN runtime ──────> StreamVLNNavigationPolicy ──┤
               ├── InternVLA runtime ──────> InternVLANavigationPolicy ──┤
-              └── NaVILA runtime ─────────> NaVILANavigationPolicy ─────┘
+              ├── NaVILA runtime ─────────> NaVILANavigationPolicy ─────┤
+              ├── HF / ActiveVLN ─────────> TransformersActiveVLNNavigationPolicy
+              └── VVLA / ActiveVLN ───────> VvlaActiveVLNNavigationPolicy
                                                                          │
                                                                          v
                                                     tasks.navigation.WaypointPlan
@@ -82,15 +120,18 @@ The domain paths are:
 
 Qwen calls the existing OpenAI-compatible endpoint and asks for validated
 structured output. Closing the policy closes only its client transport; it
-does not start, stop, or restart Qwen. StreamVLN, InternVLA, and NaVILA load the
-selected local checkpoint in the navigation process. InternVLA `dualvln`
-consumes RGB; `navdp` additionally requires registered depth.
+does not start, stop, or restart Qwen. With the default `transformers` runtime,
+StreamVLN, InternVLA, and NaVILA load the selected local checkpoint in the
+navigation process. With the experimental `vllm-omni` runtime, the StreamVLN
+or NaVILA policy owns only its client connection to the separately managed
+OpenPI service. InternVLA `dualvln` consumes RGB; `navdp` additionally requires
+registered depth.
 
 The application awaits each policy's `prepare()` lifecycle hook before it
-starts the task session. StreamVLN checkpoint loading and configured warmup,
-plus InternVLA and NaVILA checkpoint loading, therefore do not consume
-`max_runtime_s`. Qwen preparation intentionally does not probe or manage the
-external server.
+starts the task session. Local checkpoint loading and configured warmup, or the
+experimental OpenPI connection and handshake, therefore do not consume
+`max_runtime_s`. Preparing or closing a remote policy does not manage the
+external model-server process.
 
 Every policy returns a `WaypointPlan` in `base_link`: `x` is forward, `y` is
 left, and positive yaw is counter-clockwise. A policy never emits Unitree SDK
@@ -106,18 +147,27 @@ inference runs. This mode requires trustworthy changing planar pose state.
 
 On the current Go2 path, `SportModeState.position` may remain constant while
 the robot walks. Therefore `session.mode = "auto"` selects
-`ReactiveNavigationSession` for StreamVLN and NaVILA. The reactive loop is:
+`ReactiveNavigationSession` for StreamVLN, NaVILA, and ActiveVLN. The generic
+reactive loop is:
 
 ```text
 capture image/state → infer WaypointPlan → use first waypoint
        → bounded timed velocity pulse → stop → settle → capture again
 ```
 
-The pulse duration is limited, and a new observation is required before the
-next action. A terminal plan with no waypoint stops the episode. If a terminal
-plan also contains a waypoint, the session executes its first waypoint, lets
-the bounded lease expire, and captures and infers again; it stops when a later
-plan is empty and terminal.
+Each pulse duration is limited. StreamVLN and NaVILA keep the default of one
+waypoint per observation. ActiveVLN instead emits a native chunk of at most
+three actions and commits that whole response to recurrent history. Its Go2
+composition therefore converts all cumulative chunk waypoints into sequential
+SE(2)-relative pulses and executes them before the next capture. A terminal
+ActiveVLN chunk ends after all preceding waypoints execute. This keeps the
+robot's actual motion aligned with the history seen by either inference
+backend.
+
+A generic terminal plan with no waypoint stops the episode. Outside the
+ActiveVLN composition, a terminal plan that also contains a waypoint retains
+the default behavior: execute the first waypoint, recapture and require a
+later empty terminal plan.
 
 For Qwen and InternVLA, `auto` currently selects continuous mode. Choose
 `reactive` explicitly if the robot does not expose usable translational
@@ -145,6 +195,10 @@ interlock, hard velocity bounds, and lease expiry. The host-side
 `Go2ControlClient` uses `stream_move`, `update_move`, and stop through that
 service; it never imports the Unitree SDK.
 
+When `runtime = "vllm-omni"`, model inference is instead reached through the
+configured WebSocket URL. The external OpenPI service may run on the same host
+or another machine; it is outside the camera/control deployment lifecycle.
+
 ## Motion boundary
 
 The Go2 control API rejects commands above its configured hard maxima:
@@ -168,15 +222,21 @@ live run.
 
 The additive setup script creates a Python 3.10 environment for the task,
 policy, and selected local model code. It does not inspect, stop, or restart an
-existing Qwen process:
+existing Qwen or vLLM-Omni/OpenPI process:
 
 ```bash
 export GO2_NAV_RUNTIME_ROOT=/home/user/go2-nav-runtime
 bash scripts/setup_go2_navigation_env.sh
 ```
 
-Only the selected local model is loaded by a run; large checkpoints do not all
-need to be resident at once.
+With `runtime = "transformers"`, only the selected local model is loaded by a
+run; large checkpoints do not all need to be resident at once. With
+`runtime = "vllm-omni"`, checkpoint ownership belongs to the external service.
+Both ActiveVLN runtimes use its isolated environment:
+
+```bash
+bash scripts/setup_vvla_activevln_env.sh
+```
 
 NaVILA must run from its own Python 3.10 environment. The pinned upstream
 installation replaces parts of Transformers, so applying it to the shared
@@ -205,6 +265,9 @@ Pinned upstream inputs:
   [`76b98f233dd0fff05dfcd69435eec6740febff9d`](https://github.com/AnjieCheng/NaVILA/tree/76b98f233dd0fff05dfcd69435eec6740febff9d)
 - NaVILA checkpoint:
   [`a8cheng/navila-llama3-8b-8f`](https://huggingface.co/a8cheng/navila-llama3-8b-8f)
+- VVLA source: `6f65961c0222bbbd86ca3b09b93f13cee3ac70c8`
+- ActiveVLN checkpoint revision:
+  `Arvil/Qwen2.5-VL-3B_rl_r2r_4000@160987313e3e869705f42400d1b8f28177044518`
 
 ## Configure
 
@@ -227,7 +290,11 @@ Command-line token overrides (`--camera-token`, `--control-token`, and
 Relevant overrides include:
 
 ```text
---backend qwen|streamvln|internvla|navila
+--model qwen|streamvln|internvla|navila|activevln
+--backend MODEL              compatibility alias for --model
+--runtime transformers|vllm-omni|vvla
+--vllm-omni-url WS_URL       --vllm-omni-timeout-s SECONDS
+--vllm-omni-session-id ID
 --session-mode auto|reactive|continuous
 --instruction TEXT             --episode-id ID
 --max-runtime-s SECONDS        --control-hz HZ
@@ -235,13 +302,20 @@ Relevant overrides include:
 --robot-host HOST              --camera-port PORT --control-port PORT
 --streamvln-root PATH          --internvla-root PATH
 --navila-root PATH
+--vvla-root PATH
 --model-path PATH_OR_MODEL_ID  --device cuda:0
 --cuda-memory-fraction 0.45    --max-new-tokens 64
+--dtype bfloat16               --attention eager|eager_bc|sdpa
+--max-context 32768            --activevln-revision REVISION
 ```
 
-`--model-path` applies to the selected backend and acts as the Qwen model ID
-when `--backend qwen` is selected. `--cuda-memory-fraction` applies to a newly
-loaded StreamVLN or NaVILA process, according to the selected backend.
+`--model-path` applies to the selected model and acts as the Qwen model ID when
+`--model qwen` is selected. `--cuda-memory-fraction` applies only to a newly
+loaded local StreamVLN or NaVILA Transformers process. The vLLM-Omni options
+configure only the client connection; they do not configure or launch the
+external service. For ActiveVLN, `--vvla-root` identifies the pinned submodule
+used for source/checkpoint verification by both local runtimes; `eager_bc`
+attention is available only with `runtime=vvla`.
 
 ## Dry-run first
 
@@ -252,7 +326,8 @@ PYTHONNOUSERSITE=1 CUDA_VISIBLE_DEVICES=1 \
   /home/user/go2-nav-runtime/env/bin/python \
   examples/go2_navigation.py \
   --config configs/go2_navigation.toml \
-  --backend streamvln \
+  --model streamvln \
+  --runtime transformers \
   --session-mode reactive \
   --device cuda:0 \
   --instruction '导航到画面中的黄色立柱前，保持约 0.8 米距离'
@@ -270,7 +345,8 @@ PYTHONNOUSERSITE=1 CUDA_VISIBLE_DEVICES=1 \
   /home/user/go2-nav-runtime/env/bin/python \
   examples/go2_navigation.py \
   --config configs/go2_navigation.toml \
-  --backend streamvln \
+  --model streamvln \
+  --runtime transformers \
   --instruction '导航到画面中的黄色立柱前，保持约 0.8 米距离' \
   --max-runtime-s 120 \
   --execute
@@ -280,13 +356,32 @@ Qwen uses the already-running endpoint without changing it:
 
 ```bash
 python examples/go2_navigation.py \
-  --backend qwen \
+  --model qwen \
   --qwen-base-url http://127.0.0.1:15003/v1 \
   --qwen-model qwen3.5-9b \
   --instruction '导航到三脚架前'
 ```
 
 The Qwen command above is also a dry-run because it has no `--execute` flag.
+
+To exercise the experimental external protocol, first start and independently
+verify a matching OpenPI service, then point the observation-only navigation
+client at it:
+
+```bash
+python examples/go2_navigation.py \
+  --model streamvln \
+  --runtime vllm-omni \
+  --vllm-omni-url ws://127.0.0.1:8000/v1/realtime/robot/openpi \
+  --vllm-omni-timeout-s 120 \
+  --instruction '导航到三脚架前'
+```
+
+This command does not start the server and does not prove that an arbitrary
+upstream vLLM-Omni server can serve StreamVLN. The server must implement the
+matching experimental navigation handshake and response protocol. Omit
+`--execute` until the returned plans and reset/session behavior have been
+verified.
 
 NaVILA is also available through `nav.sh`. Run the generic CLI first without
 `--execute` from the dedicated environment:
@@ -296,7 +391,8 @@ PYTHONNOUSERSITE=1 CUDA_VISIBLE_DEVICES=1 \
   .navila-navigation-runtime/env/bin/python \
   examples/go2_navigation.py \
   --config configs/go2_navigation.toml \
-  --backend navila \
+  --model navila \
+  --runtime transformers \
   --session-mode reactive \
   --navila-root .navila-navigation-runtime/source/NaVILA \
   --model-path /home/user/go2-nav-runtime/checkpoints/navila-llama3-8b-8f \
@@ -340,7 +436,8 @@ The dog is not needed for a checkpoint load test:
 PYTHONNOUSERSITE=1 CUDA_VISIBLE_DEVICES=1 \
   /home/user/go2-nav-runtime/env/bin/python \
   examples/go2_navigation_infer.py \
-  --backend streamvln \
+  --model streamvln \
+  --runtime transformers \
   --streamvln-root /home/user/go2-nav-runtime/src/StreamVLN \
   --model-path /home/user/go2-nav-runtime/checkpoints/streamvln-real-world \
   --cuda-memory-fraction 0.45 \
@@ -356,7 +453,8 @@ The equivalent model-only NaVILA load check is:
 PYTHONNOUSERSITE=1 CUDA_VISIBLE_DEVICES=1 \
   .navila-navigation-runtime/env/bin/python \
   examples/go2_navigation_infer.py \
-  --backend navila \
+  --model navila \
+  --runtime transformers \
   --navila-root .navila-navigation-runtime/source/NaVILA \
   --model-path /home/user/go2-nav-runtime/checkpoints/navila-llama3-8b-8f \
   --cuda-memory-fraction 0.44 \

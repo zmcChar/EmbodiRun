@@ -32,8 +32,9 @@ async def run_navigation(
         raise ValueError("navigation instruction is required (use --instruction)")
     policy = policy_factory(config.policy)
     try:
-        # Materialize local models before the task session starts so checkpoint
-        # loading and warmup do not consume the navigation runtime budget.
+        # Prepare the selected runtime before the task session starts so local
+        # loading/warmup or an external service handshake does not consume the
+        # navigation runtime budget.
         await policy.prepare()
         camera = camera_factory(
             config.go2.camera_url,
@@ -65,6 +66,9 @@ async def run_navigation(
             output,
             {
                 "kind": "navigation_start",
+                "model": config.policy.model,
+                "runtime": config.policy.runtime,
+                # Compatibility field for existing JSON Lines consumers.
                 "backend": config.policy.backend,
                 "episode_id": config.run.episode_id,
                 "mode": "execute" if execute else "dry-run",
@@ -85,6 +89,9 @@ async def run_navigation(
         {
             "kind": "navigation_summary",
             "ok": True,
+            "model": config.policy.model,
+            "runtime": config.policy.runtime,
+            # Compatibility field for existing JSON Lines consumers.
             "backend": config.policy.backend,
             "mode": "execute" if execute else "dry-run",
             **summary,

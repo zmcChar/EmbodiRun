@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from embodied_runtime.robots.unitree.go2.profile import (
@@ -13,7 +14,15 @@ from embodied_runtime.tasks.navigation import PlanarVelocityLimits
 
 from .validation import nonempty, positive
 
-BACKENDS = ("qwen", "streamvln", "internvla", "navila")
+MODELS = ("qwen", "streamvln", "internvla", "navila", "activevln")
+# ``backend`` was the original public name for the model selector.  Keep the
+# constant as an alias while new configuration and CLI surfaces use ``model``.
+BACKENDS = MODELS
+RUNTIMES = ("transformers", "vllm-omni", "vvla")
+DEFAULT_VVLA_ROOT = str(Path(__file__).resolve().parents[4] / "third_party" / "vvla")
+DEFAULT_ACTIVEVLN_CHECKPOINT = "Arvil/Qwen2.5-VL-3B_rl_r2r_4000"
+DEFAULT_ACTIVEVLN_REVISION = "160987313e3e869705f42400d1b8f28177044518"
+DEFAULT_VLLM_OMNI_URL = "ws://127.0.0.1:8000/v1/realtime/robot/openpi"
 DEFAULT_GO2_CAMERA_URL = "http://127.0.0.1:8765"
 DEFAULT_GO2_CONTROL_URL = "http://127.0.0.1:8080"
 GO2_CONTROL_HARD_LIMITS = PlanarVelocityLimits(
@@ -52,7 +61,14 @@ class RunSettings:
 
 @dataclass(frozen=True, slots=True)
 class PolicySettings:
+    # ``backend`` remains the stored field so existing callers constructing
+    # ``PolicySettings(backend=...)`` keep working.  ``model`` below is the
+    # canonical read-only spelling for new selector code.
     backend: str = "streamvln"
+    runtime: str = "transformers"
+    vllm_omni_url: str = DEFAULT_VLLM_OMNI_URL
+    vllm_omni_timeout_s: float = 120.0
+    vllm_omni_session_id: str | None = None
     qwen_base_url: str = "http://127.0.0.1:15003/v1"
     qwen_model: str = "qwen3.5-9b"
     qwen_api_key: str | None = None
@@ -74,16 +90,46 @@ class PolicySettings:
     navila_cuda_memory_fraction: float | None = None
     navila_max_new_tokens: int = 32
     navila_local_files_only: bool = True
+    vvla_root: str = DEFAULT_VVLA_ROOT
+    activevln_checkpoint: str = DEFAULT_ACTIVEVLN_CHECKPOINT
+    activevln_revision: str = DEFAULT_ACTIVEVLN_REVISION
+    activevln_device: str = "cuda:0"
+    activevln_dtype: str = "bfloat16"
+    activevln_attention: str = "eager"
+    activevln_max_new_tokens: int = 64
+    activevln_max_context: int = 32768
+    activevln_allow_download: bool = False
+    activevln_do_sample: bool = False
 
     def __post_init__(self) -> None:
-        if self.backend not in BACKENDS:
-            raise ValueError(f"backend must be one of {BACKENDS}")
+        if self.backend not in MODELS:
+            raise ValueError(f"model/backend must be one of {MODELS}")
+        if self.runtime not in RUNTIMES:
+            raise ValueError(f"runtime must be one of {RUNTIMES}")
+        object.__setattr__(self, "vllm_omni_url", nonempty(self.vllm_omni_url, "vllm_omni_url"))
+        parsed_vllm_url = urlsplit(self.vllm_omni_url)
+        if parsed_vllm_url.scheme not in {"ws", "wss"} or not parsed_vllm_url.hostname:
+            raise ValueError("vllm_omni_url must be an absolute WS(S) URL")
+        object.__setattr__(
+            self,
+            "vllm_omni_timeout_s",
+            positive(self.vllm_omni_timeout_s, "vllm_omni_timeout_s"),
+        )
+        object.__setattr__(
+            self,
+            "vllm_omni_session_id",
+            nonempty(self.vllm_omni_session_id, "vllm_omni_session_id", optional=True),
+        )
         for name in (
             "qwen_base_url",
             "qwen_model",
             "streamvln_device",
             "internvla_device",
             "navila_device",
+            "vvla_root",
+            "activevln_checkpoint",
+            "activevln_revision",
+            "activevln_device",
         ):
             object.__setattr__(self, name, nonempty(getattr(self, name), name))
         for name in (
@@ -126,6 +172,27 @@ class PolicySettings:
             raise TypeError("local_files_only and warmup must be booleans")
         if not isinstance(self.navila_local_files_only, bool):
             raise TypeError("navila_local_files_only must be a boolean")
+        if self.activevln_dtype not in {"auto", "float16", "bfloat16", "float32"}:
+            raise ValueError("activevln_dtype must be 'auto', 'float16', 'bfloat16', or 'float32'")
+        if self.activevln_attention not in {"eager", "eager_bc", "sdpa"}:
+            raise ValueError("activevln_attention must be 'eager', 'eager_bc', or 'sdpa'")
+        for name, maximum in (
+            ("activevln_max_new_tokens", 512),
+            ("activevln_max_context", 32768),
+        ):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= maximum:
+                raise ValueError(f"{name} must be an integer between 1 and {maximum}")
+        if not isinstance(self.activevln_allow_download, bool):
+            raise TypeError("activevln_allow_download must be a boolean")
+        if not isinstance(self.activevln_do_sample, bool):
+            raise TypeError("activevln_do_sample must be a boolean")
+
+    @property
+    def model(self) -> str:
+        """Selected model family; ``backend`` is its compatibility alias."""
+
+        return self.backend
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,9 +246,15 @@ class Go2NavigationAppConfig:
 
 __all__ = [
     "BACKENDS",
+    "DEFAULT_ACTIVEVLN_CHECKPOINT",
+    "DEFAULT_ACTIVEVLN_REVISION",
     "DEFAULT_GO2_CAMERA_URL",
     "DEFAULT_GO2_CONTROL_URL",
+    "DEFAULT_VLLM_OMNI_URL",
+    "DEFAULT_VVLA_ROOT",
     "GO2_CONTROL_HARD_LIMITS",
+    "MODELS",
+    "RUNTIMES",
     "Go2NavigationAppConfig",
     "Go2Settings",
     "PolicySettings",

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
+import types
 from dataclasses import dataclass
 
 import pytest
@@ -103,12 +105,83 @@ max_abs_yaw_rate_rps = 0.60
     assert config.run.instruction == "from cli"
     assert config.run.control_hz == 12.0
     assert config.policy.backend == "streamvln"
+    assert config.policy.model == "streamvln"
+    assert config.policy.runtime == "transformers"
     assert config.policy.streamvln_root == "/models/StreamVLN"
     assert config.policy.streamvln_model_path == "/models/checkpoint"
     assert config.policy.streamvln_device == "cuda:1"
     assert config.go2.camera_token == "camera-from-env"
     assert config.go2.control_token == "control-from-env"
     assert config.go2.control_timeout_s == 3.0
+
+
+def test_model_runtime_toml_and_cli_are_independent_axes(tmp_path) -> None:
+    path = _write_config(
+        tmp_path,
+        """
+[policy]
+model = "streamvln"
+runtime = "vllm-omni"
+
+[vllm_omni]
+url = "ws://omni.example:9000/v1/realtime/robot/openpi"
+timeout_s = 45
+session_id = "toml-session"
+""",
+    )
+
+    loaded = app.load_config(path)
+    assert loaded.policy.model == "streamvln"
+    assert loaded.policy.backend == "streamvln"
+    assert loaded.policy.runtime == "vllm-omni"
+    assert loaded.policy.vllm_omni_url == "ws://omni.example:9000/v1/realtime/robot/openpi"
+    assert loaded.policy.vllm_omni_timeout_s == 45.0
+    assert loaded.policy.vllm_omni_session_id == "toml-session"
+
+    args = app.build_parser().parse_args(
+        [
+            "--model",
+            "navila",
+            "--runtime",
+            "transformers",
+            "--vllm-omni-url",
+            "wss://override.example/v1/realtime/robot/openpi",
+            "--vllm-omni-timeout-s",
+            "12",
+            "--vllm-omni-session-id",
+            "cli-session",
+        ]
+    )
+    resolved = app.apply_cli_overrides(loaded, args)
+
+    assert resolved.policy.model == "navila"
+    assert resolved.policy.runtime == "transformers"
+    assert resolved.policy.vllm_omni_url == "wss://override.example/v1/realtime/robot/openpi"
+    assert resolved.policy.vllm_omni_timeout_s == 12.0
+    assert resolved.policy.vllm_omni_session_id == "cli-session"
+
+
+def test_backend_alias_remains_supported_and_conflicts_are_explicit(tmp_path) -> None:
+    args = app.build_parser().parse_args(["--backend", "navila"])
+    resolved = app.apply_cli_overrides(app.Go2NavigationAppConfig(), args)
+    assert resolved.policy.model == "navila"
+
+    conflicting_args = app.build_parser().parse_args(
+        ["--model", "streamvln", "--backend", "navila"]
+    )
+    with pytest.raises(ValueError, match="must match"):
+        app.apply_cli_overrides(app.Go2NavigationAppConfig(), conflicting_args)
+
+    path = _write_config(
+        tmp_path,
+        """
+[policy]
+model = "streamvln"
+backend = "navila"
+""",
+    )
+    with pytest.raises(ValueError, match="must match"):
+        app.load_config(path)
 
 
 def test_robot_host_cli_derives_service_urls_without_stored_ip() -> None:
@@ -195,6 +268,225 @@ def test_streamvln_factory_forwards_local_runtime_options(monkeypatch) -> None:
     assert captured["model_path"] == "/models/checkpoint"
     assert captured["device"] == "cuda:1"
     assert captured["cuda_memory_fraction"] == 0.4
+
+
+@pytest.mark.parametrize("model", ["qwen", "internvla"])
+def test_explicit_unsupported_vllm_runtime_fails_before_construction(
+    model: str,
+    monkeypatch,
+) -> None:
+    def unexpected_policy(**_kwargs):
+        raise AssertionError("unsupported runtime must fail before policy construction")
+
+    monkeypatch.setattr(policies, "QwenNavigationPolicy", unexpected_policy)
+    monkeypatch.setattr(policies, "InternVLANavigationPolicy", unexpected_policy)
+
+    with pytest.raises(ValueError, match=rf"not supported.*{model!r}"):
+        app.build_navigation_policy(app.PolicySettings(backend=model, runtime="vllm-omni"))
+
+
+@pytest.mark.parametrize(
+    ("model", "factory_name"),
+    [
+        ("streamvln", "VllmOmniStreamVLNNavigationPolicy"),
+        ("navila", "VllmOmniNaVILANavigationPolicy"),
+    ],
+)
+def test_vllm_runtime_selects_lazy_remote_policy(
+    model: str,
+    factory_name: str,
+    monkeypatch,
+) -> None:
+    captured = {}
+    sentinel = object()
+
+    def factory(**kwargs):
+        captured.update(kwargs)
+        return sentinel
+
+    navigation_package = types.ModuleType("embodied_runtime.integrations.navigation")
+    navigation_package.__path__ = []  # type: ignore[attr-defined]
+    runtime_module = types.ModuleType("embodied_runtime.integrations.navigation.vllm_omni")
+    runtime_module.VllmOmniStreamVLNNavigationPolicy = (
+        factory if factory_name == "VllmOmniStreamVLNNavigationPolicy" else object
+    )
+    runtime_module.VllmOmniNaVILANavigationPolicy = (
+        factory if factory_name == "VllmOmniNaVILANavigationPolicy" else object
+    )
+    monkeypatch.setitem(sys.modules, navigation_package.__name__, navigation_package)
+    monkeypatch.setitem(sys.modules, runtime_module.__name__, runtime_module)
+
+    settings = app.PolicySettings(
+        backend=model,
+        runtime="vllm-omni",
+        vllm_omni_url="ws://omni.example:9000/v1/realtime/robot/openpi",
+        vllm_omni_timeout_s=8,
+        vllm_omni_session_id="episode-7",
+    )
+    assert app.build_navigation_policy(settings) is sentinel
+    assert captured == {
+        "url": "ws://omni.example:9000/v1/realtime/robot/openpi",
+        "timeout_s": 8.0,
+        "session_id": "episode-7",
+    }
+
+
+def test_vvla_runtime_selects_lazy_activevln_policy(monkeypatch) -> None:
+    captured = {}
+    sentinel = object()
+
+    def factory(**kwargs):
+        captured.update(kwargs)
+        return sentinel
+
+    runtime_module = types.ModuleType("embodied_runtime.integrations.navigation.vvla")
+    runtime_module.VvlaActiveVLNNavigationPolicy = factory
+    monkeypatch.setitem(sys.modules, runtime_module.__name__, runtime_module)
+    settings = app.PolicySettings(
+        backend="activevln",
+        runtime="vvla",
+        vvla_root="/src/vvla",
+        activevln_checkpoint="/models/activevln",
+        activevln_device="cuda:0",
+        activevln_dtype="bfloat16",
+        activevln_attention="sdpa",
+        activevln_max_new_tokens=24,
+        activevln_max_context=4096,
+    )
+
+    assert app.build_navigation_policy(settings) is sentinel
+    assert captured["vvla_root"] == "/src/vvla"
+    assert captured["checkpoint"] == "/models/activevln"
+    assert captured["dtype"] == "bfloat16"
+    assert captured["attention"] == "sdpa"
+    assert captured["max_new_tokens"] == 24
+    assert captured["max_context"] == 4096
+
+
+def test_transformers_runtime_selects_lazy_activevln_policy(monkeypatch) -> None:
+    captured = {}
+    sentinel = object()
+
+    def factory(**kwargs):
+        captured.update(kwargs)
+        return sentinel
+
+    runtime_module = types.ModuleType(
+        "embodied_runtime.integrations.navigation.activevln_transformers"
+    )
+    runtime_module.TransformersActiveVLNNavigationPolicy = factory
+    monkeypatch.setitem(sys.modules, runtime_module.__name__, runtime_module)
+    settings = app.PolicySettings(
+        backend="activevln",
+        runtime="transformers",
+        vvla_root="/src/vvla",
+        activevln_checkpoint="/models/activevln",
+        activevln_device="cuda:0",
+        activevln_dtype="bfloat16",
+        activevln_attention="eager",
+        activevln_max_new_tokens=24,
+        activevln_max_context=4096,
+    )
+
+    assert app.build_navigation_policy(settings) is sentinel
+    assert captured["vvla_root"] == "/src/vvla"
+    assert captured["checkpoint"] == "/models/activevln"
+    assert captured["dtype"] == "bfloat16"
+    assert captured["attention"] == "eager"
+    assert captured["max_new_tokens"] == 24
+    assert captured["max_context"] == 4096
+
+
+def test_activevln_advertises_transformers_and_vvla() -> None:
+    assert app.supported_runtimes("activevln") == ("transformers", "vvla")
+    with pytest.raises(ValueError, match="eager_bc.*VVLA-only"):
+        app.build_navigation_policy(
+            app.PolicySettings(
+                backend="activevln",
+                runtime="transformers",
+                activevln_attention="eager_bc",
+            )
+        )
+
+
+def test_activevln_cli_overrides_are_model_specific() -> None:
+    args = app.build_parser().parse_args(
+        [
+            "--model",
+            "activevln",
+            "--runtime",
+            "vvla",
+            "--vvla-root",
+            "/src/vvla",
+            "--model-path",
+            "/models/activevln",
+            "--activevln-revision",
+            "a" * 40,
+            "--device",
+            "cuda:1",
+            "--dtype",
+            "bfloat16",
+            "--attention",
+            "sdpa",
+            "--max-new-tokens",
+            "24",
+            "--max-context",
+            "4096",
+            "--allow-download",
+            "--do-sample",
+        ]
+    )
+    policy = app.apply_cli_overrides(app.Go2NavigationAppConfig(), args).policy
+
+    assert policy.backend == "activevln"
+    assert policy.runtime == "vvla"
+    assert policy.vvla_root == "/src/vvla"
+    assert policy.activevln_checkpoint == "/models/activevln"
+    assert policy.activevln_revision == "a" * 40
+    assert policy.activevln_device == "cuda:1"
+    assert policy.activevln_dtype == "bfloat16"
+    assert policy.activevln_attention == "sdpa"
+    assert policy.activevln_max_new_tokens == 24
+    assert policy.activevln_max_context == 4096
+    assert policy.activevln_allow_download is True
+    assert policy.activevln_do_sample is True
+
+
+def test_activevln_toml_table_loads_all_vvla_options(tmp_path) -> None:
+    path = _write_config(
+        tmp_path,
+        """
+[policy]
+model = "activevln"
+runtime = "vvla"
+
+[activevln]
+repository = "/src/vvla"
+checkpoint = "/models/activevln"
+revision = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+device = "cuda:1"
+dtype = "float16"
+attention = "eager_bc"
+max_new_tokens = 32
+max_context = 8192
+allow_download = true
+do_sample = true
+""",
+    )
+
+    policy = app.load_config(path).policy
+    assert policy.backend == "activevln"
+    assert policy.runtime == "vvla"
+    assert policy.vvla_root == "/src/vvla"
+    assert policy.activevln_checkpoint == "/models/activevln"
+    assert policy.activevln_revision == "b" * 40
+    assert policy.activevln_device == "cuda:1"
+    assert policy.activevln_dtype == "float16"
+    assert policy.activevln_attention == "eager_bc"
+    assert policy.activevln_max_new_tokens == 32
+    assert policy.activevln_max_context == 8192
+    assert policy.activevln_allow_download is True
+    assert policy.activevln_do_sample is True
 
 
 def test_navila_cli_and_factory_use_dedicated_model_settings(monkeypatch) -> None:
@@ -332,14 +624,20 @@ def test_composition_passes_explicit_execution_policy_and_emits_json(execute) ->
     assert constructed["session"]["follower"].config.limits == app.GO2_CONTROL_HARD_LIMITS
     decoded = [json.loads(line) for line in lines]
     assert decoded[0]["kind"] == "navigation_start"
+    assert decoded[0]["model"] == "qwen"
+    assert decoded[0]["runtime"] == "transformers"
+    assert decoded[0]["backend"] == "qwen"
     assert decoded[0]["mode"] == ("execute" if execute else "dry-run")
     assert decoded[1]["kind"] == "plan_accepted"
     assert decoded[-1]["kind"] == "navigation_summary"
     assert decoded[-1]["ok"] is True
+    assert decoded[-1]["model"] == "qwen"
+    assert decoded[-1]["runtime"] == "transformers"
+    assert decoded[-1]["backend"] == "qwen"
     assert "events" not in decoded[-1]
 
 
-@pytest.mark.parametrize("backend", ["streamvln", "navila"])
+@pytest.mark.parametrize("backend", ["streamvln", "navila", "activevln"])
 def test_image_action_backends_auto_select_reactive_session(backend: str) -> None:
     policy = _Policy()
     constructed = {}
@@ -361,7 +659,10 @@ def test_image_action_backends_auto_select_reactive_session(backend: str) -> Non
 
     config = app.Go2NavigationAppConfig(
         run=app.RunSettings(instruction="find the tripod"),
-        policy=app.PolicySettings(backend=backend),
+        policy=app.PolicySettings(
+            backend=backend,
+            runtime="vvla" if backend == "activevln" else "transformers",
+        ),
     )
     asyncio.run(
         app.run_navigation(
@@ -377,8 +678,12 @@ def test_image_action_backends_auto_select_reactive_session(backend: str) -> Non
 
     assert constructed["config"].execute is True
     assert type(constructed["config"]).__name__ == "ReactiveNavigationSessionConfig"
-    expected_max_pulse_s = 2.5 if backend == "navila" else 1.5
+    expected_max_pulse_s = 2.5 if backend in {"navila", "activevln"} else 1.5
     assert constructed["config"].max_pulse_s == pytest.approx(expected_max_pulse_s)
+    assert constructed["config"].max_waypoints_per_observation == (
+        3 if backend == "activevln" else 1
+    )
+    assert constructed["config"].terminal_after_waypoints is (backend == "activevln")
     assert "follower" not in constructed
     assert json.loads(lines[0])["session_mode"] == "reactive"
 

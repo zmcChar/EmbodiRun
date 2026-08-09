@@ -6,7 +6,7 @@ import argparse
 from dataclasses import replace
 
 from .config import DEFAULT_CONFIG_PATH
-from .settings import BACKENDS, Go2NavigationAppConfig
+from .settings import BACKENDS, MODELS, RUNTIMES, Go2NavigationAppConfig
 from .validation import robot_service_url
 
 
@@ -15,7 +15,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", type=str, default=str(DEFAULT_CONFIG_PATH))
     parser.add_argument("--instruction")
     parser.add_argument("--episode-id")
-    parser.add_argument("--backend", choices=BACKENDS)
+    parser.add_argument("--model", choices=MODELS)
+    parser.add_argument(
+        "--backend",
+        choices=BACKENDS,
+        help="Compatibility alias for --model.",
+    )
+    parser.add_argument(
+        "--runtime",
+        choices=RUNTIMES,
+        help="Select Transformers, external vLLM-Omni, or the vendored VVLA engine.",
+    )
+    parser.add_argument("--vllm-omni-url", help="WebSocket URL of an existing OpenPI service.")
+    parser.add_argument("--vllm-omni-timeout-s", type=float)
+    parser.add_argument("--vllm-omni-session-id")
     parser.add_argument("--max-runtime-s", type=float)
     parser.add_argument("--control-hz", type=float)
     parser.add_argument("--lease-duration-s", type=float)
@@ -43,6 +56,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--streamvln-root")
     parser.add_argument("--internvla-root")
     parser.add_argument("--navila-root")
+    parser.add_argument("--vvla-root")
+    parser.add_argument("--activevln-revision")
+    parser.add_argument("--dtype", choices=("auto", "float16", "bfloat16", "float32"))
+    parser.add_argument("--attention", choices=("eager", "eager_bc", "sdpa"))
+    parser.add_argument("--max-context", type=int)
+    parser.add_argument("--do-sample", action="store_true")
     parser.add_argument("--internvla-variant", choices=("dualvln", "navdp"))
     parser.add_argument("--model-path", "--checkpoint", dest="model_path")
     parser.add_argument("--device")
@@ -74,8 +93,15 @@ def _run_overrides(config: Go2NavigationAppConfig, args: argparse.Namespace):
 
 
 def _policy_overrides(config: Go2NavigationAppConfig, args: argparse.Namespace):
+    if args.model is not None and args.backend is not None and args.model != args.backend:
+        raise ValueError("--model and legacy --backend must match when both are supplied")
+    selected_model = args.model if args.model is not None else args.backend
     values = {
-        "backend": args.backend,
+        "backend": selected_model,
+        "runtime": args.runtime,
+        "vllm_omni_url": args.vllm_omni_url,
+        "vllm_omni_timeout_s": args.vllm_omni_timeout_s,
+        "vllm_omni_session_id": args.vllm_omni_session_id,
         "qwen_base_url": args.qwen_base_url,
         "qwen_model": args.qwen_model,
         "qwen_api_key": args.qwen_api_key,
@@ -83,6 +109,11 @@ def _policy_overrides(config: Go2NavigationAppConfig, args: argparse.Namespace):
         "internvla_root": args.internvla_root,
         "internvla_variant": args.internvla_variant,
         "navila_root": args.navila_root,
+        "vvla_root": args.vvla_root,
+        "activevln_revision": args.activevln_revision,
+        "activevln_dtype": args.dtype,
+        "activevln_attention": args.attention,
+        "activevln_max_context": args.max_context,
     }
     policy = replace(
         config.policy,
@@ -94,6 +125,7 @@ def _policy_overrides(config: Go2NavigationAppConfig, args: argparse.Namespace):
             streamvln_device=args.device,
             internvla_device=args.device,
             navila_device=args.device,
+            activevln_device=args.device,
         )
     if args.model_path is not None:
         field = {
@@ -101,6 +133,7 @@ def _policy_overrides(config: Go2NavigationAppConfig, args: argparse.Namespace):
             "streamvln": "streamvln_model_path",
             "internvla": "internvla_model_path",
             "navila": "navila_model_path",
+            "activevln": "activevln_checkpoint",
         }[policy.backend]
         policy = replace(policy, **{field: args.model_path})
     if args.cuda_memory_fraction is not None:
@@ -109,11 +142,19 @@ def _policy_overrides(config: Go2NavigationAppConfig, args: argparse.Namespace):
         )
         policy = replace(policy, **{field: args.cuda_memory_fraction})
     if args.max_new_tokens is not None:
-        field = "navila_max_new_tokens" if policy.backend == "navila" else "max_new_tokens"
+        field = {
+            "navila": "navila_max_new_tokens",
+            "activevln": "activevln_max_new_tokens",
+        }.get(policy.backend, "max_new_tokens")
         policy = replace(policy, **{field: args.max_new_tokens})
     if args.allow_download:
-        field = "navila_local_files_only" if policy.backend == "navila" else "local_files_only"
-        policy = replace(policy, **{field: False})
+        if policy.backend == "activevln":
+            policy = replace(policy, activevln_allow_download=True)
+        else:
+            field = "navila_local_files_only" if policy.backend == "navila" else "local_files_only"
+            policy = replace(policy, **{field: False})
+    if args.do_sample:
+        policy = replace(policy, activevln_do_sample=True)
     if args.no_warmup:
         policy = replace(policy, warmup=False)
     return policy

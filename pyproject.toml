@@ -36,6 +36,19 @@ gr00t_client = [
   "openpi-client==0.1.2",
   "websockets>=16,<17",
 ]
+navigation_vllm_omni = [
+  "numpy>=1.26,<3",
+  "openpi-client==0.1.2",
+  "websockets>=16,<17",
+]
+vvla_activevln = [
+  "numpy>=1.26,<3",
+  "pillow>=11,<13",
+  "safetensors>=0.5,<1",
+  "torch>=2.7,<2.8",
+  "torchvision>=0.22,<0.23",
+  "transformers==4.51.3",
+]
 "go2-nav" = [
   "accelerate==1.7.0",
   "einops==0.8.1",
@@ -70,6 +83,8 @@ markers = [
   "smolvla: tests that require a real LeRobot SmolVLA checkpoint",
   "gr00t_n17: tests that require the real NVIDIA GR00T N1.7 checkpoint",
   "vllm_omni: tests that require a live vLLM-Omni server",
+  "activevln: tests that require the real pinned ActiveVLN checkpoint",
+  "vvla: tests that exercise the vendored VVLA engine",
 ]
 
 [tool.ruff]

@@ -1,7 +1,19 @@
 # Provenance notice
 
-This is a new, independent repository. It does not import `vvla` and does not
-use it as a Git submodule.
+This is a new, independent repository. VVLA is included as the optional Git
+submodule `third_party/vvla` for its inference engine and remains a separately
+licensed upstream work.
+
+The runtime submodule is pinned to:
+
+- source: `https://github.com/Longxmas/vvla`
+- commit: `6f65961c0222bbbd86ca3b09b93f13cee3ac70c8`
+- code license: MIT (see `third_party/vvla/LICENSE`)
+
+Model checkpoints and simulator datasets are external artifacts. Their terms
+are independent of the VVLA code license. In particular, the pinned ActiveVLN
+checkpoint does not currently publish a license field, and Matterport3D scene
+assets require separate access and license review.
 
 Selected implementation ideas and source fragments are adapted from:
 

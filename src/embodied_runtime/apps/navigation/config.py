@@ -13,8 +13,12 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10
     import tomli as tomllib
 
 from .settings import (
+    DEFAULT_ACTIVEVLN_CHECKPOINT,
+    DEFAULT_ACTIVEVLN_REVISION,
     DEFAULT_GO2_CAMERA_URL,
     DEFAULT_GO2_CONTROL_URL,
+    DEFAULT_VLLM_OMNI_URL,
+    DEFAULT_VVLA_ROOT,
     Go2NavigationAppConfig,
     Go2Settings,
     PolicySettings,
@@ -31,6 +35,16 @@ def _table(raw: Mapping[str, Any], name: str) -> Mapping[str, Any]:
     return value
 
 
+def _policy_model(policy: Mapping[str, Any]) -> str:
+    """Resolve the canonical model key and its legacy backend alias."""
+
+    model = policy.get("model")
+    backend = policy.get("backend")
+    if model is not None and backend is not None and str(model) != str(backend):
+        raise ValueError("policy.model and legacy policy.backend must match when both are set")
+    return str(model if model is not None else backend if backend is not None else "streamvln")
+
+
 def load_config(path: str | Path) -> Go2NavigationAppConfig:
     """Load settings without constructing a model or robot client."""
 
@@ -38,10 +52,12 @@ def load_config(path: str | Path) -> Go2NavigationAppConfig:
         raw = tomllib.load(stream)
     session = _table(raw, "session")
     policy = _table(raw, "policy")
+    vllm_omni = _table(raw, "vllm_omni")
     qwen = _table(raw, "qwen")
     streamvln = _table(raw, "streamvln")
     internvla = _table(raw, "internvla")
     navila = _table(raw, "navila")
+    activevln = _table(raw, "activevln")
     go2 = _table(raw, "go2")
     follower = _table(go2, "follower")
 
@@ -56,7 +72,11 @@ def load_config(path: str | Path) -> Go2NavigationAppConfig:
             session_mode=str(session.get("mode", "auto")),
         ),
         policy=PolicySettings(
-            backend=str(policy.get("backend", "streamvln")),
+            backend=_policy_model(policy),
+            runtime=str(policy.get("runtime", "transformers")),
+            vllm_omni_url=str(vllm_omni.get("url", DEFAULT_VLLM_OMNI_URL)),
+            vllm_omni_timeout_s=float(vllm_omni.get("timeout_s", 120.0)),
+            vllm_omni_session_id=vllm_omni.get("session_id"),
             qwen_base_url=str(qwen.get("base_url", "http://127.0.0.1:15003/v1")),
             qwen_model=str(qwen.get("model", "qwen3.5-9b")),
             qwen_api_key=qwen.get("api_key") or os.environ.get("QWEN_API_KEY"),
@@ -78,6 +98,16 @@ def load_config(path: str | Path) -> Go2NavigationAppConfig:
             navila_cuda_memory_fraction=navila.get("cuda_memory_fraction"),
             navila_max_new_tokens=int(navila.get("max_new_tokens", 32)),
             navila_local_files_only=bool(navila.get("local_files_only", True)),
+            vvla_root=str(activevln.get("repository", DEFAULT_VVLA_ROOT)),
+            activevln_checkpoint=str(activevln.get("checkpoint", DEFAULT_ACTIVEVLN_CHECKPOINT)),
+            activevln_revision=str(activevln.get("revision", DEFAULT_ACTIVEVLN_REVISION)),
+            activevln_device=str(activevln.get("device", "cuda:0")),
+            activevln_dtype=str(activevln.get("dtype", "bfloat16")),
+            activevln_attention=str(activevln.get("attention", "eager")),
+            activevln_max_new_tokens=int(activevln.get("max_new_tokens", 64)),
+            activevln_max_context=int(activevln.get("max_context", 32768)),
+            activevln_allow_download=bool(activevln.get("allow_download", False)),
+            activevln_do_sample=bool(activevln.get("do_sample", False)),
         ),
         go2=Go2Settings(
             camera_url=str(go2.get("camera_url", DEFAULT_GO2_CAMERA_URL)),

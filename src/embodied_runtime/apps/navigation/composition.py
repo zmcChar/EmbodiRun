@@ -5,6 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from embodied_runtime.integrations.navigation.vvla.mapping import (
+    MAX_ACTIVEVLN_FORWARD_M,
+    MAX_ACTIVEVLN_TURN_RAD,
+)
 from embodied_runtime.policies.navigation.navila import (
     MAX_NAVILA_FORWARD_M,
     MAX_NAVILA_TURN_RAD,
@@ -27,7 +31,11 @@ from .settings import Go2NavigationAppConfig
 def resolve_session_mode(config: Go2NavigationAppConfig) -> str:
     mode = config.run.session_mode
     if mode == "auto":
-        return "reactive" if config.policy.backend in {"streamvln", "navila"} else "continuous"
+        return (
+            "reactive"
+            if config.policy.backend in {"streamvln", "navila", "activevln"}
+            else "continuous"
+        )
     return mode
 
 
@@ -51,13 +59,21 @@ def build_session(
         linear_speed_mps = min(0.30, limits.max_abs_vx_mps, limits.max_abs_vy_mps)
         yaw_rate_rps = min(0.60, limits.max_abs_yaw_rate_rps)
         max_pulse_s = 1.50
-        if config.policy.backend == "navila":
+        if config.policy.backend in {"navila", "activevln"}:
             # Preserve NaVILA's largest native action after applying Go2's lower
             # velocity ceiling instead of silently truncating a 75 cm command.
+            max_forward_m = (
+                MAX_NAVILA_FORWARD_M
+                if config.policy.backend == "navila"
+                else MAX_ACTIVEVLN_FORWARD_M
+            )
+            max_turn_rad = (
+                MAX_NAVILA_TURN_RAD if config.policy.backend == "navila" else MAX_ACTIVEVLN_TURN_RAD
+            )
             max_pulse_s = max(
                 max_pulse_s,
-                MAX_NAVILA_FORWARD_M / linear_speed_mps,
-                MAX_NAVILA_TURN_RAD / yaw_rate_rps,
+                max_forward_m / linear_speed_mps,
+                max_turn_rad / yaw_rate_rps,
             )
         session_class = session_factory or ReactiveNavigationSession
         session = session_class(
@@ -70,6 +86,8 @@ def build_session(
                 linear_speed_mps=linear_speed_mps,
                 yaw_rate_rps=yaw_rate_rps,
                 max_pulse_s=max_pulse_s,
+                max_waypoints_per_observation=(3 if config.policy.backend == "activevln" else 1),
+                terminal_after_waypoints=config.policy.backend == "activevln",
                 max_events=config.run.max_events,
                 limits=limits,
             ),

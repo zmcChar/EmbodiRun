@@ -69,7 +69,7 @@ The current source layout is:
 ```text
 src/embodied_runtime/
 ├── models/                 # model specs, packages, plans, VLA/VLN runtimes
-├── policies/navigation/    # Qwen, StreamVLN, InternVLA, NaVILA task adapters
+├── policies/navigation/    # model-coupled navigation task adapters
 ├── tasks/                  # navigation and high-level planning loops
 ├── robots/unitree/go2/     # Go2 host clients and robot-resident agent
 ├── simulators/             # simulator endpoints, traces, VLABench adapters
@@ -86,7 +86,7 @@ src/embodied_runtime/
 The Go2 navigation composition follows the same ownership chain:
 
 ```text
-Qwen / StreamVLN / InternVLA / NaVILA policy
+Selected Qwen / StreamVLN / InternVLA / NaVILA / ActiveVLN policy
         → tasks.navigation.WaypointPlan
         → NavigationSession or ReactiveNavigationSession
         → bounded planar velocity
@@ -94,13 +94,34 @@ Qwen / StreamVLN / InternVLA / NaVILA policy
         → robot HTTP control service → Unitree SDK2
 ```
 
-Qwen calls an already-running OpenAI-compatible endpoint. StreamVLN, InternVLA,
-and NaVILA load their selected local runtime in the navigation process. All
-four return a task-owned `WaypointPlan`; none emits SDK commands. NaVILA uses
-seven uniformly sampled historical images plus the latest observation and
-normalizes one textual navigation action into the same plan contract. See
-[Go2 navigation](docs/go2_navigation.md) for the closed loop and verified
-commands.
+Go2 navigation selects a model independently from its inference runtime.
+`transformers` is the default: StreamVLN, InternVLA, NaVILA, and ActiveVLN load
+their selected local runtime in the navigation process, while Qwen calls its
+existing OpenAI-compatible endpoint. StreamVLN and NaVILA also expose an
+experimental `vllm-omni` protocol option that connects to an already-running external
+OpenPI-compatible service. The client does not launch or manage that service,
+and the service must implement this repository's expected handshake and
+navigation messages; this is not a claim of native upstream vLLM-Omni model
+support or acceleration. Every route returns a task-owned `WaypointPlan`; none
+emits SDK commands. NaVILA uses seven uniformly sampled historical images plus
+the latest observation and normalizes one textual navigation action into the
+same plan contract. See [Go2 navigation](docs/go2_navigation.md) for the closed
+loop and verified commands.
+
+The optional `third_party/vvla` submodule pins ActiveVLN's source/checkpoint
+contract and enables two in-process runtimes. `activevln + transformers` uses
+stock-HF full-history generation; `activevln + vvla` uses VVLA's eager,
+incremental B=1 session KV. Both enforce the same strict R2R action grammar.
+The local RTX 5080 smoke benchmark measured VVLA at about 1.20x/1.22x the
+Transformers p50 speed on turns one/two, but the BF16 action texts diverged, so
+this is not an output-parity claim. VVLA still does not provide StreamVLN/NaVILA
+runtimes, and ActiveVLN is not marked as vLLM-Omni compatible. See
+[ActiveVLN navigation through Transformers and VVLA](docs/navigation_vvla_activevln.md)
+for both commands, the paired benchmark caveats, and Habitat requirements.
+
+The exact experimental handshake, action encoding, and local RTX 5080
+verification are documented in
+[Navigation through vLLM-Omni/OpenPI](docs/navigation_vllm_omni.md).
 
 Implemented model execution includes:
 

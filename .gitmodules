@@ -1,0 +1,3 @@
+[submodule "third_party/vvla"]
+	path = third_party/vvla
+	url = git@github.com:Longxmas/vvla.git

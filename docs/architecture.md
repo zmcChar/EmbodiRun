@@ -239,7 +239,7 @@ Go2CameraClient.capture + Go2ControlClient.state
           NavigationObservation + instruction
                     │
                     v
-       Qwen / StreamVLN / InternVLA / NaVILA policy
+ Qwen / StreamVLN / InternVLA / NaVILA / ActiveVLN policy
                     │
                     v
               WaypointPlan (base_link)
@@ -247,7 +247,7 @@ Go2CameraClient.capture + Go2ControlClient.state
           ┌─────────┴──────────┐
           v                    v
 NavigationSession      ReactiveNavigationSession
-continuous follower    one bounded velocity pulse
+continuous follower    bounded pulse / native chunk
           └─────────┬──────────┘
                     v
         PlanarVelocityCommand(vx, vy, yaw_rate)
@@ -287,11 +287,15 @@ inference loop may replace the plan while the control loop samples the current
 `WorldWaypointFollower` at the configured rate. This mode requires changing,
 trustworthy planar pose state.
 
-`ReactiveNavigationSession` is the default for StreamVLN and NaVILA under
-`session.mode = "auto"`. It executes only the first waypoint as a bounded timed
-pulse, stops, settles, captures a new frame, and replans. This is the
-implemented fallback for the observed Go2 state stream whose x/y position may
-remain constant while the robot walks.
+`ReactiveNavigationSession` is the default for StreamVLN, NaVILA, and
+ActiveVLN under `session.mode = "auto"`. Its default remains one bounded
+waypoint pulse per observation. The ActiveVLN composition explicitly consumes
+its complete native chunk of at most three cumulative waypoints, converting
+them into sequential SE(2)-relative pulses before recapture; this keeps the
+executed motion aligned with the action chunk already committed to model
+history. The session then stops, settles, captures a new frame, and replans.
+This is the implemented fallback for the observed Go2 state stream whose x/y
+position may remain constant while the robot walks.
 
 Both sessions are observation-only unless the CLI receives `--execute`.
 Execution first calls the Go2 preflight check, then uses `stream_move` and

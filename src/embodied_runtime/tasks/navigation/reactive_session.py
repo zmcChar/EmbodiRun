@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import uuid
 from collections.abc import Callable
 
@@ -20,13 +21,32 @@ from .events import (
 from .interfaces import MobileBase, MobileBaseError, NavigationPolicy, ObservationSource
 from .motion import MobileBaseState
 from .observation import NavigationObservation
-from .plan import WaypointPlan
+from .plan import Waypoint, WaypointPlan
 from .request import NavigationRequest
 from .telemetry import NavigationTelemetry
 
 
+def _relative_base_link_waypoint(previous: Waypoint | None, current: Waypoint) -> Waypoint:
+    """Express a cumulative capture-frame waypoint in the preceding target frame."""
+
+    if previous is None:
+        return current
+    dx = current.x_m - previous.x_m
+    dy = current.y_m - previous.y_m
+    cosine = math.cos(previous.yaw_rad)
+    sine = math.sin(previous.yaw_rad)
+    return Waypoint(
+        x_m=cosine * dx + sine * dy,
+        y_m=-sine * dx + cosine * dy,
+        yaw_rad=math.atan2(
+            math.sin(current.yaw_rad - previous.yaw_rad),
+            math.cos(current.yaw_rad - previous.yaw_rad),
+        ),
+    )
+
+
 class ReactiveNavigationSession:
-    """Capture, plan, execute one pulse, settle, and capture again."""
+    """Capture, plan, execute bounded waypoint pulses, settle, and capture again."""
 
     def __init__(
         self,
@@ -137,42 +157,57 @@ class ReactiveNavigationSession:
                 )
                 return "terminal"
 
-            command, duration_s = waypoint_to_velocity_pulse(
-                plan.waypoints[0],
-                VelocityPulseConfig(
-                    linear_speed_mps=self.config.linear_speed_mps,
-                    yaw_rate_rps=self.config.yaw_rate_rps,
-                    min_duration_s=self.config.min_pulse_s,
-                    max_duration_s=self.config.max_pulse_s,
-                    limits=self.config.limits,
-                ),
+            pulse_config = VelocityPulseConfig(
+                linear_speed_mps=self.config.linear_speed_mps,
+                yaw_rate_rps=self.config.yaw_rate_rps,
+                min_duration_s=self.config.min_pulse_s,
+                max_duration_s=self.config.max_pulse_s,
+                limits=self.config.limits,
             )
-            self._telemetry.emit(
-                "pulse_planned",
-                observation_sequence=observation.sequence,
-                waypoint_index=0,
-                message=(
-                    f"vx={command.vx_mps:.3f} vy={command.vy_mps:.3f} "
-                    f"yaw_rate={command.yaw_rate_rps:.3f} duration_s={duration_s:.3f}"
-                ),
-            )
-            if self.config.execute and command.moving:
-                await asyncio.to_thread(
-                    self.base.start_velocity_lease,
-                    command,
-                    duration_s=duration_s,
-                )
-                self._telemetry.motion_commands += 1
+            selected = plan.waypoints[: self.config.max_waypoints_per_observation]
+            previous: Waypoint | None = None
+            for waypoint_index, waypoint in enumerate(selected):
+                relative = _relative_base_link_waypoint(previous, waypoint)
+                previous = waypoint
+                command, duration_s = waypoint_to_velocity_pulse(relative, pulse_config)
                 self._telemetry.emit(
-                    "pulse_started",
+                    "pulse_planned",
                     observation_sequence=observation.sequence,
-                    waypoint_index=0,
+                    waypoint_index=waypoint_index,
+                    message=(
+                        f"vx={command.vx_mps:.3f} vy={command.vy_mps:.3f} "
+                        f"yaw_rate={command.yaw_rate_rps:.3f} duration_s={duration_s:.3f}"
+                    ),
                 )
-                # The bounded lease expires itself. Calling stop between pulses
-                # would break bases whose stop endpoint also revokes readiness.
-                await asyncio.sleep(duration_s + self.config.settle_s)
-            elif self.config.execute:
-                await asyncio.sleep(self.config.settle_s)
+                if self.config.execute and command.moving:
+                    await asyncio.to_thread(
+                        self.base.start_velocity_lease,
+                        command,
+                        duration_s=duration_s,
+                    )
+                    self._telemetry.motion_commands += 1
+                    self._telemetry.emit(
+                        "pulse_started",
+                        observation_sequence=observation.sequence,
+                        waypoint_index=waypoint_index,
+                    )
+                    # Each bounded lease expires itself. Calling stop between
+                    # pulses would break bases whose stop endpoint also revokes readiness.
+                    await asyncio.sleep(duration_s + self.config.settle_s)
+                elif self.config.execute:
+                    await asyncio.sleep(self.config.settle_s)
+
+            if (
+                plan.terminal
+                and self.config.terminal_after_waypoints
+                and len(selected) == len(plan.waypoints)
+            ):
+                self._telemetry.emit(
+                    "terminal_reached",
+                    observation_sequence=observation.sequence,
+                    message="terminal waypoint chunk completed",
+                )
+                return "terminal"
 
     async def _force_stop(self) -> None:
         if not self._motion_authorized:
