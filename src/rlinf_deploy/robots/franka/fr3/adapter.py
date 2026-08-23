@@ -7,8 +7,8 @@ import time
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from ..action import RobotAction
-from ..observation import RobotObservation
+from ...action import RobotAction
+from ...observation import RobotObservation
 from .config import FR3Config
 
 

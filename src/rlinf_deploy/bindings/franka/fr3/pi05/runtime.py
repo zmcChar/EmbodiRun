@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import time
 import uuid
 from collections.abc import Sequence
 
 from rlinf_deploy.inference import ImagePayload, PolicyObservation, PolicyResult, VvlaHttpClient
 
-from ..action import RobotAction
-from rlinf_deploy.robots.franka.fr3.adapter import FR3_ACTION_SPACE, FR3Adapter, FR3AdapterError
+from rlinf_deploy.robots.franka.fr3.adapter import FR3Adapter, FR3AdapterError
+from .action import Pi05ActionMapper, Pi05ActionMapperError
+from .contract import POLICY_ACTION_SPACE
 
 
 class Pi05FR3Runtime:
@@ -19,19 +19,23 @@ class Pi05FR3Runtime:
         client: VvlaHttpClient,
         *,
         instruction: str,
+        mapper: Pi05ActionMapper | None = None,
     ) -> None:
         if not instruction.strip():
             raise ValueError("instruction must not be empty")
         self.robot = robot
         self.client = client
         self.instruction = instruction
+        self.mapper = mapper or Pi05ActionMapper()
         self.session = client.open_session(
             robot_id=robot.robot_id,
-            action_space=FR3_ACTION_SPACE,
+            action_space=POLICY_ACTION_SPACE,
         )
         self.step_id = 0
 
     def step(self, images: Sequence[ImagePayload], *, reset: bool = False) -> PolicyResult:
+        if reset:
+            self.reset()
         observation = self.robot.observe()
         request = PolicyObservation(
             session_id=self.session.session_id,
@@ -40,27 +44,15 @@ class Pi05FR3Runtime:
             instruction=self.instruction,
             state=dict(observation.values),
             images=images,
-            reset=reset,
+            reset=False,
             metadata={"robot_timestamp_s": observation.timestamp_s},
         )
         result = self.client.step(request)
-        if result.action_space != FR3_ACTION_SPACE:
-            raise FR3AdapterError(
-                f"VVLA returned {result.action_space!r}, expected {FR3_ACTION_SPACE!r}"
-            )
-        for policy_action in result.actions:
-            self.robot.execute(
-                RobotAction(
-                    timestamp_s=time.time(),
-                    values={"type": policy_action.kind, **dict(policy_action.values)},
-                    metadata={
-                        "action_space": result.action_space,
-                        "request_id": result.request_id,
-                        "step_id": result.step_id,
-                        "session_revision": result.session_revision,
-                    },
-                )
-            )
+        try:
+            action = self.mapper.map_result(result)
+        except Pi05ActionMapperError as error:
+            raise FR3AdapterError(f"action mapping failed: {error}") from error
+        self.robot.execute(action)
         self.step_id += 1
         return result
 
