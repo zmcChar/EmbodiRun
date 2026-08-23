@@ -74,7 +74,7 @@ The existing Unitree Go2 camera/control agents and SSH deployer remain under:
 
 ```text
 src/rlinf_deploy/robots/unitree/go2
-src/rlinf_deploy/deployment/unitree/go2
+src/rlinf_deploy/bindings/unitree/go2/streamvln
 ```
 
 The robot-resident processes remain isolated from model inference and expose
