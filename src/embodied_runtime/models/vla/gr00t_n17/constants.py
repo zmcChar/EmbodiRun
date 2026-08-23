@@ -1,9 +1,0 @@
-"""GR00T N1.7 checkpoint and DROID contract constants."""
-
-DEFAULT_CHECKPOINT = "nvidia/GR00T-N1.7-3B"
-DEFAULT_EMBODIMENT_TAG = "OXE_DROID_RELATIVE_EEF_RELATIVE_JOINT"
-DEFAULT_EMBODIMENT = DEFAULT_EMBODIMENT_TAG
-DEFAULT_LANGUAGE_KEY = "annotation.language.language_instruction"
-DEFAULT_ACTION_KEYS = ("eef_9d", "gripper_position", "joint_position")
-DEFAULT_ACTION_DIM = 17
-DEFAULT_ACTION_HORIZON = 40
