@@ -12,7 +12,7 @@ from ..action import RobotAction
 from rlinf_deploy.robots.franka.fr3.adapter import FR3_ACTION_SPACE, FR3Adapter, FR3AdapterError
 
 
-class FR3VvlaController:
+class Pi05FR3Runtime:
     def __init__(
         self,
         robot: FR3Adapter,
@@ -78,4 +78,4 @@ class FR3VvlaController:
         self.client.close(self.session.session_id)
 
 
-__all__ = ["FR3VvlaController"]
+__all__ = ["Pi05FR3Runtime"]

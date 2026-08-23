@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 from rlinf_deploy.inference import ImagePayload, VvlaHttpClient
-from rlinf_deploy.deployment.franka.fr3 import FR3VvlaController
+from rlinf_deploy.bindings.franka.fr3.pi05 import Pi05FR3Runtime
 from rlinf_deploy.robots.franka.fr3 import FR3Adapter, FR3Config
 
 
@@ -25,7 +25,7 @@ def main() -> None:
     )
     robot = FR3Adapter(FR3Config(host=args.robot_host))
     client = VvlaHttpClient(args.vvla_url, token=args.token)
-    controller = FR3VvlaController(robot, client, instruction=args.instruction)
+    controller = Pi05FR3Runtime(robot, client, instruction=args.instruction)
     try:
         result = controller.step(images)
         print(f"executed {len(result.actions)} action(s), revision={result.session_revision}")
