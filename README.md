@@ -68,6 +68,28 @@ limits are checked before Franky receives a command.
 See `examples/fr3_http_step.py` for a single HTTP inference step followed by
 execution of the returned action chunk.
 
+Quick end-to-end flow:
+
+```bash
+# On Thor: run VVLA HTTP service for pi0.5
+cd third_party/vvla
+vvla-http-serve \
+  --policy pi05 \
+  --checkpoint <pi05-checkpoint> \
+  --adapter-config ../../configs/pi05_http_serve.example.json \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --max-batch 1
+
+# On deploy side: send one image + state and execute one FR3 command
+cd ../..
+python examples/fr3_http_step.py \
+  --robot-host <fr3-ip> \
+  --vvla-url http://<thor-ip>:8000 \
+  --instruction "pick up the object" \
+  --image /path/to/image.jpg
+```
+
 ## Go2
 
 The existing Unitree Go2 camera/control agents and SSH deployer remain under:

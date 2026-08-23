@@ -16,15 +16,20 @@ def main() -> None:
     parser.add_argument("--vvla-url", required=True)
     parser.add_argument("--instruction", required=True)
     parser.add_argument("--image", action="append", type=Path, required=True)
+    parser.add_argument("--timeout-s", type=float, default=30.0)
     parser.add_argument("--token")
     args = parser.parse_args()
 
     images = tuple(
-        ImagePayload(name=f"camera-{index}.jpg", mime_type="image/jpeg", data=path.read_bytes())
-        for index, path in enumerate(args.image)
+        ImagePayload(
+            name=path.name,
+            mime_type="image/png" if path.suffix.lower() == ".png" else "image/jpeg",
+            data=path.read_bytes(),
+        )
+        for path in args.image
     )
     robot = FR3Adapter(FR3Config(host=args.robot_host))
-    client = VvlaHttpClient(args.vvla_url, token=args.token)
+    client = VvlaHttpClient(args.vvla_url, token=args.token, timeout_s=args.timeout_s)
     controller = Pi05FR3Runtime(robot, client, instruction=args.instruction)
     try:
         result = controller.step(images)

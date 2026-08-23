@@ -5,16 +5,16 @@ no checkpoint, tokenizer, prompt, or raw token fields cross the boundary.
 
 ## Session ordering
 
-Each step carries a stable `session_id`, monotonically increasing `step_id`, and
-unique `request_id`. The server must make repeated request IDs idempotent and
-must commit recurrent policy memory exactly once.
+Each step carries a stable `session_id`, monotonic `step_id`, and unique
+`request_id`. The server must make repeated request IDs idempotent and commit
+session state only once.
 
 ## Step request
 
 `POST /v1/sessions/{session_id}/steps` uses multipart form data.
 
 - `metadata`: `application/json`, schema `vvla.policy.step.v1`
-- `image_0..N`: encoded JPEG or PNG bytes
+- `image_0..N`: encoded JPEG/PNG bytes
 
 ## Step response
 
@@ -24,23 +24,33 @@ must commit recurrent policy memory exactly once.
   "session_id": "fr3-episode-1",
   "step_id": 0,
   "session_revision": 1,
-  "action_space": "franka.fr3.control.v1",
+  "action_space": "pi05.action_chunk.v1",
   "actions": [
     {
-      "type": "joint_position",
+      "type": "action_chunk",
       "values": {
-        "joint_positions_rad": [0, 0, 0, -2.2, 0, 2.2, 0.7],
-        "gripper_width_m": 0.04
+        "data": [
+          [0.12, -0.03, 0.45, -2.21, 0.08, 1.12, -0.34, 0.04]
+        ],
+        "feature_names": [
+          "joint_1",
+          "joint_2",
+          "joint_3",
+          "joint_4",
+          "joint_5",
+          "joint_6",
+          "joint_7",
+          "gripper_width_m"
+        ]
       }
     }
   ],
   "timing": {
-    "preprocess_ms": 8.0,
-    "kernel_ms": 50.0,
     "policy_ms": 61.0
   }
 }
 ```
 
-The server, not Deploy, maps Pi0.5 or any other model output into the declared
-robot action space.
+The VVLA HTTP layer is only responsible for model-native action chunks. Deploy
+maps `pi05.action_chunk.v1` to FR3 `joint_position` through
+`bindings.fr3.pi05`.
