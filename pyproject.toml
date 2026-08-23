@@ -1,63 +1,28 @@
 [build-system]
-requires = ["setuptools>=75"]
+requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "embodied-runtime-prototype"
+name = "rlinf-deploy"
 version = "0.1.0"
-description = "Provisional prototype for inference providers and heterogeneous deployment"
+description = "Robot and simulator deployment clients for RLinf inference services"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
-authors = [{ name = "Project contributors" }]
-dependencies = [
-  "tomli>=2; python_version < '3.11'",
-]
+license = {text = "Apache-2.0"}
+dependencies = []
 
 [project.optional-dependencies]
-torch = ["torch>=2.7"]
-pi05 = [
-  "lerobot[pi]==0.5.1",
-  "safetensors>=0.4.3,<1",
-]
-smolvla = [
-  "lerobot[smolvla]==0.3.3",
-  "safetensors>=0.4.3,<1",
-]
-openvla_oft = [
-  "huggingface-hub>=0.30",
-  "safetensors>=0.4.3,<1",
-  "timm>=0.9.10,<1.0.0",
-  "torchvision",
-  "transformers>=5,<6",
-]
-gr00t_client = [
-  "numpy>=1.26,<2",
-  "openpi-client==0.1.2",
-  "websockets>=16,<17",
-]
-dev = [
-  "pytest>=8",
-  "ruff>=0.12",
-]
+ssh = ["paramiko>=3.4,<5"]
+fr3 = ["franky-control>=1.1.4,<2"]
+test = ["pytest>=8,<9"]
 
-[tool.setuptools]
-license-files = ["LICENSE", "NOTICE.md", "LICENSES/*.txt"]
+[project.scripts]
+rlinf-go2-deploy = "rlinf_deploy.deployment.unitree.go2.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["rlinf_deploy*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --import-mode=importlib"
-markers = [
-  "openvla_oft: tests that require a real OpenVLA-OFT checkpoint",
-  "pi05: tests that require a real LeRobot π0.5 checkpoint",
-  "smolvla: tests that require a real LeRobot SmolVLA checkpoint",
-  "gr00t_n17: tests that require the real NVIDIA GR00T N1.7 checkpoint",
-  "vllm_omni: tests that require a live vLLM-Omni server",
-]
-
-[tool.ruff]
-line-length = 100
-target-version = "py310"
+addopts = "-ra"

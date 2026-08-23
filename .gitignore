@@ -5,6 +5,9 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 .venv/
+.go2-nav-runtime/
+.navila-navigation-runtime/
+.vvla-activevln-runtime/
 build/
 dist/
 artifacts/

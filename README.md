@@ -1,356 +1,81 @@
-# Embodied runtime prototype
+# RLinf Deploy
 
-This repository is a provisional prototype; the product name has intentionally
-not been decided. Its first vertical slices expose π0.5, SmolVLA, OpenVLA-OFT,
-and GR00T N1.7 through a common inference-provider boundary. A Provider may
-compose a local hardware Backend or call an external serving framework such as
-vLLM-Omni.
-
-The neutral Python namespace is `embodied_runtime`; VLA is one model family
-under `embodied_runtime.models.vla`, not the boundary of the runtime.
-
-## Five-group boundary
+RLinf Deploy owns the last mile between an inference service and a robot or
+simulator. It does not load checkpoints, import model frameworks, build prompts,
+or execute neural networks.
 
 ```text
-models ── ModelPackage ──┐
-                        v
-                 inference provider
-                    /         \
-      local provider           external provider
-      engine → Backend         vLLM-Omni / MaaS
-                    \         /
-                     distributed
-                          |
-                        robots
+camera / robot state
+        |
+        v
+RLinf Deploy -- HTTP --> RLinf Inference (VVLA)
+        |
+        v
+robot-specific safety and motion execution
 ```
 
-The initial implementation concentrates on Groups 1, 3, and 4:
+## Repository boundary
 
-- `models/vla/pi05`: builds a staged π0.5 package (`encode_prefix`,
-  `init_state`, `denoise_step`, `finalize`) and owns reference parity.
-- `models/vla/smolvla`: exposes the same staged contract for the pinned
-  LeRobot 0.3.3 SmolVLA checkpoint, including its legacy flow schedule and
-  robot-native action unnormalization.
-- `models/vla/openvla_oft`: builds a full-forward categorical-action package
-  and supplies the image/text preprocessing and action-token semantics.
-- `models/vla/gr00t_n17`: exposes NVIDIA's official GR00T N1.7 policy as a
-  formal single-forward package with a named-action contract. The same adapter
-  also fronts native vLLM-Omni serving over OpenPI.
-- `models/base.py`: defines the optional adapter base and the explicit
-  `preprocess_one → collate → unbatch → postprocess_one` cardinality boundary.
-- `integrations/serving`: defines the common Provider capabilities, lazy
-  Provider factories, a Backend-injected local Provider, and external serving
-  integrations.
-- `engine`: remains an internal local-Provider primitive. It selects a runner
-  from the package's `ExecutionPlan`, then owns request lifecycle,
-  cancellation, cooperative safe points, and memory policy.
-- `backends/torch_cuda`: probes devices and compiles, loads, and executes
-  package entrypoints and state-update primitives without importing π0.5.
+| RLinf Deploy owns | RLinf Inference owns |
+|---|---|
+| Robot and simulator observations | Checkpoints and processors |
+| HTTP client, retries, deadlines | Prompt and model forward |
+| Session and step identifiers | Session memory and batching |
+| Robot action validation | Model-output parsing |
+| Go2 and FR3 control | DP, TP, CUDA Graph, compilation |
+| SSH deployment and service routing | Canonical policy actions |
 
-Two plans are implemented: `SingleForwardPlan` and `IterativeFlowPlan`.
-Model-family semantics and execution pattern are independent: π0.5 is a VLA
-using iterative flow, while OpenVLA-OFT is a real VLA using one causal forward
-and a categorical action-token head.
+`third_party/vvla` pins the server implementation for integration and deployment
+reproducibility. Runtime communication still crosses the versioned HTTP API; the
+deploy package never imports VVLA Python modules.
 
-`distributed` now contains asynchronous endpoint coordination and prototype
-transports. `robots` and the RLinf integration remain explicit interface
-boundaries for their owning groups.
+## HTTP contract
 
-## Development
-
-Use an environment containing PyTorch and, for real π0.5 inference, LeRobot
-0.5.1:
-
-```bash
-python -m pip install -e '.[dev,torch,pi05]'
-pytest
-```
-
-For OpenVLA-OFT, install its isolated model extra instead:
-
-```bash
-python -m pip install -e '.[dev,torch,openvla_oft]'
-```
-
-SmolVLA uses a separate endpoint environment because its official legacy
-checkpoint requires LeRobot 0.3.3:
-
-```bash
-python -m pip install -e '.[dev,torch,smolvla]'
-```
-
-Checkpoints are loaded from user-provided local paths or Hugging Face IDs. This
-repository does not contain model weights, and real-model commands are offline
-by default at the outer checkpoint boundary. Models with nested upstream
-dependencies may require their own cached snapshots; GR00T's Cosmos backbone
-is documented explicitly in the GR00T guide.
-
-The dependency-free contracts and core runtime target Python 3.10+. The
-`smolvla` endpoint is verified with Python 3.10 and LeRobot 0.3.3. The `pi05`
-extra requires Python 3.12+ because that is LeRobot 0.5.1's declared minimum,
-so the two real models intentionally run in separate environments.
-
-Run the small cross-group contract fixture:
-
-```bash
-python examples/toy_flow_local.py --device cpu
-```
-
-Run the same boundary with a non-flow plan:
-
-```bash
-python examples/toy_single_forward_local.py --device cpu
-```
-
-Run two local engines as asynchronous edge/cloud runtimes behind a controllable
-dummy link:
-
-```bash
-python examples/cloud_edge_failover.py \
-  --config configs/cloud_edge_failover.toml \
-  --mode async_blend
-```
-
-The edge engine executes on every control tick and is never blocked by cloud
-completion. The configurable coordination modes are:
-
-- `edge_only`: do not submit cloud work;
-- `async_cloud_preferred`: use a fresh cached cloud result when available,
-  otherwise use the current edge result;
-- `async_blend`: synchronously combine the current edge result and a fresh
-  cached cloud result.
-
-The example disconnects and reconnects the dummy link according to the TOML
-schedule. Here, asynchronous means that a control tick does not await cloud
-completion. A result fuser is intentionally synchronous, lightweight, and free
-of I/O.
-
-Run a tokenizer-free real-weight π0.5 smoke test:
-
-```bash
-python examples/pi05_synthetic.py \
-  --checkpoint /path/to/lerobot/pi05_base \
-  --device cuda:0 \
-  --dtype preserve \
-  --num-steps 10 \
-  --cuda-graph
-```
-
-Run the real π0.5 model on a local GPU and a lightweight policy on CPU:
-
-```bash
-python examples/pi05_cpu_gpu_collaboration.py \
-  --config configs/pi05_cpu_gpu_collaboration.toml \
-  --checkpoint /path/to/lerobot/pi05_base \
-  --num-steps 1
-```
-
-This smoke test uses two local runtimes and a controllable dummy link. The first
-tick returns the CPU result while π0.5 runs in the background, a later tick
-blends the available action results, and a disconnected tick falls back to
-CPU.
-
-For a real two-host link, start π0.5 on the cloud GPU:
-
-```bash
-python examples/pi05_cloud_server.py \
-  --config configs/pi05_cpu_gpu_collaboration.toml \
-  --checkpoint /path/to/lerobot/pi05_base \
-  --num-steps 1 \
-  --host 0.0.0.0 \
-  --port 18765
-```
-
-Run the formal SmolVLA endpoint on the edge host against that server:
-
-```bash
-CLOUD_HOST=cloud-hostname
-python examples/smolvla_pi05_async.py \
-  --edge-checkpoint /path/to/lerobot/smolvla_base \
-  --edge-vlm-base-path /path/to/SmolVLM2-500M-Video-Instruct \
-  --cloud-host "$CLOUD_HOST" \
-  --cloud-port 18765 \
-  --edge-device cuda:0 \
-  --num-steps 10 \
-  --mode async_cloud_preferred
-```
-
-This path constructs SmolVLA once through
-`SmolVLAAdapter → TorchCudaBackend → ExecutionEngine`. The first tick returns
-the edge result while π0.5 remains in flight, the next tick may select a fresh
-cached cloud result, and a connection-epoch change immediately falls back to
-SmolVLA. The policies retain their native `[50, 6]` and `[50, 32]` action
-contracts. `async_blend` is rejected because equal horizon does not imply
-compatible robot actions.
-
-Copy the standalone client to an edge host with Python 3.10+ and PyTorch, then
-run its local GPU policy while requesting π0.5 asynchronously:
-
-```bash
-CLOUD_LAN_HOST=cloud-lan-hostname
-python wifi_edge_client_py310.py \
-  --cloud-host "$CLOUD_LAN_HOST" \
-  --cloud-port 18765 \
-  --edge-device cuda:0 \
-  --num-steps 1 \
-  --cloud-weight 0.5
-```
-
-`--failure-probe-port <closed-port>` additionally verifies that a real TCP
-failure does not prevent the edge policy from producing an action. The
-length-prefixed TCP/JSON transport and standalone client are prototype test
-surfaces, not the future registration, discovery, authentication, or streaming
-layer.
-
-## Multi-robot edge/cloud prototype
-
-The multi-robot slice runs one independent edge process, local Provider, and
-failover coordinator per robot. All of those processes may connect to one cloud
-process that owns one shared Provider and one loaded model:
+The client expects these endpoints:
 
 ```text
-robot A observation -> edge process A --\
-robot B observation -> edge process B ----> one cloud Provider / model queue
-robot C observation -> edge process C --/       session A / B / C isolated
+GET    /healthz
+GET    /v1/capabilities
+POST   /v1/sessions
+POST   /v1/sessions/{session_id}/steps
+POST   /v1/sessions/{session_id}/reset
+DELETE /v1/sessions/{session_id}
 ```
 
-The executable CLI currently constructs only a local `torch_cuda` Provider; it
-does not yet select vLLM-Omni, MaaS, or a vendor Backend from configuration.
-The sample uses a PyTorch model fixture. Change `provider.device` or pass
-`--device cuda:0` to place it on a cloud GPU:
+Step requests use `multipart/form-data`: one JSON metadata part followed by
+binary image parts. Images are never base64 encoded. `request_id`, `step_id`,
+and `session_revision` provide idempotency and ordering.
+
+## FR3
+
+Install the official Franky binding that matches the robot server version:
 
 ```bash
-PYTHONPATH=src python examples/multi_robot_cloud.py \
-  --config configs/multi_robot_cloud.toml \
-  --host 0.0.0.0 \
-  --port 18770
+python -m pip install -e '.[fr3]'
 ```
 
-The checked-in default binds only to loopback. `--host 0.0.0.0` is shown solely
-for a trusted, isolated two-host experiment: this prototype transport has no
-authentication or encryption and must not be exposed to an untrusted network
-or connected to physical actuation without a safety layer.
+The adapter follows the official Franky API:
 
-On the 5080 host, start two independent edge processes. They deliberately use
-different logical identities and receive fresh automatic session IDs, but may
-advertise the same physical resource label because both processes share one
-GPU:
+- `Robot(host)` and `recover_from_errors()`
+- bounded `JointMotion`
+- bounded relative `CartesianMotion`
+- optional `Gripper.move`
+- state from `robot.state`
 
-```bash
-CLOUD_HOST=cloud-hostname
-PYTHONPATH=src python examples/multi_robot_edge.py \
-  --config configs/multi_robot_edge.toml \
-  --robot-id robot-a \
-  --edge-node-id edge-a \
-  --physical-host-id workstation-5080 \
-  --physical-resource-id gpu-5080-0 \
-  --device cuda:0 \
-  --cloud-host "$CLOUD_HOST" \
-  --observation-offset 0
+Physical execution is intentionally fail-closed. Joint and Cartesian step
+limits are checked before Franky receives a command.
 
-PYTHONPATH=src python examples/multi_robot_edge.py \
-  --config configs/multi_robot_edge.toml \
-  --robot-id robot-b \
-  --edge-node-id edge-b \
-  --physical-host-id workstation-5080 \
-  --physical-resource-id gpu-5080-0 \
-  --device cuda:0 \
-  --cloud-host "$CLOUD_HOST" \
-  --observation-offset 100
+See `examples/fr3_http_step.py` for a single HTTP inference step followed by
+execution of the returned action chunk.
+
+## Go2
+
+The existing Unitree Go2 camera/control agents and SSH deployer remain under:
+
+```text
+src/rlinf_deploy/robots/unitree/go2
+src/rlinf_deploy/deployment/unitree/go2
 ```
 
-The same edge command can represent another robot on a 3070 by changing its
-logical IDs and physical resource declaration. Passing `--device cpu` creates a
-CPU edge runtime. `physical_resource_id` is declaration-only metadata in this
-slice: it performs no locking, placement, or resource arbitration. Likewise,
-`cuda:0` is resolved inside one process and is not a globally unique node or
-device identity.
-
-Add `--disconnect-tick 3 --reconnect-tick 6` to one edge command to exercise
-that robot's logical cloud-link loss and background re-registration while the
-other robot remains connected.
-
-The cloud model is loaded once. Each session is ordered and isolated, and the
-default configuration admits one pending request per session and uses
-`max_batch_size = 1`. Cross-robot batching is therefore disabled by default. A
-trusted homogeneous deployment may explicitly opt in only after declaring its
-Provider multi-tenant-safe and ensuring that all batched observations have a
-compatible model-owned schema and shape.
-
-Every wire request carries `robot_id`, `edge_node_id`, `session_id`,
-`sequence_id`, `observation_id`, and the actual JSON numeric observation. The
-service namespaces otherwise identical request IDs before they enter the shared
-engine and echoes authoritative identity and action-contract metadata on every
-result. This JSON path proves that observations cross a real process or host
-boundary; it is not a production RGB/depth codec and does not preserve an
-efficient tensor representation.
-
-Only an admitted cloud submission snapshots mutable tensor/array storage.
-Encoding, transport, and cloud inference then run off the control path. The
-local snapshot copy itself is an ownership cost on that tick and must be
-budgeted. A real-time capture path can pass an immutable/reference-counted
-frame as `owned_cloud_observation` to make that ownership transfer O(1).
-
-Each edge process owns its connection epoch and cached cloud authority. A
-single session rejection or disconnect invalidates only that robot's cloud
-state. A shared-cloud process or network outage naturally affects every cloud
-session, but each edge process continues through its own local Provider.
-
-This first executable topology uses a static cloud address and an explicit
-service-local session handshake. It is not dynamic node registration and does
-not implement the future leased `RuntimeRegistry`, discovery, or route
-selection. The default sample remains a numeric target vector so the topology
-can run without checkpoints. The real SmolVLA configuration instead asks the
-loaded adapter for model-shaped synthetic observations; a physical robot still
-requires its own observation mapper and a production wire codec.
-
-The generic Provider boundary can also represent vLLM-Omni. The current
-vLLM-Omni/OpenPI Provider owns WebSocket and reset/session state, however, so it
-must be instantiated once per robot session. Those independent
-Provider/WebSocket instances may still connect to the same shared vLLM-Omni
-server; one stateful Provider instance must not be shared directly by multiple
-robot sessions.
-
-A real four-model deployment is also provided: two SmolVLA edge processes on
-one RTX 5080, one SmolVLA edge process on an RTX 3070, and one shared CPU
-SmolVLA service. See
-[`docs/smolvla_four_model_demo.md`](docs/smolvla_four_model_demo.md) for the
-fixed model contract, launch commands, health probe, disconnect test, and
-acceptance criteria.
-
-Run a synthetic-image OpenVLA-OFT smoke test:
-
-```bash
-python examples/openvla_oft_synthetic.py \
-  --checkpoint /path/to/openvla-oft-checkpoint \
-  --prompt "pick up the red block" \
-  --device cuda:0
-```
-
-The current OpenVLA-OFT slice uses deterministic greedy decoding around one
-complete causal-model forward. It establishes the model/engine/backend
-contract, but does not yet implement prefix-KV splitting, rollout
-log-probability output, or CUDA Graph capture. The reference BF16 checkpoint
-is roughly 15.1 GB before activations, so a 16 GB GPU has very little headroom;
-this first correctness path should be validated on a larger GPU until a
-quantized or memory-optimized backend is added. This slice also accepts exactly
-one RGB camera; multi-camera checkpoint layouts are rejected explicitly.
-
-`preserve` retains π0.5's package-defined mixed precision. Explicitly casting
-the whole model to FP16 or BF16 is exposed only as an experiment because the
-reference vision and normalization paths intentionally retain FP32 parameters.
-`--cuda-graph` captures only the repeated denoise entrypoint; the Engine,
-initial RNG, Euler update, and model adapter remain unchanged. CUDA Graph
-capture failures are reported in the command summary and safely use eager
-execution for that exact input signature.
-
-The π0.5 composition explicitly declares `denoise_step.time` as a dynamic
-scalar input. Its value is copied into one fixed-address CUDA tensor before
-each replay, so the default ten-step schedule captures one graph rather than
-ten. Undeclared Python scalars remain capture-time constants and continue to
-participate in the graph cache key.
-
-See [architecture](docs/architecture.md) for the ownership boundary and
-[verification](docs/verification.md) for the tested environment and results.
-The GR00T provider boundary, isolated environment commands, and upstream
-support status are documented in [GR00T N1.7](docs/gr00t_n17.md).
+The robot-resident processes remain isolated from model inference and expose
+bounded HTTP control surfaces.

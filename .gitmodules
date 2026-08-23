@@ -1,0 +1,4 @@
+[submodule "third_party/vvla"]
+	path = third_party/vvla
+	url = git@github.com:BUAA-CI-LAB/RLinf-inference.git
+	branch = main

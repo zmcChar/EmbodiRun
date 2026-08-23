@@ -1,0 +1,37 @@
+"""Execute one VVLA action chunk on a FR3 robot using encoded camera images."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+from rlinf_deploy.inference import ImagePayload, VvlaHttpClient
+from rlinf_deploy.deployment.franka.fr3 import FR3VvlaController
+from rlinf_deploy.robots.franka.fr3 import FR3Adapter, FR3Config
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--robot-host", required=True)
+    parser.add_argument("--vvla-url", required=True)
+    parser.add_argument("--instruction", required=True)
+    parser.add_argument("--image", action="append", type=Path, required=True)
+    parser.add_argument("--token")
+    args = parser.parse_args()
+
+    images = tuple(
+        ImagePayload(name=f"camera-{index}.jpg", mime_type="image/jpeg", data=path.read_bytes())
+        for index, path in enumerate(args.image)
+    )
+    robot = FR3Adapter(FR3Config(host=args.robot_host))
+    client = VvlaHttpClient(args.vvla_url, token=args.token)
+    controller = FR3VvlaController(robot, client, instruction=args.instruction)
+    try:
+        result = controller.step(images)
+        print(f"executed {len(result.actions)} action(s), revision={result.session_revision}")
+    finally:
+        controller.close()
+
+
+if __name__ == "__main__":
+    main()
