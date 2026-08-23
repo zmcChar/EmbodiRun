@@ -6,7 +6,7 @@ import math
 from collections.abc import Mapping
 from typing import Any
 
-from rlinf_deploy.tasks.navigation import (
+from rlinf_deploy.robots.unitree.go2.navigation import (
     EncodedDepthFrame,
     EncodedRGBFrame,
     NavigationObservation,

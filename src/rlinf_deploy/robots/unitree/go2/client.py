@@ -6,8 +6,8 @@ import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from rlinf_deploy.tasks.navigation.interfaces import MobileBaseError
-from rlinf_deploy.tasks.navigation.motion import MobileBaseState, PlanarVelocityCommand
+from rlinf_deploy.robots.unitree.go2.navigation.interfaces import MobileBaseError
+from rlinf_deploy.robots.unitree.go2.navigation.motion import MobileBaseState, PlanarVelocityCommand
 from rlinf_deploy.utils import HttpClientError, JsonHttpClient, Pose2D
 
 
