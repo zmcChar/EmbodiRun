@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import math
 import time
-from dataclasses import dataclass
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from rlinf_deploy.bindings.franka.fr3.pi05.contract import POLICY_ACTION_SPACE
+from rlinf_deploy.bindings.runtime import ActionMappingError
 from rlinf_deploy.inference import PolicyResult
 from rlinf_deploy.robots import RobotAction
 from rlinf_deploy.robots.franka.fr3 import FR3_ACTION_SPACE
 
 
-class Pi05ActionMapperError(RuntimeError):
+class Pi05ActionMapperError(ActionMappingError):
     pass
 
 
@@ -27,9 +28,13 @@ class Pi05ActionMapperConfig:
             if not isinstance(index, int) or index < 0 or index > 31:
                 raise Pi05ActionMapperError("joint_indices must be ints in [0,31]")
         if self.gripper_index is not None and (
-            not isinstance(self.gripper_index, int) or self.gripper_index < 0 or self.gripper_index > 31
+            not isinstance(self.gripper_index, int)
+            or self.gripper_index < 0
+            or self.gripper_index > 31
         ):
-            raise Pi05ActionMapperError("gripper_index must be an int in [0,31] or None")
+            raise Pi05ActionMapperError(
+                "gripper_index must be an int in [0,31] or None"
+            )
 
 
 class Pi05ActionMapper:
@@ -55,7 +60,9 @@ class Pi05ActionMapper:
             raise Pi05ActionMapperError("action_chunk values.data must not be empty")
         first = data[0]
         if isinstance(first, (str, bytes)) or not isinstance(first, Sequence):
-            raise Pi05ActionMapperError("action_chunk first row must be a numeric sequence")
+            raise Pi05ActionMapperError(
+                "action_chunk first row must be a numeric sequence"
+            )
 
         row: list[float] = []
         for item in first:
@@ -65,13 +72,24 @@ class Pi05ActionMapper:
                 try:
                     item = float(item)
                 except (TypeError, ValueError):
-                    raise Pi05ActionMapperError("action values must be numeric") from None
+                    raise Pi05ActionMapperError(
+                        "action values must be numeric"
+                    ) from None
             row.append(float(item))
             if not math.isfinite(row[-1]):
                 raise Pi05ActionMapperError("action values must be finite")
-        max_index = max(self.config.joint_indices + ((self.config.gripper_index,) if self.config.gripper_index is not None else ()))
+        max_index = max(
+            self.config.joint_indices
+            + (
+                (self.config.gripper_index,)
+                if self.config.gripper_index is not None
+                else ()
+            )
+        )
         if len(row) <= max_index:
-            raise Pi05ActionMapperError("action_chunk row is too short for configured indices")
+            raise Pi05ActionMapperError(
+                "action_chunk row is too short for configured indices"
+            )
 
         robot = {
             "type": "joint_position",

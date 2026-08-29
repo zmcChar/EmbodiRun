@@ -22,7 +22,7 @@ robot-specific safety and motion execution
 | HTTP client, retries, deadlines | Prompt and model forward |
 | Session and step identifiers | Session memory and batching |
 | Robot action validation | Model-output parsing |
-| Go2 and FR3 control | DP, TP, CUDA Graph, compilation |
+| Go2, FR3, and SO-101 control | DP, TP, CUDA Graph, compilation |
 | SSH deployment and service routing | Canonical policy actions |
 
 `third_party/vvla` pins the server implementation for integration and deployment
@@ -89,6 +89,38 @@ python examples/fr3_http_step.py \
   --instruction "pick up the object" \
   --image /path/to/image.jpg
 ```
+
+## SO-101
+
+SO-101 support wraps LeRobot's official `SO101Follower` API while keeping
+policy-to-hardware validation in this package. Install the optional dependency:
+
+```bash
+python -m pip install -e '.[so101]'
+```
+
+Configure and calibrate the follower with LeRobot first. The same calibration
+ID must be used for setup, calibration, and deployment. The adapter exposes five
+joint positions in degrees plus the normalized gripper position in `[0, 100]`.
+It rejects non-finite values, wrong action spaces, incomplete commands, and
+targets that exceed the configured per-step limits.
+
+Use `configs/pi05_so101_http_serve.example.json` only with a checkpoint whose
+state/action schema and normalization were trained for SO-101. An FR3 checkpoint
+is not compatible merely by dropping one action dimension.
+
+```bash
+python examples/so101_http_step.py \
+  --robot-port /dev/ttyACM0 \
+  --robot-id my_follower_arm \
+  --vvla-url http://<thor-ip>:8000 \
+  --instruction "pick up the object" \
+  --image /path/to/image.jpg
+```
+
+`stop()` holds the most recently measured pose because SO-101 has no dedicated
+stop primitive. This is a software stop, not a safety-rated emergency stop.
+Provide a physical power cutoff when the deployment risk requires one.
 
 ## Go2
 
