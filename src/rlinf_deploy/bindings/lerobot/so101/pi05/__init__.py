@@ -2,7 +2,6 @@
 
 from .action import (
     Pi05SO101ActionMapper,
-    Pi05SO101ActionMapperConfig,
     Pi05SO101ActionMapperError,
 )
 from .contract import (
@@ -21,7 +20,6 @@ __all__ = [
     "ROBOT_ACTION_SPACE",
     "ROBOT_MODEL",
     "Pi05SO101ActionMapper",
-    "Pi05SO101ActionMapperConfig",
     "Pi05SO101ActionMapperError",
     "Pi05SO101Runtime",
 ]

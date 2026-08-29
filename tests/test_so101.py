@@ -11,14 +11,20 @@ from rlinf_deploy.robots.lerobot.so101 import (
 
 
 class FakeSO101:
-    def __init__(self) -> None:
+    def __init__(self, *, calibrated: bool = True, connect_error=None) -> None:
         self.connected_with = None
         self.disconnected = False
+        self.is_calibrated = calibrated
+        self.is_connected = False
+        self.connect_error = connect_error
         self.positions = dict.fromkeys(SO101_POSITION_FEATURES, 0.0)
         self.sent = []
 
     def connect(self, *, calibrate: bool) -> None:
         self.connected_with = calibrate
+        self.is_connected = True
+        if self.connect_error is not None:
+            raise self.connect_error
 
     def get_observation(self):
         return dict(self.positions)
@@ -29,6 +35,7 @@ class FakeSO101:
         return dict(action)
 
     def disconnect(self) -> None:
+        self.is_connected = False
         self.disconnected = True
 
 
@@ -43,7 +50,7 @@ def action(values):
 def test_observe_and_execute_follow_lerobot_contract() -> None:
     device = FakeSO101()
     adapter = SO101Adapter(SO101Config(port="/dev/ttyACM0"), lerobot_robot=device)
-    assert device.connected_with is True
+    assert device.connected_with is False
     assert adapter.observe().values == {
         "joint_positions_deg": [0.0] * 5,
         "gripper_position": 0.0,
@@ -102,6 +109,22 @@ def test_stop_holds_position_and_close_disconnects() -> None:
     assert device.disconnected
 
 
+def test_uncalibrated_robot_is_disconnected_before_use() -> None:
+    device = FakeSO101(calibrated=False)
+    with pytest.raises(SO101AdapterError, match="lerobot-calibrate"):
+        SO101Adapter(SO101Config(port="/dev/ttyACM0"), lerobot_robot=device)
+    assert device.disconnected
+
+
+def test_partial_connection_is_disconnected_before_error_propagates() -> None:
+    failure = RuntimeError("bus failure")
+    device = FakeSO101(connect_error=failure)
+    with pytest.raises(RuntimeError, match="bus failure") as caught:
+        SO101Adapter(SO101Config(port="/dev/ttyACM0"), lerobot_robot=device)
+    assert caught.value is failure
+    assert device.disconnected
+
+
 def test_wrong_action_space_and_unknown_fields_are_rejected() -> None:
     device = FakeSO101()
     adapter = SO101Adapter(SO101Config(port="/dev/ttyACM0"), lerobot_robot=device)
@@ -112,7 +135,7 @@ def test_wrong_action_space_and_unknown_fields_are_rejected() -> None:
     )
     with pytest.raises(SO101AdapterError, match="unsupported action space"):
         adapter.execute(wrong_space)
-    with pytest.raises(SO101AdapterError, match="unsupported SO-101 action fields"):
+    with pytest.raises(SO101AdapterError, match="fields do not match"):
         adapter.execute(
             action(
                 {

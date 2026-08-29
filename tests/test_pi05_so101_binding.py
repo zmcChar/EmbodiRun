@@ -10,8 +10,10 @@ from rlinf_deploy.bindings.lerobot.so101.pi05 import (
 from rlinf_deploy.inference import ImagePayload, PolicyAction, PolicyResult, Session
 from rlinf_deploy.robots.lerobot.so101 import SO101_POSITION_FEATURES
 
+DEFAULT_ROW = (1, 2, 3, 4, 5, 6)
 
-def result(*, names=SO101_POSITION_FEATURES, row=(1, 2, 3, 4, 5, 6)) -> PolicyResult:
+
+def result(*, names=SO101_POSITION_FEATURES, rows=(DEFAULT_ROW,)) -> PolicyResult:
     return PolicyResult(
         request_id="r1",
         session_id="s1",
@@ -21,7 +23,10 @@ def result(*, names=SO101_POSITION_FEATURES, row=(1, 2, 3, 4, 5, 6)) -> PolicyRe
         actions=(
             PolicyAction(
                 "action_chunk",
-                {"data": [list(row)], "feature_names": list(names)},
+                {
+                    "data": [list(row) for row in rows],
+                    "feature_names": list(names),
+                },
             ),
         ),
     )
@@ -30,7 +35,7 @@ def result(*, names=SO101_POSITION_FEATURES, row=(1, 2, 3, 4, 5, 6)) -> PolicyRe
 def test_mapper_uses_feature_names_instead_of_wire_order() -> None:
     mapper = Pi05SO101ActionMapper()
     names = tuple(reversed(SO101_POSITION_FEATURES))
-    action = mapper.map_result(result(names=names, row=(60, 50, 40, 30, 20, 10)))
+    action = mapper.map_result(result(names=names, rows=((60, 50, 40, 30, 20, 10),)))
     assert action.values == {
         "type": "joint_position",
         "joint_positions_deg": [10.0, 20.0, 30.0, 40.0, 50.0],
@@ -40,10 +45,15 @@ def test_mapper_uses_feature_names_instead_of_wire_order() -> None:
 
 def test_mapper_rejects_missing_and_duplicate_feature_names() -> None:
     mapper = Pi05SO101ActionMapper()
-    with pytest.raises(Pi05SO101ActionMapperError, match="missing required"):
+    with pytest.raises(Pi05SO101ActionMapperError, match="do not match SO-101"):
         mapper.map_result(result(names=tuple(f"other-{index}" for index in range(6))))
     with pytest.raises(Pi05SO101ActionMapperError, match="unique"):
         mapper.map_result(result(names=("duplicate",) * 6))
+
+
+def test_mapper_rejects_unconsumed_action_rows() -> None:
+    with pytest.raises(Pi05SO101ActionMapperError, match="exactly one action row"):
+        Pi05SO101ActionMapper().map_result(result(rows=(DEFAULT_ROW, DEFAULT_ROW)))
 
 
 class FakeRobot:

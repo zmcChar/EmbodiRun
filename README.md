@@ -105,6 +105,10 @@ joint positions in degrees plus the normalized gripper position in `[0, 100]`.
 It rejects non-finite values, wrong action spaces, incomplete commands, and
 targets that exceed the configured per-step limits.
 
+Deployment never starts interactive calibration. If the configured calibration
+is missing or does not match the motors, the adapter disconnects and fails before
+accepting an action; use `lerobot-calibrate` beforehand.
+
 Use `configs/pi05_so101_http_serve.example.json` only with a checkpoint whose
 state/action schema and normalization were trained for SO-101. An FR3 checkpoint
 is not compatible merely by dropping one action dimension.

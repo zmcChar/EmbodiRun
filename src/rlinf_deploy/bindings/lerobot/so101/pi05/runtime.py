@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from rlinf_deploy.bindings.runtime import PolicyRobotRuntime
 from rlinf_deploy.inference import VvlaHttpClient
-from rlinf_deploy.robots.lerobot.so101 import SO101Adapter, SO101AdapterError
+from rlinf_deploy.robots.lerobot.so101 import SO101Adapter
 
 from .action import Pi05SO101ActionMapper
 from .contract import POLICY_ACTION_SPACE
@@ -24,10 +24,7 @@ class Pi05SO101Runtime(PolicyRobotRuntime):
             client,
             instruction=instruction,
             policy_action_space=POLICY_ACTION_SPACE,
-            mapper=mapper or Pi05SO101ActionMapper(),
-            mapping_error=lambda error: SO101AdapterError(
-                f"action mapping failed: {error}"
-            ),
+            mapper=mapper if mapper is not None else Pi05SO101ActionMapper(),
         )
 
 

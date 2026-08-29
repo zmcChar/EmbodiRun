@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 import time
 from collections.abc import Mapping, Sequence
-from pathlib import Path
 from typing import Any
 
 from ...action import RobotAction
@@ -77,22 +76,32 @@ class SO101Adapter:
                 "cameras": {},
             }
             if config.calibration_dir is not None:
-                options["calibration_dir"] = Path(config.calibration_dir)
+                options["calibration_dir"] = config.calibration_dir
             lerobot_robot = SO101Follower(SO101FollowerConfig(**options))
         self.robot = lerobot_robot
         try:
-            self.robot.connect(calibrate=config.calibrate_on_connect)
-        except Exception as error:
-            raise SO101AdapterError(f"failed to connect SO-101: {error}") from error
+            self.robot.connect(calibrate=False)
+        except BaseException:
+            if self.robot.is_connected:
+                self.robot.disconnect()
+            raise
+        if not self.robot.is_calibrated:
+            self.robot.disconnect()
+            raise SO101AdapterError(
+                "SO-101 is not calibrated; run lerobot-calibrate with --robot.id "
+                f"{config.calibration_id or config.robot_id!r}"
+            )
 
     def _read_positions(self) -> tuple[float, ...]:
-        try:
-            raw = self.robot.get_observation()
-        except Exception as error:
-            raise SO101AdapterError(f"failed to read SO-101 state: {error}") from error
+        raw = self.robot.get_observation()
         if not isinstance(raw, Mapping):
             raise SO101AdapterError("SO-101 observation must be an object")
-        return tuple(_number(raw.get(name), name) for name in SO101_POSITION_FEATURES)
+        missing = set(SO101_POSITION_FEATURES) - raw.keys()
+        if missing:
+            raise SO101AdapterError(
+                f"SO-101 observation is missing features: {sorted(missing)!r}"
+            )
+        return tuple(_number(raw[name], name) for name in SO101_POSITION_FEATURES)
 
     def observe(self) -> RobotObservation:
         positions = self._read_positions()
@@ -127,15 +136,18 @@ class SO101Adapter:
             return
         if kind != "joint_position":
             raise SO101AdapterError(f"unsupported SO-101 action type: {kind!r}")
-        unknown = set(values) - {"joint_positions_deg", "gripper_position"}
-        if unknown:
+        expected_fields = {"joint_positions_deg", "gripper_position"}
+        if set(values) != expected_fields:
+            missing = expected_fields - values.keys()
+            unexpected = values.keys() - expected_fields
             raise SO101AdapterError(
-                f"unsupported SO-101 action fields: {sorted(unknown)!r}"
+                "SO-101 joint_position fields do not match the contract; "
+                f"missing={sorted(missing)!r}, unexpected={sorted(unexpected)!r}"
             )
         target_joints = _numbers(
-            values.get("joint_positions_deg"), "joint_positions_deg", 5
+            values["joint_positions_deg"], "joint_positions_deg", 5
         )
-        target_gripper = _number(values.get("gripper_position"), "gripper_position")
+        target_gripper = _number(values["gripper_position"], "gripper_position")
         if not 0.0 <= target_gripper <= 100.0:
             raise SO101AdapterError("gripper_position must be in [0, 100]")
         current = self._read_positions()
@@ -161,24 +173,15 @@ class SO101Adapter:
                 (*target_joints, target_gripper),
             )
         }
-        self._send(command)
-
-    def _send(self, command: Mapping[str, float]) -> None:
-        try:
-            self.robot.send_action(dict(command))
-        except Exception as error:
-            raise SO101AdapterError(f"failed to command SO-101: {error}") from error
+        self.robot.send_action(command)
 
     def stop(self) -> None:
         """Hold the measured pose; SO-101 exposes no separate stop primitive."""
         positions = self._read_positions()
-        self._send(dict(zip(SO101_POSITION_FEATURES, positions)))
+        self.robot.send_action(dict(zip(SO101_POSITION_FEATURES, positions)))
 
     def close(self) -> None:
-        try:
-            self.robot.disconnect()
-        except Exception as error:
-            raise SO101AdapterError(f"failed to disconnect SO-101: {error}") from error
+        self.robot.disconnect()
 
 
 __all__ = [

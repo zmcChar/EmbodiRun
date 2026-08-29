@@ -14,7 +14,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--robot-port", required=True)
     parser.add_argument("--robot-id", default="so101")
-    parser.add_argument("--calibration-dir")
+    parser.add_argument("--calibration-dir", type=Path)
     parser.add_argument("--vvla-url", required=True)
     parser.add_argument("--instruction", required=True)
     parser.add_argument("--image", action="append", type=Path, required=True)
@@ -38,22 +38,21 @@ def main() -> None:
             calibration_dir=args.calibration_dir,
         )
     )
-    controller = None
     try:
         client = VvlaHttpClient(
             args.vvla_url, token=args.token, timeout_s=args.timeout_s
         )
         controller = Pi05SO101Runtime(robot, client, instruction=args.instruction)
-        result = controller.step(images)
-        print(
-            f"executed {len(result.actions)} action(s), revision={result.session_revision}"
-        )
-    finally:
         try:
-            if controller is not None:
-                controller.close()
+            result = controller.step(images)
+            print(
+                f"executed {len(result.actions)} action(s), "
+                f"revision={result.session_revision}"
+            )
         finally:
-            robot.close()
+            controller.close()
+    finally:
+        robot.close()
 
 
 if __name__ == "__main__":

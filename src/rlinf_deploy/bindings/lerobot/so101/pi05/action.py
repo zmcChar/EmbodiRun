@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
 
 from rlinf_deploy.bindings.runtime import ActionMappingError
 from rlinf_deploy.inference import PolicyResult
@@ -22,28 +21,8 @@ class Pi05SO101ActionMapperError(ActionMappingError):
     pass
 
 
-@dataclass(frozen=True, slots=True)
-class Pi05SO101ActionMapperConfig:
-    feature_names: tuple[str, ...] = SO101_POSITION_FEATURES
-
-    def __post_init__(self) -> None:
-        if len(self.feature_names) != 6:
-            raise Pi05SO101ActionMapperError("feature_names must contain six names")
-        if any(
-            not isinstance(name, str) or not name.strip() for name in self.feature_names
-        ):
-            raise Pi05SO101ActionMapperError(
-                "feature_names must contain non-empty strings"
-            )
-        if len(set(self.feature_names)) != len(self.feature_names):
-            raise Pi05SO101ActionMapperError("feature_names must be unique")
-
-
 class Pi05SO101ActionMapper:
     """Map by declared feature name so checkpoint order cannot move the wrong joint."""
-
-    def __init__(self, *, config: Pi05SO101ActionMapperConfig | None = None) -> None:
-        self.config = config or Pi05SO101ActionMapperConfig()
 
     def map_result(self, result: PolicyResult) -> RobotAction:
         if result.action_space != POLICY_ACTION_SPACE:
@@ -51,13 +30,19 @@ class Pi05SO101ActionMapper:
                 f"policy action_space mismatch: got {result.action_space!r}, "
                 f"expected {POLICY_ACTION_SPACE!r}"
             )
+        if len(result.actions) != 1:
+            raise Pi05SO101ActionMapperError("SO-101 expects exactly one policy action")
         raw = result.actions[0]
         if raw.kind != "action_chunk":
             raise Pi05SO101ActionMapperError(f"unsupported action kind {raw.kind!r}")
         data = raw.values.get("data")
-        if isinstance(data, (str, bytes)) or not isinstance(data, Sequence) or not data:
+        if isinstance(data, (str, bytes)) or not isinstance(data, Sequence):
             raise Pi05SO101ActionMapperError(
-                "action_chunk values.data must be a non-empty sequence"
+                "action_chunk values.data must be a sequence"
+            )
+        if len(data) != 1:
+            raise Pi05SO101ActionMapperError(
+                "SO-101 runtime expects exactly one action row"
             )
         first = data[0]
         if isinstance(first, (str, bytes)) or not isinstance(first, Sequence):
@@ -82,10 +67,14 @@ class Pi05SO101ActionMapper:
             raise Pi05SO101ActionMapperError(
                 "action row and feature_names lengths differ"
             )
-        missing = set(self.config.feature_names) - set(names)
-        if missing:
+        actual_names = set(names)
+        expected_names = set(SO101_POSITION_FEATURES)
+        if actual_names != expected_names:
+            missing = expected_names - actual_names
+            unexpected = actual_names - expected_names
             raise Pi05SO101ActionMapperError(
-                f"action chunk is missing required features: {sorted(missing)!r}"
+                "action features do not match SO-101; "
+                f"missing={sorted(missing)!r}, unexpected={sorted(unexpected)!r}"
             )
         by_name: dict[str, float] = {}
         for name, item in zip(names, first):
@@ -100,7 +89,7 @@ class Pi05SO101ActionMapper:
             if not math.isfinite(value):
                 raise Pi05SO101ActionMapperError("action values must be finite")
             by_name[name] = value
-        positions = [by_name[name] for name in self.config.feature_names]
+        positions = [by_name[name] for name in SO101_POSITION_FEATURES]
         return RobotAction(
             timestamp_s=time.time(),
             values={
@@ -120,6 +109,5 @@ class Pi05SO101ActionMapper:
 
 __all__ = [
     "Pi05SO101ActionMapper",
-    "Pi05SO101ActionMapperConfig",
     "Pi05SO101ActionMapperError",
 ]
