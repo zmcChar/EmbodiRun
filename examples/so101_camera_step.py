@@ -23,6 +23,16 @@ def main() -> None:
     parser.add_argument("--robot-port", required=True)
     parser.add_argument("--robot-id", default="so101")
     parser.add_argument("--calibration-dir", type=Path)
+    parser.add_argument(
+        "--position-mode",
+        choices=("degrees", "normalized"),
+        default="normalized",
+    )
+    parser.add_argument(
+        "--step-limit-mode",
+        choices=("reject", "clip"),
+        default="clip",
+    )
     parser.add_argument("--vvla-url", required=True)
     parser.add_argument("--instruction", required=True)
     parser.add_argument(
@@ -81,6 +91,8 @@ def main() -> None:
             robot_id=args.robot_id,
             calibration_id=args.robot_id,
             calibration_dir=args.calibration_dir,
+            position_mode=args.position_mode,
+            step_limit_mode=args.step_limit_mode,
         )
     )
     try:

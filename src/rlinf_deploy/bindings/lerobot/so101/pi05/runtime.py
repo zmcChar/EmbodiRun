@@ -24,7 +24,11 @@ class Pi05SO101Runtime(PolicyRobotRuntime):
             client,
             instruction=instruction,
             policy_action_space=POLICY_ACTION_SPACE,
-            mapper=mapper if mapper is not None else Pi05SO101ActionMapper(),
+            mapper=(
+                mapper
+                if mapper is not None
+                else Pi05SO101ActionMapper(position_mode=robot.config.position_mode)
+            ),
         )
 
 

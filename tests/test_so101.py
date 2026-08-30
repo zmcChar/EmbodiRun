@@ -3,6 +3,7 @@ import pytest
 from rlinf_deploy.robots import RobotAction
 from rlinf_deploy.robots.lerobot.so101 import (
     SO101_ACTION_SPACE,
+    SO101_NORMALIZED_ACTION_SPACE,
     SO101_POSITION_FEATURES,
     SO101Adapter,
     SO101AdapterError,
@@ -70,6 +71,33 @@ def test_observe_and_execute_follow_lerobot_contract() -> None:
     )
 
 
+def test_normalized_mode_has_an_explicit_observation_and_action_contract() -> None:
+    device = FakeSO101()
+    adapter = SO101Adapter(
+        SO101Config(port="/dev/ttyACM0", position_mode="normalized"),
+        lerobot_robot=device,
+    )
+
+    assert adapter.observe().values == {
+        "joint_positions_normalized": [0.0] * 5,
+        "gripper_position": 0.0,
+    }
+    adapter.execute(
+        RobotAction(
+            timestamp_s=1.0,
+            values={
+                "type": "joint_position",
+                "joint_positions_normalized": [1.0, 2.0, 3.0, 4.0, 5.0],
+                "gripper_position": 10.0,
+            },
+            metadata={"action_space": SO101_NORMALIZED_ACTION_SPACE},
+        )
+    )
+    assert device.sent[-1] == dict(
+        zip(SO101_POSITION_FEATURES, [1.0, 2.0, 3.0, 4.0, 5.0, 10.0])
+    )
+
+
 def test_step_limits_and_gripper_range_are_fail_closed() -> None:
     device = FakeSO101()
     adapter = SO101Adapter(
@@ -97,6 +125,49 @@ def test_step_limits_and_gripper_range_are_fail_closed() -> None:
             )
         )
     assert device.sent == []
+
+
+def test_clip_mode_bounds_each_motor_toward_the_requested_target() -> None:
+    device = FakeSO101()
+    adapter = SO101Adapter(
+        SO101Config(
+            port="/dev/ttyACM0",
+            position_mode="normalized",
+            step_limit_mode="clip",
+            max_joint_step_normalized=5.0,
+            max_gripper_step=10.0,
+        ),
+        lerobot_robot=device,
+    )
+
+    adapter.execute(
+        RobotAction(
+            timestamp_s=1.0,
+            values={
+                "type": "joint_position",
+                "joint_positions_normalized": [20.0, -20.0, 3.0, -3.0, 0.0],
+                "gripper_position": 30.0,
+            },
+            metadata={"action_space": SO101_NORMALIZED_ACTION_SPACE},
+        )
+    )
+
+    assert device.sent[-1] == dict(
+        zip(SO101_POSITION_FEATURES, [5.0, -5.0, 3.0, -3.0, 0.0, 10.0])
+    )
+
+    with pytest.raises(SO101AdapterError, match=r"\[-100, 100\]"):
+        adapter.execute(
+            RobotAction(
+                timestamp_s=1.0,
+                values={
+                    "type": "joint_position",
+                    "joint_positions_normalized": [101.0, 0.0, 0.0, 0.0, 0.0],
+                    "gripper_position": 10.0,
+                },
+                metadata={"action_space": SO101_NORMALIZED_ACTION_SPACE},
+            )
+        )
 
 
 def test_stop_holds_position_and_close_disconnects() -> None:

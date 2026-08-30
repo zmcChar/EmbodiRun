@@ -33,13 +33,22 @@ def result(*, names=SO101_POSITION_FEATURES, rows=(DEFAULT_ROW,)) -> PolicyResul
 
 
 def test_mapper_uses_feature_names_instead_of_wire_order() -> None:
-    mapper = Pi05SO101ActionMapper()
+    mapper = Pi05SO101ActionMapper(position_mode="degrees")
     names = tuple(reversed(SO101_POSITION_FEATURES))
     action = mapper.map_result(result(names=names, rows=((60, 50, 40, 30, 20, 10),)))
     assert action.values == {
         "type": "joint_position",
         "joint_positions_deg": [10.0, 20.0, 30.0, 40.0, 50.0],
         "gripper_position": 60.0,
+    }
+
+
+def test_mapper_defaults_to_lerobot_normalized_positions() -> None:
+    action = Pi05SO101ActionMapper().map_result(result())
+    assert action.values == {
+        "type": "joint_position",
+        "joint_positions_normalized": [1.0, 2.0, 3.0, 4.0, 5.0],
+        "gripper_position": 6.0,
     }
 
 
@@ -58,6 +67,7 @@ def test_mapper_rejects_unconsumed_action_rows() -> None:
 
 class FakeRobot:
     robot_id = "so101-test"
+    config = SimpleNamespace(position_mode="normalized")
 
     def __init__(self) -> None:
         self.executed = []
@@ -66,7 +76,10 @@ class FakeRobot:
     def observe(self):
         return SimpleNamespace(
             timestamp_s=1.0,
-            values={"joint_positions_deg": [0.0] * 5, "gripper_position": 0.0},
+            values={
+                "joint_positions_normalized": [0.0] * 5,
+                "gripper_position": 0.0,
+            },
         )
 
     def execute(self, action) -> None:
@@ -103,7 +116,7 @@ def test_runtime_reuses_generic_session_loop() -> None:
     runtime = Pi05SO101Runtime(robot, client, instruction="pick")
     runtime.step((ImagePayload("camera-0", "image/jpeg", b"123"),))
     assert len(robot.executed) == 1
-    assert client.observations[0].state["joint_positions_deg"] == [0.0] * 5
+    assert client.observations[0].state["joint_positions_normalized"] == [0.0] * 5
     runtime.close()
     assert robot.stop_count == 1
     assert client.closed

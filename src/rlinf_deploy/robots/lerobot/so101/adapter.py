@@ -12,6 +12,7 @@ from ...observation import RobotObservation
 from .config import SO101Config
 
 SO101_ACTION_SPACE = "lerobot.so101.position.v1"
+SO101_NORMALIZED_ACTION_SPACE = "lerobot.so101.normalized_position.v1"
 SO101_JOINTS = (
     "shoulder_pan",
     "shoulder_lift",
@@ -47,6 +48,10 @@ def _numbers(value: object, name: str, length: int) -> tuple[float, ...]:
     return tuple(_number(item, f"{name}[{index}]") for index, item in enumerate(value))
 
 
+def _bounded_target(target: float, present: float, maximum_step: float) -> float:
+    return present + max(-maximum_step, min(maximum_step, target - present))
+
+
 class SO101Adapter:
     """Synchronous adapter for one calibrated SO-101 follower arm."""
 
@@ -55,6 +60,14 @@ class SO101Adapter:
     ) -> None:
         self.config = config
         self.robot_id = config.robot_id
+        if config.position_mode == "degrees":
+            self.action_space = SO101_ACTION_SPACE
+            self.joint_position_field = "joint_positions_deg"
+            self.max_joint_step = config.max_joint_step_deg
+        else:
+            self.action_space = SO101_NORMALIZED_ACTION_SPACE
+            self.joint_position_field = "joint_positions_normalized"
+            self.max_joint_step = config.max_joint_step_normalized
         if lerobot_robot is None:
             try:
                 from lerobot.robots.so_follower import (
@@ -70,7 +83,7 @@ class SO101Adapter:
                 "port": config.port,
                 "id": config.calibration_id or config.robot_id,
                 "disable_torque_on_disconnect": config.disable_torque_on_disconnect,
-                "use_degrees": True,
+                "use_degrees": config.position_mode == "degrees",
                 # This adapter rejects oversized steps instead of allowing the SDK to clip them.
                 "max_relative_target": None,
                 "cameras": {},
@@ -108,22 +121,26 @@ class SO101Adapter:
         return RobotObservation(
             timestamp_s=time.time(),
             values={
-                "joint_positions_deg": list(positions[:-1]),
+                self.joint_position_field: list(positions[:-1]),
                 "gripper_position": positions[-1],
             },
             metadata={
                 "robot_id": self.robot_id,
                 "robot_type": "so101_follower",
-                "action_space": SO101_ACTION_SPACE,
-                "position_units": "degrees_and_normalized_gripper",
+                "action_space": self.action_space,
+                "position_units": (
+                    "degrees_and_normalized_gripper"
+                    if self.config.position_mode == "degrees"
+                    else "normalized_range"
+                ),
             },
         )
 
     def execute(self, action: RobotAction) -> None:
         declared_space = action.metadata.get("action_space")
-        if declared_space is not None and declared_space != SO101_ACTION_SPACE:
+        if declared_space is not None and declared_space != self.action_space:
             raise SO101AdapterError(
-                f"unsupported action space {declared_space!r}; expected {SO101_ACTION_SPACE!r}"
+                f"unsupported action space {declared_space!r}; expected {self.action_space!r}"
             )
         if not isinstance(action.values, Mapping):
             raise SO101AdapterError("SO-101 action values must be an object")
@@ -136,7 +153,7 @@ class SO101Adapter:
             return
         if kind != "joint_position":
             raise SO101AdapterError(f"unsupported SO-101 action type: {kind!r}")
-        expected_fields = {"joint_positions_deg", "gripper_position"}
+        expected_fields = {self.joint_position_field, "gripper_position"}
         if set(values) != expected_fields:
             missing = expected_fields - values.keys()
             unexpected = values.keys() - expected_fields
@@ -145,8 +162,14 @@ class SO101Adapter:
                 f"missing={sorted(missing)!r}, unexpected={sorted(unexpected)!r}"
             )
         target_joints = _numbers(
-            values["joint_positions_deg"], "joint_positions_deg", 5
+            values[self.joint_position_field], self.joint_position_field, 5
         )
+        if self.config.position_mode == "normalized" and any(
+            not -100.0 <= target <= 100.0 for target in target_joints
+        ):
+            raise SO101AdapterError(
+                "normalized joint positions must be in [-100, 100]"
+            )
         target_gripper = _number(values["gripper_position"], "gripper_position")
         if not 0.0 <= target_gripper <= 100.0:
             raise SO101AdapterError("gripper_position must be in [0, 100]")
@@ -155,16 +178,30 @@ class SO101Adapter:
             abs(target - present)
             for target, present in zip(target_joints, current[:-1])
         )
-        if maximum_joint_step > self.config.max_joint_step_deg:
+        if (
+            self.config.step_limit_mode == "reject"
+            and maximum_joint_step > self.max_joint_step
+        ):
             raise SO101AdapterError(
                 f"joint step {maximum_joint_step:.6f} exceeds "
-                f"{self.config.max_joint_step_deg:.6f} degrees"
+                f"{self.max_joint_step:.6f} {self.config.position_mode} units"
             )
         gripper_step = abs(target_gripper - current[-1])
-        if gripper_step > self.config.max_gripper_step:
+        if (
+            self.config.step_limit_mode == "reject"
+            and gripper_step > self.config.max_gripper_step
+        ):
             raise SO101AdapterError(
                 f"gripper step {gripper_step:.6f} exceeds "
                 f"{self.config.max_gripper_step:.6f}"
+            )
+        if self.config.step_limit_mode == "clip":
+            target_joints = tuple(
+                _bounded_target(target, present, self.max_joint_step)
+                for target, present in zip(target_joints, current[:-1])
+            )
+            target_gripper = _bounded_target(
+                target_gripper, current[-1], self.config.max_gripper_step
             )
         command = {
             feature: value
@@ -186,6 +223,7 @@ class SO101Adapter:
 
 __all__ = [
     "SO101_ACTION_SPACE",
+    "SO101_NORMALIZED_ACTION_SPACE",
     "SO101_JOINTS",
     "SO101_MOTORS",
     "SO101_POSITION_FEATURES",

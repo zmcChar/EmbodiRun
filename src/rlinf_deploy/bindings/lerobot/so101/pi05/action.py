@@ -11,7 +11,9 @@ from rlinf_deploy.inference import PolicyResult
 from rlinf_deploy.robots import RobotAction
 from rlinf_deploy.robots.lerobot.so101 import (
     SO101_ACTION_SPACE,
+    SO101_NORMALIZED_ACTION_SPACE,
     SO101_POSITION_FEATURES,
+    SO101PositionMode,
 )
 
 from .contract import POLICY_ACTION_SPACE
@@ -23,6 +25,17 @@ class Pi05SO101ActionMapperError(ActionMappingError):
 
 class Pi05SO101ActionMapper:
     """Map by declared feature name so checkpoint order cannot move the wrong joint."""
+
+    def __init__(self, *, position_mode: SO101PositionMode = "normalized") -> None:
+        self.position_mode = position_mode
+        if position_mode == "degrees":
+            self.robot_action_space = SO101_ACTION_SPACE
+            self.joint_position_field = "joint_positions_deg"
+        elif position_mode == "normalized":
+            self.robot_action_space = SO101_NORMALIZED_ACTION_SPACE
+            self.joint_position_field = "joint_positions_normalized"
+        else:
+            raise ValueError("position_mode must be 'degrees' or 'normalized'")
 
     def map_result(self, result: PolicyResult) -> RobotAction:
         if result.action_space != POLICY_ACTION_SPACE:
@@ -94,11 +107,11 @@ class Pi05SO101ActionMapper:
             timestamp_s=time.time(),
             values={
                 "type": "joint_position",
-                "joint_positions_deg": positions[:-1],
+                self.joint_position_field: positions[:-1],
                 "gripper_position": positions[-1],
             },
             metadata={
-                "action_space": SO101_ACTION_SPACE,
+                "action_space": self.robot_action_space,
                 "request_id": result.request_id,
                 "session_id": result.session_id,
                 "step_id": result.step_id,

@@ -14,6 +14,9 @@ port = "/dev/ttyACM0"
 robot_id = "so101-1"
 calibration_id = "so101-1"
 max_joint_step_deg = 12.0
+position_mode = "degrees"
+step_limit_mode = "reject"
+max_joint_step_normalized = 12.0
 max_gripper_step = 20.0
 
 [go2]

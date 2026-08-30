@@ -1,6 +1,9 @@
 {
-  "state_fields": ["joint_positions_deg", "gripper_position"],
-  "image_fields": ["camera-0"],
+  "state_fields": ["joint_positions_normalized", "gripper_position"],
+  "image_fields": [
+    "observation.images.front",
+    "observation.images.wrist"
+  ],
   "return_steps": 1,
   "action_feature_names": [
     "shoulder_pan.pos",
