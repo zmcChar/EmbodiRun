@@ -15,6 +15,8 @@ dependencies = []
 ssh = ["paramiko>=3.4,<5"]
 fr3 = ["franky-control>=1.1.4,<2"]
 so101 = ["lerobot[feetech]>=0.6,<0.7"]
+opencv = ["lerobot>=0.6,<0.7"]
+realsense = ["lerobot[intelrealsense]>=0.6,<0.7"]
 test = ["pytest>=8,<9"]
 
 [project.scripts]
