@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 from rlinf_deploy.bindings.lerobot.so101.pi05 import Pi05SO101Runtime
-from rlinf_deploy.cameras import CameraRig, opencv_camera, realsense_camera
+from rlinf_deploy.robots.cameras import CameraRig, opencv_camera, realsense_camera
 from rlinf_deploy.inference import VvlaHttpClient
 from rlinf_deploy.robots.lerobot.so101 import SO101Adapter, SO101Config
 

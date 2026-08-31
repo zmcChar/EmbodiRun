@@ -1,4 +1,4 @@
-"""RGB frame devices adapted to encoded inference images."""
+"""RGB camera devices adapted to encoded inference images."""
 
 from __future__ import annotations
 

@@ -3,7 +3,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from rlinf_deploy.cameras import (
+from rlinf_deploy.robots.cameras import (
     CameraRig,
     RGBCameraSource,
     opencv_camera,

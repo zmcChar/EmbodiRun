@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from rlinf_deploy.bindings.runtime import PolicyRobotRuntime
 from rlinf_deploy.inference import VvlaHttpClient
 from rlinf_deploy.robots.franka.fr3.adapter import FR3Adapter, FR3AdapterError
+from rlinf_deploy.runtime import PolicyRobotRuntime
 
 from .action import Pi05ActionMapper
 from .contract import POLICY_ACTION_SPACE

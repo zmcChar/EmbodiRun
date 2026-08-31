@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from rlinf_deploy.bindings.runtime import PolicyRobotRuntime
 from rlinf_deploy.inference import VvlaHttpClient
 from rlinf_deploy.robots.lerobot.so101 import SO101Adapter
+from rlinf_deploy.runtime import PolicyRobotRuntime
 
 from .action import Pi05SO101ActionMapper
 from .contract import POLICY_ACTION_SPACE

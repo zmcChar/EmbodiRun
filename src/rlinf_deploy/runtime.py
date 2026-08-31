@@ -1,26 +1,18 @@
-"""Robot-independent execution loop for a remote policy session."""
+"""Coordinate remote policy sessions with robot execution."""
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import Callable, Sequence
-from typing import Protocol
 
+from rlinf_deploy.bindings import ActionMappingError, PolicyActionMapper
 from rlinf_deploy.inference import (
     ImagePayload,
     PolicyObservation,
     PolicyResult,
     VvlaHttpClient,
 )
-from rlinf_deploy.robots import RobotAction, RobotAdapter
-
-
-class ActionMappingError(RuntimeError):
-    """A policy result cannot be represented in a robot action space."""
-
-
-class PolicyActionMapper(Protocol):
-    def map_result(self, result: PolicyResult) -> RobotAction: ...
+from rlinf_deploy.robots import RobotAdapter
 
 
 class PolicyRobotRuntime:
@@ -94,8 +86,4 @@ class PolicyRobotRuntime:
             self.client.close(self.session.session_id)
 
 
-__all__ = [
-    "ActionMappingError",
-    "PolicyActionMapper",
-    "PolicyRobotRuntime",
-]
+__all__ = ["PolicyRobotRuntime"]

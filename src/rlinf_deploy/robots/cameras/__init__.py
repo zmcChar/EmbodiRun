@@ -1,7 +1,7 @@
-"""Camera sources for policy observations."""
+"""Composable camera devices for policy observations."""
 
-from .backends import opencv_camera, realsense_camera
 from .base import CameraRig, CameraSource
+from .lerobot import opencv_camera, realsense_camera
 from .rgb import RGBCameraSource, RGBFrameDevice
 
 __all__ = [

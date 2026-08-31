@@ -1,4 +1,4 @@
-"""Optional camera SDK backends."""
+"""Camera devices backed by optional LeRobot SDK integrations."""
 
 from __future__ import annotations
 

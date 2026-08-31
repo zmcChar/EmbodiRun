@@ -1,4 +1,4 @@
-"""Robot-independent camera capture contracts."""
+"""Robot-independent camera device contracts."""
 
 from __future__ import annotations
 

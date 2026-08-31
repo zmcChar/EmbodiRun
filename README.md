@@ -48,7 +48,7 @@ and `session_revision` provide idempotency and ordering.
 
 ## Cameras
 
-Camera capture is independent of robot adapters. `rlinf_deploy.cameras`
+Camera capture is independent of robot adapters. `rlinf_deploy.robots.cameras`
 provides a `CameraSource` contract and a `CameraRig` for ordered multi-camera
 capture and cleanup. `RGBCameraSource` can wrap any `RGBFrameDevice`; the first
 ready-made factories cover OpenCV devices (USB/UVC, laptop, or phone cameras)

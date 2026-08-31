@@ -6,7 +6,7 @@ import math
 import time
 from collections.abc import Sequence
 
-from rlinf_deploy.bindings.runtime import ActionMappingError
+from rlinf_deploy.bindings import ActionMappingError
 from rlinf_deploy.inference import PolicyResult
 from rlinf_deploy.robots import RobotAction
 from rlinf_deploy.robots.lerobot.so101 import (
