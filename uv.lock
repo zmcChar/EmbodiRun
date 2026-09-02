@@ -1584,10 +1584,13 @@ wireless = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "paramiko" },
     { name = "pytest" },
+    { name = "pyyaml" },
 ]
 host = [
     { name = "paramiko" },
+    { name = "pyyaml" },
 ]
 robot-fr3 = [
     { name = "franky-control" },
@@ -1601,8 +1604,15 @@ requires-dist = [{ name = "wireless-comm", marker = "extra == 'wireless'", git =
 provides-extras = ["wireless"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8,<9" }]
-host = [{ name = "paramiko", specifier = ">=3.4,<5" }]
+dev = [
+    { name = "paramiko", specifier = ">=3.4,<5" },
+    { name = "pytest", specifier = ">=8,<9" },
+    { name = "pyyaml", specifier = ">=6,<7" },
+]
+host = [
+    { name = "paramiko", specifier = ">=3.4,<5" },
+    { name = "pyyaml", specifier = ">=6,<7" },
+]
 robot-fr3 = [{ name = "franky-control", specifier = ">=1.1.4,<2" }]
 robot-so101 = [{ name = "lerobot", extras = ["feetech"], marker = "python_full_version >= '3.12'", specifier = ">=0.6,<0.7" }]
 

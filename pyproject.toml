@@ -17,8 +17,14 @@ wireless = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8,<9"]
-host = ["paramiko>=3.4,<5"]
+dev = [
+    { include-group = "host" },
+    "pytest>=8,<9",
+]
+host = [
+    "paramiko>=3.4,<5",
+    "PyYAML>=6,<7",
+]
 robot-so101 = ["lerobot[feetech]>=0.6,<0.7"]
 robot-fr3 = ["franky-control>=1.1.4,<2"]
 
@@ -30,6 +36,7 @@ default-groups = ["dev"]
 robot-so101 = { requires-python = ">=3.12" }
 
 [project.scripts]
+rlinf-deploy = "rlinf_deploy.services.cli.cli:main"
 rlinf-go2-streamvln = "rlinf_deploy.bindings.unitree.go2.streamvln.cli:main"
 
 [tool.setuptools.packages.find]

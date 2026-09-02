@@ -54,6 +54,51 @@ they are not mutually exclusive. Model inference dependencies remain owned and
 locked by the Inference project, even when inference and robot services run on
 the same physical node.
 
+## Multi-node configuration
+
+The host CLI reads one deployment YAML and resolves it into nodes, uv
+environments, and service/runtime instances. Validate a file without contacting
+its nodes:
+
+```bash
+uv run rlinf-deploy \
+  --config examples/muti-nodes.example.yaml validate
+
+uv run rlinf-deploy \
+  --config examples/muti-nodes.example.yaml probe
+```
+
+`probe` checks every node even if another node is unreachable. It reports the
+connection address, latency, platform, architecture, and availability of
+Python, Git, and uv. It does not clone repositories, install dependencies,
+start services, or write deployment state.
+
+Initialize the nodes, then start their persistent services:
+
+```bash
+# First replace the example commit, checkpoint, calibration, and camera values.
+export JETSON_AGX_THOR_232_SSH_PASSWORD='<ssh-password>'
+uv run rlinf-deploy \
+  --config examples/muti-nodes.example.yaml init
+
+uv run rlinf-deploy \
+  --config examples/muti-nodes.example.yaml up
+```
+
+`init` probes Python, Git, and uv; checks configured robot, calibration, model,
+and adapter paths; checks out the exact Deploy and Inference commits below
+`~/.local/share/rlinf-deploy/<deployment-name>` on each node; and runs the
+appropriate `uv sync --frozen` commands. Repeating it is safe: Git checkouts and
+uv environments are reused, while uv downloads only missing or changed locked
+dependencies. Successful initialization is recorded locally below
+`~/.local/state/rlinf-deploy`.
+
+`up` refuses to run without state from a successful `init`, or if the YAML has
+changed since initialization. It starts PID-supervised model services and is
+idempotent for services that are already running. The two SO101 binding runtimes
+remain independent and will be invoked later by the runtime-oriented `run`
+command; `up` does not connect to or move either arm.
+
 ## HTTP contract
 
 The client expects these endpoints:
