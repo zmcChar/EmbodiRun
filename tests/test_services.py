@@ -132,8 +132,7 @@ class RuntimeExecutor:
         self.closed = False
         self.result = result or CommandResult(
             0,
-            '{"event":"step","step":1}\n'
-            '{"event":"complete","steps":1}\n',
+            '{"event":"step","step":1}\n{"event":"complete","steps":1}\n',
         )
 
     def run(self, command, *, check=True):
@@ -448,10 +447,7 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
         command.argv[2] for command in up_commands if command.argv[:2] == ("sh", "-c")
     )
     assert "/sources/inference/.venv-vvla/bin/vvla-http-serve" in start_script
-    assert (
-        "/home/user/.config/rlinf-deploy/pi05_so101_http_serve.json"
-        in start_script
-    )
+    assert "/home/user/.config/rlinf-deploy/pi05_so101_http_serve.json" in start_script
     health_command, health_check = next(
         (command, check)
         for command, check in executors[1].commands
@@ -470,7 +466,10 @@ def test_cli_routes_prompt_to_selected_runtime(tmp_path, capsys) -> None:
         "--state-dir",
         str(state_dir),
     )
-    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
+    assert (
+        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
+        == 0
+    )
     capsys.readouterr()
     assert (
         main(
@@ -485,11 +484,11 @@ def test_cli_routes_prompt_to_selected_runtime(tmp_path, capsys) -> None:
     exit_code = main(
         (
             *base_args,
+            "run",
             "--runtime",
             "so101-1-runtime",
             "--prompt",
             "把红色积木放进盒子",
-            "--execute",
         ),
         executor_factory=lambda _node: executor,
     )
@@ -520,34 +519,6 @@ def test_cli_routes_prompt_to_selected_runtime(tmp_path, capsys) -> None:
     assert executor.closed is True
 
 
-def test_cli_runtime_requires_explicit_motion_confirmation(tmp_path, capsys) -> None:
-    factory_called = False
-
-    def factory(_node):
-        nonlocal factory_called
-        factory_called = True
-        return RuntimeExecutor()
-
-    exit_code = main(
-        (
-            "--config",
-            str(EXAMPLE),
-            "--state-dir",
-            str(tmp_path),
-            "--runtime",
-            "so101-1-runtime",
-            "--prompt",
-            "move",
-        ),
-        executor_factory=factory,
-    )
-
-    captured = capsys.readouterr()
-    assert exit_code == 1
-    assert "physical motion is disabled" in captured.err
-    assert factory_called is False
-
-
 def test_cli_runtime_surfaces_remote_binding_error(tmp_path, capsys) -> None:
     state_dir = tmp_path / "state"
     base_args = (
@@ -556,7 +527,10 @@ def test_cli_runtime_surfaces_remote_binding_error(tmp_path, capsys) -> None:
         "--state-dir",
         str(state_dir),
     )
-    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
+    assert (
+        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
+        == 0
+    )
     capsys.readouterr()
     assert (
         main(
@@ -577,11 +551,11 @@ def test_cli_runtime_surfaces_remote_binding_error(tmp_path, capsys) -> None:
     exit_code = main(
         (
             *base_args,
+            "run",
             "--runtime",
             "so101-1-runtime",
             "--prompt",
             "move",
-            "--execute",
         ),
         executor_factory=lambda _node: executor,
     )
@@ -618,7 +592,10 @@ def test_cli_up_fails_until_service_is_healthy(
         "--state-dir",
         str(state_dir),
     )
-    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
+    assert (
+        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
+        == 0
+    )
     capsys.readouterr()
     executor = ServiceReadinessExecutor(
         process_state=process_state,
@@ -739,7 +716,10 @@ def test_cli_down_stops_services_after_configuration_changes(tmp_path, capsys) -
     config_path.write_text(EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
     state_dir = tmp_path / "state"
     base_args = ("--config", str(config_path), "--state-dir", str(state_dir))
-    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
+    assert (
+        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
+        == 0
+    )
     capsys.readouterr()
     assert (
         main(

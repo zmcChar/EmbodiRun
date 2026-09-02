@@ -23,13 +23,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="local state directory (default: ~/.local/state/rlinf-deploy)",
     )
-    run.register(parser)
-    commands = parser.add_subparsers(dest="command")
+    commands = parser.add_subparsers(dest="command", required=True)
     validate.register(commands)
     probe.register(commands)
     init.register(commands)
     up.register(commands)
     down.register(commands)
+    run.register(commands)
     return parser
 
 
@@ -40,12 +40,6 @@ def main(
 ) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command is None:
-        if not run.selected(args):
-            parser.error("a command or --runtime/--prompt invocation is required")
-        args.command_handler = run.run
-    elif run.selected(args):
-        parser.error("--runtime, --prompt, and --execute cannot be used with a subcommand")
     try:
         config = load_config(args.config)
         deployment = build_plan(config)

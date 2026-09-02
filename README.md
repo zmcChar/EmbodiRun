@@ -108,16 +108,15 @@ configured runtime:
 
 ```bash
 rlinf-deploy \
-  --config examples/muti-nodes.example.yaml \
+  --config examples/muti-nodes.example.yaml run \
   --runtime so101-1-runtime \
-  --prompt "Pick up the cube and put it into the bowl." \
-  --execute
+  --prompt "Pick up the cube and put it into the bowl."
 ```
 
-`--execute` is required because this command can move a physical robot. The
-default is one inference/action step. Use `--max-steps N` to keep the same
-policy session open for a bounded multi-step task. Before connecting the arm,
-the binding checks model health and opens, warms up, and validates every camera.
+`run` can move the selected physical robot. The default is one inference/action
+step. Use `--max-steps N` to keep the same policy session open for a bounded
+multi-step task. Before connecting the arm, the binding checks model health and
+opens, warms up, and validates every camera.
 Each returned action is still subject to the SO101 joint and gripper step limits
 from the deployment YAML. `step_limit_mode: reject` rejects an oversized target
 without sending it. `step_limit_mode: clip` bounds every joint and the gripper

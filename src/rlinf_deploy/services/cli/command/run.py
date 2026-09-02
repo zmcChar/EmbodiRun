@@ -25,13 +25,19 @@ DEFAULT_REQUEST_TIMEOUT_S = 60.0
 _SUPPORTED_BINDING = "lerobot.so101.pi05"
 
 
-def register(parser: argparse.ArgumentParser) -> None:
+def register(commands: Any) -> None:
+    parser = commands.add_parser(
+        "run",
+        help="execute one configured robot-policy runtime",
+    )
     parser.add_argument(
         "--runtime",
-        help="configured runtime ID to execute (used without a subcommand)",
+        required=True,
+        help="configured runtime ID to execute",
     )
     parser.add_argument(
         "--prompt",
+        required=True,
         help="instruction sent unchanged to the configured inference runtime",
     )
     parser.add_argument(
@@ -58,26 +64,12 @@ def register(parser: argparse.ArgumentParser) -> None:
             f"(default: {DEFAULT_REQUEST_TIMEOUT_S:g})"
         ),
     )
-    parser.add_argument(
-        "--execute",
-        action="store_true",
-        help="confirm that the selected physical robot may move",
-    )
-
-
-def selected(args: argparse.Namespace) -> bool:
-    return args.runtime is not None or args.prompt is not None or args.execute
+    parser.set_defaults(command_handler=run)
 
 
 def run(args: argparse.Namespace, context: CommandContext) -> int:
-    if args.runtime is None or args.prompt is None:
-        raise RunError("--runtime and --prompt must be provided together")
     if not args.prompt.strip():
         raise RunError("--prompt must not be empty")
-    if not args.execute:
-        raise RunError(
-            "physical motion is disabled; inspect the workspace, then pass --execute"
-        )
 
     runtime = next(
         (
@@ -88,17 +80,13 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
         None,
     )
     if runtime is None:
-        available = ", ".join(
-            item.runtime_id for item in context.deployment.runtimes
-        )
+        available = ", ".join(item.runtime_id for item in context.deployment.runtimes)
         raise RunError(
             f"unknown runtime {args.runtime!r}; available runtimes: "
             f"{available or 'none'}"
         )
     if runtime.binding != _SUPPORTED_BINDING:
-        raise RunError(
-            f"runtime binding {runtime.binding!r} has no executable runner"
-        )
+        raise RunError(f"runtime binding {runtime.binding!r} has no executable runner")
 
     state = StateStore(context.state_path).load()
     if state is None:
@@ -197,9 +185,7 @@ def _so101_pi05_payload(
         if not isinstance(name, str) or not isinstance(value, Mapping):
             raise RunError(f"robot {robot_id!r} sensors must be named objects")
         if value.get("type") != "v4l2":
-            raise RunError(
-                f"robot {robot_id!r} sensor {name!r} must use type 'v4l2'"
-            )
+            raise RunError(f"robot {robot_id!r} sensor {name!r} must use type 'v4l2'")
         cameras.append(
             {
                 "name": name,
@@ -351,4 +337,4 @@ def _failure_detail(result: CommandResult) -> str:
     return f"remote process exited with code {result.exit_code}"
 
 
-__all__ = ["RunError", "register", "run", "selected"]
+__all__ = ["RunError", "register", "run"]
