@@ -7,7 +7,17 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import cache
 from importlib import import_module
-from typing import Any
+from typing import Any, Protocol
+
+from rlinf_deploy.inference import PolicyResult
+from rlinf_deploy.robots import RobotAction
+
+
+class ActionMapper(Protocol):
+    """Translate one policy result into a validated robot action."""
+
+    def map_result(self, result: PolicyResult) -> RobotAction:
+        """Map one policy result without executing it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,7 +38,7 @@ class BindingRunRequest:
 
 @dataclass(frozen=True, slots=True)
 class BindingRun:
-    """Arguments passed to a binding's remote runner module."""
+    """Arguments passed to a binding's remote worker module."""
 
     arguments: tuple[str, ...]
 
@@ -40,7 +50,7 @@ class BindingDefinition:
     kind: str
     robot_kind: str
     model_kind: str
-    runner_module: str | None = None
+    worker_module: str | None = None
     build_run: Callable[[BindingRunRequest], BindingRun] | None = None
 
     def __post_init__(self) -> None:
@@ -50,9 +60,9 @@ class BindingDefinition:
             raise ValueError("binding robot kind must not be empty")
         if not self.model_kind.strip():
             raise ValueError("binding model kind must not be empty")
-        if (self.runner_module is None) != (self.build_run is None):
+        if (self.worker_module is None) != (self.build_run is None):
             raise ValueError(
-                "binding runner_module and build_run must be declared together"
+                "binding worker_module and build_run must be declared together"
             )
 
 
@@ -88,6 +98,7 @@ def binding_definition(kind: str) -> BindingDefinition:
 
 
 __all__ = [
+    "ActionMapper",
     "BindingDefinition",
     "BindingRun",
     "BindingRunRequest",

@@ -13,7 +13,8 @@ from rlinf_deploy.robots.lerobot.so101 import (
     SO101_POSITION_FEATURES,
 )
 
-from .contract import POLICY_ACTION_SPACE
+
+POLICY_ACTION_SPACE = "pi05.action_chunk.v1"
 
 
 class Pi05SO101ActionMapperError(RuntimeError):
@@ -23,11 +24,13 @@ class Pi05SO101ActionMapperError(RuntimeError):
 class Pi05SO101ActionMapper:
     """Map by declared feature name so checkpoint order cannot move the wrong joint."""
 
+    policy_action_space = POLICY_ACTION_SPACE
+
     def map_result(self, result: PolicyResult) -> RobotAction:
-        if result.action_space != POLICY_ACTION_SPACE:
+        if result.action_space != self.policy_action_space:
             raise Pi05SO101ActionMapperError(
                 f"policy action_space mismatch: got {result.action_space!r}, "
-                f"expected {POLICY_ACTION_SPACE!r}"
+                f"expected {self.policy_action_space!r}"
             )
         if len(result.actions) != 1:
             raise Pi05SO101ActionMapperError("SO-101 expects exactly one policy action")
@@ -107,6 +110,7 @@ class Pi05SO101ActionMapper:
 
 
 __all__ = [
+    "POLICY_ACTION_SPACE",
     "Pi05SO101ActionMapper",
     "Pi05SO101ActionMapperError",
 ]

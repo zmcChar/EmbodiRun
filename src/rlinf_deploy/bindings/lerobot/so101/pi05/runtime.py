@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from typing import Protocol
 
+from rlinf_deploy.bindings import ActionMapper
 from rlinf_deploy.inference import (
     ImagePayload,
     PolicyClient,
@@ -12,10 +14,14 @@ from rlinf_deploy.inference import (
     PolicyResult,
 )
 from rlinf_deploy.robots.lerobot.so101 import SO101Adapter
-from rlinf_deploy.robots.sensors.cameras import CameraFrame
 
-from .action import Pi05SO101ActionMapper
-from .contract import POLICY_ACTION_SPACE
+from .mapper import POLICY_ACTION_SPACE, Pi05SO101ActionMapper
+
+
+class _EncodedImage(Protocol):
+    name: str
+    mime_type: str
+    data: bytes
 
 
 class Pi05SO101Runtime:
@@ -27,7 +33,7 @@ class Pi05SO101Runtime:
         client: PolicyClient,
         *,
         instruction: str,
-        mapper: Pi05SO101ActionMapper | None = None,
+        mapper: ActionMapper | None = None,
     ) -> None:
         if not instruction.strip():
             raise ValueError("instruction must not be empty")
@@ -43,7 +49,7 @@ class Pi05SO101Runtime:
 
     def step(
         self,
-        frames: Sequence[CameraFrame],
+        images: Sequence[_EncodedImage],
         *,
         reset: bool = False,
     ) -> PolicyResult:
@@ -57,8 +63,8 @@ class Pi05SO101Runtime:
             instruction=self.instruction,
             state=dict(observation.values),
             images=tuple(
-                ImagePayload(frame.name, frame.mime_type, frame.data)
-                for frame in frames
+                ImagePayload(image.name, image.mime_type, image.data)
+                for image in images
             ),
             reset=False,
             metadata={"robot_timestamp_s": observation.timestamp_s},

@@ -92,9 +92,9 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
             f"runtime binding {runtime.binding!r} is not available"
         ) from None
     build_run = binding.build_run
-    runner_module = binding.runner_module
-    if build_run is None or runner_module is None:
-        raise RunError(f"runtime binding {runtime.binding!r} has no executable runner")
+    worker_module = binding.worker_module
+    if build_run is None or worker_module is None:
+        raise RunError(f"runtime binding {runtime.binding!r} has no executable worker")
 
     progress = context.progress
     progress.begin("run", context.deployment.name)
@@ -171,7 +171,7 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
                     (
                         python,
                         "-m",
-                        runner_module,
+                        worker_module,
                         *invocation.arguments,
                     ),
                     cwd=node.deploy_project,
