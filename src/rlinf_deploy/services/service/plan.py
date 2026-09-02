@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from rlinf_deploy.bindings import binding_definition
+
 from ..config import DeploymentConfig, ModelConfig
 from ..environment import (
     EnvironmentProfile,
@@ -152,20 +154,14 @@ def _find_environment(
 
 
 def _validate_binding(binding: str, robot_kind: str, model_kind: str) -> None:
-    supported = {
-        ("lerobot.so101", "pi05"): "lerobot.so101.pi05",
-        ("franka.fr3", "pi05"): "franka.fr3.pi05",
-    }
-    expected = supported.get((robot_kind, model_kind))
-    if expected is None:
-        raise ServiceError(
-            f"no binding is registered for robot {robot_kind!r} and model "
-            f"{model_kind!r}"
-        )
-    if binding != expected:
+    try:
+        definition = binding_definition(binding)
+    except (KeyError, TypeError):
+        raise ServiceError(f"binding {binding!r} is not available") from None
+    if definition.robot_kind != robot_kind or definition.model_kind != model_kind:
         raise ServiceError(
             f"binding {binding!r} does not match robot {robot_kind!r} and model "
-            f"{model_kind!r}; expected {expected!r}"
+            f"{model_kind!r}"
         )
 
 

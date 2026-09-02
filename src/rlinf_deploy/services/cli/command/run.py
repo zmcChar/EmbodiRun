@@ -6,10 +6,9 @@ import argparse
 import json
 import math
 import posixpath
-from collections.abc import Mapping
 from typing import Any
 
-from rlinf_deploy.robots.lerobot.so101 import SO101Config
+from rlinf_deploy.bindings import BindingRunRequest, binding_definition
 
 from ...config import config_digest
 from ...executor import Command, CommandResult
@@ -24,7 +23,6 @@ class RunError(RuntimeError):
 DEFAULT_MAX_STEPS = 1
 DEFAULT_CONTROL_HZ = 5.0
 DEFAULT_REQUEST_TIMEOUT_S = 60.0
-_SUPPORTED_BINDING = "lerobot.so101.pi05"
 
 
 def register(commands: Any) -> None:
@@ -87,7 +85,15 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
             f"unknown runtime {args.runtime!r}; available runtimes: "
             f"{available or 'none'}"
         )
-    if runtime.binding != _SUPPORTED_BINDING:
+    try:
+        binding = binding_definition(runtime.binding)
+    except (KeyError, TypeError):
+        raise RunError(
+            f"runtime binding {runtime.binding!r} is not available"
+        ) from None
+    build_run = binding.build_run
+    runner_module = binding.runner_module
+    if build_run is None or runner_module is None:
         raise RunError(f"runtime binding {runtime.binding!r} has no executable runner")
 
     progress = context.progress
@@ -118,20 +124,24 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
             raise RunError(f"initialized state is missing node {runtime.node!r}")
 
         robot = context.config.robots[runtime.robot]
+        runtime_config = context.config.runtimes[runtime.runtime_id]
         try:
-            robot_config = SO101Config.from_yaml(robot.robot_id, robot.options)
-        except (TypeError, ValueError) as error:
+            invocation = build_run(
+                BindingRunRequest(
+                    runtime_id=runtime.runtime_id,
+                    prompt=args.prompt,
+                    model_endpoint=runtime.model_endpoint,
+                    robot_id=robot.robot_id,
+                    robot_kind=robot.kind,
+                    robot_options=robot.options,
+                    runtime_options=runtime_config.options,
+                    max_steps=args.max_steps,
+                    control_hz=args.control_hz,
+                    request_timeout_s=args.request_timeout,
+                )
+            )
+        except (TypeError, ValueError, RuntimeError) as error:
             raise RunError(str(error)) from error
-        payload = _so101_pi05_payload(
-            runtime_id=runtime.runtime_id,
-            prompt=args.prompt,
-            model_endpoint=runtime.model_endpoint,
-            robot_config=robot_config,
-            options=robot.options,
-            max_steps=args.max_steps,
-            control_hz=args.control_hz,
-            request_timeout_s=args.request_timeout,
-        )
         progress.advance(runtime.node)
 
         python = posixpath.join(environment.path, "bin", "python")
@@ -161,9 +171,8 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
                     (
                         python,
                         "-m",
-                        "rlinf_deploy.bindings.lerobot.so101.pi05.runner",
-                        "--spec-json",
-                        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                        runner_module,
+                        *invocation.arguments,
                     ),
                     cwd=node.deploy_project,
                     timeout_s=command_timeout_s,
@@ -185,82 +194,6 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
         raise
     progress.finish(success=True)
     return 0
-
-
-def _so101_pi05_payload(
-    *,
-    runtime_id: str,
-    prompt: str,
-    model_endpoint: str,
-    robot_config: SO101Config,
-    options: Mapping[str, Any],
-    max_steps: int,
-    control_hz: float,
-    request_timeout_s: float,
-) -> dict[str, object]:
-    sensors = options.get("sensors")
-    if not isinstance(sensors, Mapping) or not sensors:
-        raise RunError(
-            f"robot {robot_config.robot_id!r} requires at least one camera sensor"
-        )
-    cameras: list[dict[str, object]] = []
-    for name, value in sensors.items():
-        if not isinstance(name, str) or not isinstance(value, Mapping):
-            raise RunError(
-                f"robot {robot_config.robot_id!r} sensors must be named objects"
-            )
-        if value.get("type") != "v4l2":
-            raise RunError(
-                f"robot {robot_config.robot_id!r} sensor {name!r} must use type 'v4l2'"
-            )
-        cameras.append(
-            {
-                "name": name,
-                "device": _option_string(value, "device", f"sensor {name!r}"),
-                "width": _option_integer(value, "width", f"sensor {name!r}"),
-                "height": _option_integer(value, "height", f"sensor {name!r}"),
-                "fps": _option_number(value, "fps", f"sensor {name!r}"),
-            }
-        )
-    return {
-        "schema": "rlinf.runtime.so101-pi05.v1",
-        "runtime_id": runtime_id,
-        "prompt": prompt,
-        "model_endpoint": model_endpoint,
-        **robot_config.to_runtime_payload(),
-        "cameras": cameras,
-        "max_steps": max_steps,
-        "control_hz": control_hz,
-        "request_timeout_s": request_timeout_s,
-    }
-
-
-def _option_string(options: Mapping[str, Any], name: str, context: str) -> str:
-    value = options.get(name)
-    if not isinstance(value, str) or not value.strip():
-        raise RunError(f"{context} requires a non-empty {name!r}")
-    return value
-
-
-def _option_integer(options: Mapping[str, Any], name: str, context: str) -> int:
-    value = options.get(name)
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise RunError(f"{context} requires a positive integer {name!r}")
-    return value
-
-
-def _option_number(
-    options: Mapping[str, Any],
-    name: str,
-    context: str,
-) -> float:
-    value = options.get(name)
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise RunError(f"{context} requires a positive number {name!r}")
-    number = float(value)
-    if not math.isfinite(number) or number <= 0:
-        raise RunError(f"{context} requires a positive number {name!r}")
-    return number
 
 
 def _positive_integer(value: str) -> int:
