@@ -102,8 +102,8 @@ class ParamikoTransport:
                 import paramiko
             except ImportError as exc:  # pragma: no cover - environment dependent
                 raise RuntimeError(
-                    "Paramiko is required for remote deployment; install it with "
-                    "`python -m pip install paramiko`"
+                    "Paramiko is required for remote deployment; run "
+                    "`uv sync --frozen --no-dev --group host`"
                 ) from exc
             client = paramiko.SSHClient()
             client.load_system_host_keys()

@@ -39,7 +39,8 @@ class FR3Adapter:
                 import franky as franky_module
             except ImportError as error:
                 raise FR3AdapterError(
-                    "FR3 support requires franky-control; install rlinf-deploy[fr3]"
+                    "FR3 support requires franky-control; run "
+                    "`uv sync --frozen --no-dev --group robot-fr3`"
                 ) from error
         self.config = config
         self.franky = franky_module

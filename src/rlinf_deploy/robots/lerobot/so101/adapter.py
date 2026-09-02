@@ -64,7 +64,8 @@ class SO101Adapter:
             except ImportError as error:
                 raise SO101AdapterError(
                     "SO-101 support requires LeRobot with Feetech support; "
-                    "install rlinf-deploy[so101]"
+                    "run `uv sync --python 3.12 --frozen --no-dev "
+                    "--group robot-so101`"
                 ) from error
             options: dict[str, object] = {
                 "port": config.port,

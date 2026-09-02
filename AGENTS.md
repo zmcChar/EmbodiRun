@@ -28,15 +28,15 @@ Communication with VVLA must go through the versioned HTTP API.
 
 Install the package for development:
 
-    python -m pip install -e '.[test]'
+    uv sync --frozen
 
 Run the full test suite:
 
-    python -m pytest
+    uv run pytest
 
 Run a specific test file:
 
-    python -m pytest tests/<test_file>.py
+    uv run pytest tests/<test_file>.py
 
 ## Repository conventions
 
