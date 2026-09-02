@@ -5,13 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from rlinf_deploy.robots import robot_definition
+
 from ..config import DeploymentConfig
 from .errors import EnvironmentError
-
-_ROBOT_PROFILES: dict[str, tuple[str, str | None]] = {
-    "lerobot.so101": ("robot-so101", "3.12"),
-    "franka.fr3": ("robot-fr3", None),
-}
 
 _MODEL_PYTHON: dict[str, str] = {
     "pi05": "3.12",
@@ -87,9 +84,10 @@ def robot_environment_profile(kind: str) -> tuple[str, str | None]:
     """Resolve a robot adapter type to its Deploy dependency group."""
 
     try:
-        return _ROBOT_PROFILES[kind]
-    except KeyError:
+        definition = robot_definition(kind)
+    except (KeyError, TypeError):
         raise EnvironmentError(f"unsupported robot type {kind!r}") from None
+    return definition.environment_group, definition.python
 
 
 def _deduplicate(profiles: list[EnvironmentProfile]) -> tuple[EnvironmentProfile, ...]:

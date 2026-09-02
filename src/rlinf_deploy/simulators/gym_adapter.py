@@ -5,8 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from rlinf_deploy.robots.action import RobotAction
-from rlinf_deploy.robots.observation import RobotObservation
+from rlinf_deploy.robots.adapter import RobotAction, RobotObservation
 
 from ._gym_normalization import (
     identity_action,

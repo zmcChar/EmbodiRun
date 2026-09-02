@@ -28,6 +28,7 @@ host = [
 ]
 robot-so101 = ["lerobot[feetech]>=0.6,<0.7"]
 robot-fr3 = ["franky-control>=1.1.4,<2"]
+robot-go2 = []
 
 [tool.uv]
 required-version = ">=0.12.0,<0.13"

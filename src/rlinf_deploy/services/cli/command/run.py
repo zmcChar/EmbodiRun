@@ -9,6 +9,8 @@ import posixpath
 from collections.abc import Mapping
 from typing import Any
 
+from rlinf_deploy.robots.lerobot.so101 import SO101Config
+
 from ...config import config_digest
 from ...executor import Command, CommandResult
 from ...state import StateStore
@@ -116,12 +118,15 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
             raise RunError(f"initialized state is missing node {runtime.node!r}")
 
         robot = context.config.robots[runtime.robot]
+        try:
+            robot_config = SO101Config.from_yaml(robot.robot_id, robot.options)
+        except (TypeError, ValueError) as error:
+            raise RunError(str(error)) from error
         payload = _so101_pi05_payload(
             runtime_id=runtime.runtime_id,
             prompt=args.prompt,
             model_endpoint=runtime.model_endpoint,
-            robot_id=robot.robot_id,
-            robot_port=robot.port,
+            robot_config=robot_config,
             options=robot.options,
             max_steps=args.max_steps,
             control_hz=args.control_hz,
@@ -187,24 +192,27 @@ def _so101_pi05_payload(
     runtime_id: str,
     prompt: str,
     model_endpoint: str,
-    robot_id: str,
-    robot_port: str | None,
+    robot_config: SO101Config,
     options: Mapping[str, Any],
     max_steps: int,
     control_hz: float,
     request_timeout_s: float,
 ) -> dict[str, object]:
-    if robot_port is None:
-        raise RunError(f"robot {robot_id!r} requires a serial port")
     sensors = options.get("sensors")
     if not isinstance(sensors, Mapping) or not sensors:
-        raise RunError(f"robot {robot_id!r} requires at least one camera sensor")
+        raise RunError(
+            f"robot {robot_config.robot_id!r} requires at least one camera sensor"
+        )
     cameras: list[dict[str, object]] = []
     for name, value in sensors.items():
         if not isinstance(name, str) or not isinstance(value, Mapping):
-            raise RunError(f"robot {robot_id!r} sensors must be named objects")
+            raise RunError(
+                f"robot {robot_config.robot_id!r} sensors must be named objects"
+            )
         if value.get("type") != "v4l2":
-            raise RunError(f"robot {robot_id!r} sensor {name!r} must use type 'v4l2'")
+            raise RunError(
+                f"robot {robot_config.robot_id!r} sensor {name!r} must use type 'v4l2'"
+            )
         cameras.append(
             {
                 "name": name,
@@ -219,47 +227,12 @@ def _so101_pi05_payload(
         "runtime_id": runtime_id,
         "prompt": prompt,
         "model_endpoint": model_endpoint,
-        "robot_port": robot_port,
-        "robot_id": robot_id,
-        "calibration_id": _optional_option_string(options, "calibration_id"),
-        "calibration_dir": _optional_option_string(options, "calibration_dir"),
-        "disable_torque_on_disconnect": _option_boolean(
-            options,
-            "disable_torque_on_disconnect",
-            default=True,
-        ),
-        "max_joint_step_deg": _option_number(
-            options,
-            "max_joint_step_deg",
-            "robot options",
-            default=12.0,
-        ),
-        "max_gripper_step": _option_number(
-            options,
-            "max_gripper_step",
-            "robot options",
-            default=20.0,
-        ),
-        "step_limit_mode": _option_choice(
-            options,
-            "step_limit_mode",
-            {"reject", "clip"},
-            default="reject",
-        ),
+        **robot_config.to_runtime_payload(),
         "cameras": cameras,
         "max_steps": max_steps,
         "control_hz": control_hz,
         "request_timeout_s": request_timeout_s,
     }
-
-
-def _optional_option_string(options: Mapping[str, Any], name: str) -> str | None:
-    value = options.get(name)
-    if value is None:
-        return None
-    if not isinstance(value, str) or not value.strip():
-        raise RunError(f"robot option {name!r} must be a non-empty string")
-    return value
 
 
 def _option_string(options: Mapping[str, Any], name: str, context: str) -> str:
@@ -280,41 +253,14 @@ def _option_number(
     options: Mapping[str, Any],
     name: str,
     context: str,
-    *,
-    default: float | None = None,
 ) -> float:
-    value = options.get(name, default)
+    value = options.get(name)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise RunError(f"{context} requires a positive number {name!r}")
     number = float(value)
     if not math.isfinite(number) or number <= 0:
         raise RunError(f"{context} requires a positive number {name!r}")
     return number
-
-
-def _option_boolean(
-    options: Mapping[str, Any],
-    name: str,
-    *,
-    default: bool,
-) -> bool:
-    value = options.get(name, default)
-    if not isinstance(value, bool):
-        raise RunError(f"robot option {name!r} must be a boolean")
-    return value
-
-
-def _option_choice(
-    options: Mapping[str, Any],
-    name: str,
-    choices: set[str],
-    *,
-    default: str,
-) -> str:
-    value = options.get(name, default)
-    if not isinstance(value, str) or value not in choices:
-        raise RunError(f"robot option {name!r} must be one of {sorted(choices)!r}")
-    return value
 
 
 def _positive_integer(value: str) -> int:

@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from rlinf_deploy.robots.action import RobotAction
+from rlinf_deploy.robots.adapter import RobotAction
 
 from .base import EpisodeStep
 from .vlabench_privileged_inspection import (

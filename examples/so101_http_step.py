@@ -38,6 +38,7 @@ def main() -> None:
             calibration_dir=args.calibration_dir,
         )
     )
+    robot.connect()
     try:
         client = VvlaHttpClient(
             args.vvla_url, token=args.token, timeout_s=args.timeout_s

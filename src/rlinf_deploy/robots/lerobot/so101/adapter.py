@@ -7,8 +7,7 @@ import time
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from ...action import RobotAction
-from ...observation import RobotObservation
+from ...adapter import RobotAction, RobotAdapter, RobotObservation
 from .config import SO101Config
 
 SO101_ACTION_SPACE = "lerobot.so101.position.v1"
@@ -52,7 +51,7 @@ def _clip_step(target: float, present: float, limit: float) -> float:
     return present + max(-limit, min(limit, delta))
 
 
-class SO101Adapter:
+class SO101Adapter(RobotAdapter):
     """Synchronous adapter for one calibrated SO-101 follower arm."""
 
     def __init__(
@@ -85,6 +84,10 @@ class SO101Adapter:
                 options["calibration_dir"] = config.calibration_dir
             lerobot_robot = SO101Follower(SO101FollowerConfig(**options))
         self.robot = lerobot_robot
+
+    def connect(self) -> None:
+        if self.robot.is_connected:
+            return
         try:
             self.robot.connect(calibrate=False)
         except BaseException:
@@ -95,10 +98,12 @@ class SO101Adapter:
             self.robot.disconnect()
             raise SO101AdapterError(
                 "SO-101 is not calibrated; run lerobot-calibrate with --robot.id "
-                f"{config.calibration_id or config.robot_id!r}"
+                f"{self.config.calibration_id or self.config.robot_id!r}"
             )
 
     def _read_positions(self) -> tuple[float, ...]:
+        if not self.robot.is_connected:
+            raise SO101AdapterError("SO-101 is not connected")
         raw = self.robot.get_observation()
         if not isinstance(raw, Mapping):
             raise SO101AdapterError("SO-101 observation must be an object")
@@ -198,7 +203,8 @@ class SO101Adapter:
         self.robot.send_action(dict(zip(SO101_POSITION_FEATURES, positions)))
 
     def close(self) -> None:
-        self.robot.disconnect()
+        if self.robot.is_connected:
+            self.robot.disconnect()
 
 
 __all__ = [

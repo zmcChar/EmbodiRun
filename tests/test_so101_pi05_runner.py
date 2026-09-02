@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -6,6 +7,7 @@ from rlinf_deploy.bindings.lerobot.so101.pi05.runner import (
     SO101Pi05Spec,
     execute,
 )
+from rlinf_deploy.robots.lerobot.so101 import SO101Config
 from rlinf_deploy.robots.sensors.cameras import CameraFrame, V4L2CameraConfig
 
 
@@ -14,14 +16,12 @@ def spec(*, max_steps=2):
         runtime_id="so101-runtime",
         prompt="pick up the block",
         model_endpoint="http://127.0.0.1:8000",
-        robot_port="/dev/ttyACM0",
-        robot_id="so101-1",
-        calibration_id="calibrated-arm",
-        calibration_dir="/calibration",
-        disable_torque_on_disconnect=True,
-        max_joint_step_deg=12.0,
-        max_gripper_step=20.0,
-        step_limit_mode="reject",
+        robot=SO101Config(
+            port="/dev/ttyACM0",
+            robot_id="so101-1",
+            calibration_id="calibrated-arm",
+            calibration_dir=Path("/calibration"),
+        ),
         cameras=(
             V4L2CameraConfig(
                 "observation.images.front",
@@ -53,6 +53,9 @@ class FakeCameras:
 class FakeRobot:
     def __init__(self):
         self.closed = False
+
+    def connect(self):
+        pass
 
     def close(self):
         self.closed = True

@@ -6,8 +6,7 @@ import copy
 from collections.abc import Mapping
 from typing import Any
 
-from rlinf_deploy.robots.action import RobotAction
-from rlinf_deploy.robots.observation import RobotObservation
+from rlinf_deploy.robots.adapter import RobotAction, RobotObservation
 
 from .base import EpisodeStep
 from .trace import EpisodeTrace, validate_trace_identity

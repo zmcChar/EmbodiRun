@@ -49,6 +49,7 @@ def test_so101_reject_mode_remains_fail_closed() -> None:
         SO101Config(port="/dev/fake", max_joint_step_deg=5.0),
         lerobot_robot=hardware,
     )
+    adapter.connect()
 
     with pytest.raises(SO101AdapterError, match="exceeds 5.000000 degrees"):
         adapter.execute(action([20.0, 0.0, 0.0, 0.0, 0.0], 50.0))
@@ -67,6 +68,7 @@ def test_so101_clip_mode_bounds_every_joint_and_gripper() -> None:
         ),
         lerobot_robot=hardware,
     )
+    adapter.connect()
 
     adapter.execute(action([20.0, -20.0, -7.0, 16.0, -25.0], 80.0))
 

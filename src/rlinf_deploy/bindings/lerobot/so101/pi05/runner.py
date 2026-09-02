@@ -8,7 +8,6 @@ import math
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from rlinf_deploy.bindings.lerobot.so101.pi05 import Pi05SO101Runtime
@@ -30,14 +29,7 @@ class SO101Pi05Spec:
     runtime_id: str
     prompt: str
     model_endpoint: str
-    robot_port: str
-    robot_id: str
-    calibration_id: str | None
-    calibration_dir: str | None
-    disable_torque_on_disconnect: bool
-    max_joint_step_deg: float
-    max_gripper_step: float
-    step_limit_mode: str
+    robot: SO101Config
     cameras: tuple[V4L2CameraConfig, ...]
     max_steps: int
     control_hz: float
@@ -54,6 +46,10 @@ class SO101Pi05Spec:
         root = _mapping(payload, "runtime specification")
         if root.get("schema") != "rlinf.runtime.so101-pi05.v1":
             raise RuntimeExecutionError("unsupported runtime specification schema")
+        try:
+            robot = SO101Config.from_runtime_payload(root)
+        except (TypeError, ValueError) as error:
+            raise RuntimeExecutionError(str(error)) from error
         cameras_value = root.get("cameras")
         if not isinstance(cameras_value, list) or not cameras_value:
             raise RuntimeExecutionError("runtime cameras must be a non-empty list")
@@ -70,18 +66,7 @@ class SO101Pi05Spec:
             runtime_id=_string(root, "runtime_id"),
             prompt=_string(root, "prompt"),
             model_endpoint=_string(root, "model_endpoint"),
-            robot_port=_string(root, "robot_port"),
-            robot_id=_string(root, "robot_id"),
-            calibration_id=_optional_string(root, "calibration_id"),
-            calibration_dir=_optional_string(root, "calibration_dir"),
-            disable_torque_on_disconnect=_boolean(root, "disable_torque_on_disconnect"),
-            max_joint_step_deg=_positive_number(root, "max_joint_step_deg"),
-            max_gripper_step=_positive_number(root, "max_gripper_step"),
-            step_limit_mode=_choice(
-                root,
-                "step_limit_mode",
-                {"reject", "clip"},
-            ),
+            robot=robot,
             cameras=cameras,
             max_steps=_positive_integer(root, "max_steps"),
             control_hz=_positive_number(root, "control_hz"),
@@ -117,22 +102,8 @@ def execute(
     controller: Any | None = None
     completed = 0
     try:
-        robot = robot_factory(
-            SO101Config(
-                port=spec.robot_port,
-                robot_id=spec.robot_id,
-                calibration_id=spec.calibration_id,
-                calibration_dir=(
-                    Path(spec.calibration_dir)
-                    if spec.calibration_dir is not None
-                    else None
-                ),
-                disable_torque_on_disconnect=spec.disable_torque_on_disconnect,
-                max_joint_step_deg=spec.max_joint_step_deg,
-                max_gripper_step=spec.max_gripper_step,
-                step_limit_mode=spec.step_limit_mode,
-            )
-        )
+        robot = robot_factory(spec.robot)
+        robot.connect()
         controller = runtime_factory(robot, client, instruction=spec.prompt)
         period_s = 1.0 / spec.control_hz
         for _ in range(spec.max_steps):
@@ -209,37 +180,6 @@ def _string(value: Mapping[str, object], name: str) -> str:
     result = value.get(name)
     if not isinstance(result, str) or not result.strip():
         raise RuntimeExecutionError(f"runtime {name} must be a non-empty string")
-    return result
-
-
-def _optional_string(value: Mapping[str, object], name: str) -> str | None:
-    result = value.get(name)
-    if result is None:
-        return None
-    if not isinstance(result, str) or not result.strip():
-        raise RuntimeExecutionError(
-            f"runtime {name} must be a non-empty string when provided"
-        )
-    return result
-
-
-def _boolean(value: Mapping[str, object], name: str) -> bool:
-    result = value.get(name)
-    if not isinstance(result, bool):
-        raise RuntimeExecutionError(f"runtime {name} must be a boolean")
-    return result
-
-
-def _choice(
-    value: Mapping[str, object],
-    name: str,
-    choices: set[str],
-) -> str:
-    result = _string(value, name)
-    if result not in choices:
-        raise RuntimeExecutionError(
-            f"runtime {name} must be one of {sorted(choices)!r}"
-        )
     return result
 
 
