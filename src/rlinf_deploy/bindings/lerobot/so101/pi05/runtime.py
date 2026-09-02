@@ -11,8 +11,8 @@ from rlinf_deploy.inference import (
     PolicyObservation,
     PolicyResult,
 )
-from rlinf_deploy.robots.cameras import CameraFrame
 from rlinf_deploy.robots.lerobot.so101 import SO101Adapter
+from rlinf_deploy.robots.sensors.cameras import CameraFrame
 
 from .action import Pi05SO101ActionMapper
 from .contract import POLICY_ACTION_SPACE

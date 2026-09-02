@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from rlinf_deploy.bindings.lerobot.so101.pi05.runtime import Pi05SO101Runtime
 from rlinf_deploy.inference import ImagePayload, Session
 from rlinf_deploy.robots import RobotAction
-from rlinf_deploy.robots.cameras import CameraFrame
+from rlinf_deploy.robots.sensors.cameras import CameraFrame
 
 
 class FakeRobot:

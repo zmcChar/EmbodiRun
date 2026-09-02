@@ -13,12 +13,12 @@ from typing import Any
 
 from rlinf_deploy.bindings.lerobot.so101.pi05 import Pi05SO101Runtime
 from rlinf_deploy.inference import VvlaHttpClient
-from rlinf_deploy.robots.cameras import (
+from rlinf_deploy.robots.lerobot.so101 import SO101Adapter, SO101Config
+from rlinf_deploy.robots.sensors.cameras import (
     CameraSource,
     V4L2CameraConfig,
     V4L2CameraSource,
 )
-from rlinf_deploy.robots.lerobot.so101 import SO101Adapter, SO101Config
 
 
 class RuntimeExecutionError(RuntimeError):

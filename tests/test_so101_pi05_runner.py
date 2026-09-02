@@ -6,7 +6,7 @@ from rlinf_deploy.bindings.lerobot.so101.pi05.runner import (
     SO101Pi05Spec,
     execute,
 )
-from rlinf_deploy.robots.cameras import CameraFrame, V4L2CameraConfig
+from rlinf_deploy.robots.sensors.cameras import CameraFrame, V4L2CameraConfig
 
 
 def spec(*, max_steps=2):

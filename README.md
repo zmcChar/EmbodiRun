@@ -122,8 +122,8 @@ rlinf-deploy \
 step. Use `--max-steps N` to keep the same policy session open for a bounded
 multi-step task. Before connecting the arm, the binding checks model health and
 opens, warms up, and validates every camera. V4L2 capture is implemented in the
-robot camera layer and returns model-independent camera frames; the SO101/Pi0.5
-binding converts those frames into inference image payloads.
+robot sensor camera layer and returns model-independent camera frames; the
+SO101/Pi0.5 binding converts those frames into inference image payloads.
 Each returned action is still subject to the SO101 joint and gripper step limits
 from the deployment YAML. `step_limit_mode: reject` rejects an oversized target
 without sending it. `step_limit_mode: clip` bounds every joint and the gripper

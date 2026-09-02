@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from rlinf_deploy.robots.cameras import (
+from rlinf_deploy.robots.sensors.cameras import (
     CameraFrame,
     V4L2CameraConfig,
     V4L2CameraSource,

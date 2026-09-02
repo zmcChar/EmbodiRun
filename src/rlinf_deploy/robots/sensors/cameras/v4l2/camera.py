@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from .camera import CameraFrame
+from ..camera import CameraFrame
 
 
 class CameraError(RuntimeError):
