@@ -24,6 +24,7 @@ dev = [
 host = [
     "paramiko>=3.4,<5",
     "PyYAML>=6,<7",
+    "rich>=13,<15",
 ]
 robot-so101 = ["lerobot[feetech]>=0.6,<0.7"]
 robot-fr3 = ["franky-control>=1.1.4,<2"]

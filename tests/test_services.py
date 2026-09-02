@@ -1,6 +1,7 @@
 import json
 import sys
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 
@@ -164,6 +165,69 @@ class DownExecutor:
 
     def close(self) -> None:
         self.closed = True
+
+
+class ConcurrentInitExecutor(FakeNodeExecutor):
+    def __init__(self, barrier: Barrier) -> None:
+        super().__init__()
+        self.barrier = barrier
+
+    def run(self, command, *, check=True):
+        if command.argv[:2] == ("sh", "-c") and "uname -s" in command.argv[2]:
+            self.barrier.wait(timeout=1.0)
+        return super().run(command, check=check)
+
+
+class ConcurrentUpExecutor(ServiceReadinessExecutor):
+    def __init__(self, barrier: Barrier) -> None:
+        super().__init__()
+        self.barrier = barrier
+
+    def run(self, command, *, check=True):
+        if command.argv[:2] == ("test", "-x"):
+            self.barrier.wait(timeout=1.0)
+        return super().run(command, check=check)
+
+
+class ConcurrentDownExecutor(DownExecutor):
+    def __init__(self, barrier: Barrier) -> None:
+        super().__init__()
+        self.barrier = barrier
+
+    def run(self, command, *, check=True):
+        if command.argv[:2] == ("sh", "-c"):
+            self.barrier.wait(timeout=1.0)
+        return super().run(command, check=check)
+
+
+def two_node_model_config(tmp_path: Path) -> Path:
+    config_path = tmp_path / "two-node-models.yaml"
+    second_node = """
+  jetson-worker:
+    type: jetson.test
+    connection:
+      type: local
+"""
+    second_model = """
+  pi05-02:
+    backend: vvla
+    transport: http
+    type: pi05
+    node: jetson-worker
+    environment: .venv-vvla
+    source: /models/pi05-02
+    adapter_config: /configs/pi05-02.json
+    server:
+      bind: 127.0.0.1
+      port: 8001
+"""
+    config_path.write_text(
+        EXAMPLE.read_text(encoding="utf-8")
+        .replace("\nrobots:\n", f"{second_node}\nrobots:\n")
+        .replace("\nruntimes:\n", f"{second_model}\nruntimes:\n"),
+        encoding="utf-8",
+    )
+    return config_path
 
 
 def test_example_resolves_real_thor_environment_and_runtime() -> None:
@@ -415,9 +479,11 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
 
     assert init_exit_code == 0
     assert init_output.err == ""
-    init_payload = json.loads(init_output.out)
-    assert init_payload["command"] == "init"
-    assert {item["group"] for item in init_payload["environments"]} == {
+    assert "Init deployment thor-so101-pi05" in init_output.out
+    assert "2 environments ready" in init_output.out
+    initialized = StateStore(tmp_path / "thor-so101-pi05.json").load()
+    assert initialized is not None
+    assert {item.group for item in initialized.environments.values()} == {
         "pi05",
         "robot-so101",
     }
@@ -431,17 +497,17 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
 
     assert up_exit_code == 0
     assert up_output.err == ""
-    up_payload = json.loads(up_output.out)
-    assert up_payload["command"] == "up"
-    assert up_payload["services"] == [
-        {
-            "endpoint": "http://127.0.0.1:8000",
-            "node": "jetson-agx-thor-232",
-            "pid": 321,
-            "service_id": "pi05-01",
-            "status": "running",
-        }
-    ]
+    assert "Starting model" in up_output.out
+    assert "1/1 services running" in up_output.out
+    started = StateStore(tmp_path / "thor-so101-pi05.json").load()
+    assert started is not None
+    assert started.services["pi05-01"] == ServiceState(
+        service_id="pi05-01",
+        node="jetson-agx-thor-232",
+        status="running",
+        pid=321,
+        endpoint="http://127.0.0.1:8000",
+    )
     up_commands = [command for command, _check in executors[1].commands]
     start_script = next(
         command.argv[2] for command in up_commands if command.argv[:2] == ("sh", "-c")
@@ -496,9 +562,9 @@ def test_cli_routes_prompt_to_selected_runtime(tmp_path, capsys) -> None:
     captured = capsys.readouterr()
     assert exit_code == 0
     assert captured.err == ""
-    result = json.loads(captured.out)
-    assert result["command"] == "run"
-    assert result["runtime"] == "so101-1-runtime"
+    assert "Run deployment thor-so101-pi05" in captured.out
+    assert "Executing robot-policy loop" in captured.out
+    assert "Completed 1 step(s)" in captured.out
     command = executor.commands[-1][0]
     assert command.argv[1:4] == (
         "-m",
@@ -645,12 +711,11 @@ def test_cli_probe_only_checks_connectivity_and_does_not_write_state(
     )
 
     captured = capsys.readouterr()
-    payload = json.loads(captured.out)
     assert exit_code == 0
     assert captured.err == ""
-    assert payload["ok"] is True
-    assert payload["nodes"][0]["reachable"] is True
-    assert payload["nodes"][0]["init_ready"] is True
+    assert "Probe deployment thor-so101-pi05" in captured.out
+    assert "jetson-agx-thor-232: Reachable" in captured.out
+    assert "1/1 nodes ready" in captured.out
     assert len(executors[0].commands) == 1
     assert list(tmp_path.iterdir()) == []
 
@@ -680,18 +745,65 @@ def test_cli_probe_continues_after_one_node_is_unreachable(tmp_path, capsys) -> 
     )
 
     captured = capsys.readouterr()
-    payload = json.loads(captured.out)
     assert exit_code == 1
-    assert payload["ok"] is False
-    assert {node["node_id"] for node in payload["nodes"]} == {
-        "jetson-agx-thor-232",
-        "offline-node",
-    }
-    offline = next(
-        node for node in payload["nodes"] if node["node_id"] == "offline-node"
+    assert "jetson-agx-thor-232: Reachable" in captured.out
+    assert "offline-node: Failed: connection refused" in captured.out
+    assert "1/2 nodes ready" in captured.out
+
+
+def test_cli_lifecycle_runs_different_nodes_concurrently(tmp_path, capsys) -> None:
+    config_path = two_node_model_config(tmp_path)
+    state_dir = tmp_path / "state"
+    arguments = ("--config", str(config_path), "--state-dir", str(state_dir))
+
+    init_barrier = Barrier(2)
+    assert (
+        main(
+            (*arguments, "init"),
+            executor_factory=lambda _node: ConcurrentInitExecutor(init_barrier),
+        )
+        == 0
     )
-    assert offline["reachable"] is False
-    assert offline["error"] == "connection refused"
+    init_output = capsys.readouterr()
+    assert "2/2 nodes ready" in init_output.out
+
+    up_barrier = Barrier(2)
+    assert (
+        main(
+            (*arguments, "up"),
+            executor_factory=lambda _node: ConcurrentUpExecutor(up_barrier),
+        )
+        == 0
+    )
+    up_output = capsys.readouterr()
+    assert "2/2 nodes ready" in up_output.out
+    assert "2/2 services running" in up_output.out
+
+    down_barrier = Barrier(2)
+    assert (
+        main(
+            (*arguments, "down"),
+            executor_factory=lambda _node: ConcurrentDownExecutor(down_barrier),
+        )
+        == 0
+    )
+    down_output = capsys.readouterr()
+    assert "2/2 nodes ready" in down_output.out
+    assert "2/2 services stopped" in down_output.out
+
+
+def test_cli_probe_runs_different_nodes_concurrently(tmp_path, capsys) -> None:
+    config_path = two_node_model_config(tmp_path)
+    barrier = Barrier(2)
+
+    exit_code = main(
+        ("--config", str(config_path), "probe"),
+        executor_factory=lambda _node: ConcurrentInitExecutor(barrier),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "2/2 nodes ready" in captured.out
 
 
 def test_cli_up_requires_successful_matching_init(tmp_path, capsys) -> None:
@@ -742,7 +854,10 @@ def test_cli_down_stops_services_after_configuration_changes(tmp_path, capsys) -
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert json.loads(captured.out)["services"][0]["status"] == "stopped"
+    assert "1/1 services stopped" in captured.out
+    stopped = StateStore(state_dir / "thor-so101-pi05.json").load()
+    assert stopped is not None
+    assert stopped.services["pi05-01"].status == "stopped"
     assert "kill -TERM" in executor.commands[0][0].argv[2]
     assert executor.closed is True
 

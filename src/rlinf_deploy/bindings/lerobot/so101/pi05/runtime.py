@@ -11,6 +11,7 @@ from rlinf_deploy.inference import (
     PolicyObservation,
     PolicyResult,
 )
+from rlinf_deploy.robots.cameras import CameraFrame
 from rlinf_deploy.robots.lerobot.so101 import SO101Adapter
 
 from .action import Pi05SO101ActionMapper
@@ -42,7 +43,7 @@ class Pi05SO101Runtime:
 
     def step(
         self,
-        images: Sequence[ImagePayload],
+        frames: Sequence[CameraFrame],
         *,
         reset: bool = False,
     ) -> PolicyResult:
@@ -55,7 +56,10 @@ class Pi05SO101Runtime:
             step_id=self.step_id,
             instruction=self.instruction,
             state=dict(observation.values),
-            images=images,
+            images=tuple(
+                ImagePayload(frame.name, frame.mime_type, frame.data)
+                for frame in frames
+            ),
             reset=False,
             metadata={"robot_timestamp_s": observation.timestamp_s},
         )

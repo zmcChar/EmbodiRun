@@ -71,7 +71,8 @@ uv run rlinf-deploy \
 `probe` checks every node even if another node is unreachable. It reports the
 connection address, latency, platform, architecture, and availability of
 Python, Git, and uv. It does not clone repositories, install dependencies,
-start services, or write deployment state.
+start services, or write deployment state. Nodes are probed concurrently and
+the terminal shows each node's current stage and elapsed time.
 
 Initialize the nodes, then start their persistent services:
 
@@ -94,7 +95,9 @@ and adapter paths; checks out the exact Deploy and Inference commits below
 appropriate `uv sync --frozen` commands. Repeating it is safe: Git checkouts and
 uv environments are reused, while uv downloads only missing or changed locked
 dependencies. Successful initialization is recorded locally below
-`~/.local/state/rlinf-deploy`.
+`~/.local/state/rlinf-deploy`. Different nodes initialize concurrently; work on
+one node remains ordered, and each Deploy or Inference environment appears as a
+separate synchronization stage in that node's progress row.
 
 `up` refuses to run without state from a successful `init`, or if the YAML has
 changed since initialization. It starts PID-supervised model services and is
@@ -102,6 +105,8 @@ idempotent for services that are already running. The SO101 binding runtime
 remains independent; `up` does not connect to or move the arm. `down` stops only
 identity-checked model service processes and is also available when the YAML has
 changed, allowing a safe `down` → `init` → `up` reconfiguration sequence.
+Both commands operate on different nodes concurrently and display the model or
+service currently being started, health-checked, or stopped.
 
 After `up` reports the model service as healthy, route one prompt through a
 configured runtime:
@@ -116,7 +121,9 @@ rlinf-deploy \
 `run` can move the selected physical robot. The default is one inference/action
 step. Use `--max-steps N` to keep the same policy session open for a bounded
 multi-step task. Before connecting the arm, the binding checks model health and
-opens, warms up, and validates every camera.
+opens, warms up, and validates every camera. V4L2 capture is implemented in the
+robot camera layer and returns model-independent camera frames; the SO101/Pi0.5
+binding converts those frames into inference image payloads.
 Each returned action is still subject to the SO101 joint and gripper step limits
 from the deployment YAML. `step_limit_mode: reject` rejects an oversized target
 without sending it. `step_limit_mode: clip` bounds every joint and the gripper

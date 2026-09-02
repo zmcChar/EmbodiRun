@@ -9,24 +9,20 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 from rlinf_deploy.bindings.lerobot.so101.pi05 import Pi05SO101Runtime
-from rlinf_deploy.inference import ImagePayload, VvlaHttpClient
+from rlinf_deploy.inference import VvlaHttpClient
+from rlinf_deploy.robots.cameras import (
+    CameraSource,
+    V4L2CameraConfig,
+    V4L2CameraSource,
+)
 from rlinf_deploy.robots.lerobot.so101 import SO101Adapter, SO101Config
 
 
 class RuntimeExecutionError(RuntimeError):
     """The configured runtime cannot execute safely."""
-
-
-@dataclass(frozen=True, slots=True)
-class CameraSpec:
-    name: str
-    device: str
-    width: int
-    height: int
-    fps: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,13 +38,13 @@ class SO101Pi05Spec:
     max_joint_step_deg: float
     max_gripper_step: float
     step_limit_mode: str
-    cameras: tuple[CameraSpec, ...]
+    cameras: tuple[V4L2CameraConfig, ...]
     max_steps: int
     control_hz: float
     request_timeout_s: float
 
     @classmethod
-    def from_json(cls, value: str) -> "SO101Pi05Spec":
+    def from_json(cls, value: str) -> SO101Pi05Spec:
         try:
             payload = json.loads(value)
         except json.JSONDecodeError as error:
@@ -78,9 +74,7 @@ class SO101Pi05Spec:
             robot_id=_string(root, "robot_id"),
             calibration_id=_optional_string(root, "calibration_id"),
             calibration_dir=_optional_string(root, "calibration_dir"),
-            disable_torque_on_disconnect=_boolean(
-                root, "disable_torque_on_disconnect"
-            ),
+            disable_torque_on_disconnect=_boolean(root, "disable_torque_on_disconnect"),
             max_joint_step_deg=_positive_number(root, "max_joint_step_deg"),
             max_gripper_step=_positive_number(root, "max_gripper_step"),
             step_limit_mode=_choice(
@@ -95,105 +89,12 @@ class SO101Pi05Spec:
         )
 
 
-class CameraSource(Protocol):
-    def capture(self) -> tuple[ImagePayload, ...]: ...
-
-    def close(self) -> None: ...
-
-
-class V4L2CameraSource:
-    """Capture synchronized-enough JPEG observations from configured V4L2 cameras."""
-
-    def __init__(
-        self,
-        cameras: Sequence[CameraSpec],
-        *,
-        cv2_module: Any | None = None,
-    ) -> None:
-        if cv2_module is None:
-            try:
-                import cv2 as cv2_module
-            except ImportError as error:
-                raise RuntimeExecutionError(
-                    "V4L2 runtime capture requires OpenCV in the robot environment"
-                ) from error
-        self._cv2 = cv2_module
-        self._cameras = tuple(cameras)
-        self._captures: list[Any] = []
-        try:
-            for camera in self._cameras:
-                capture = cv2_module.VideoCapture(camera.device, cv2_module.CAP_V4L2)
-                self._captures.append(capture)
-                if not capture.isOpened():
-                    raise RuntimeExecutionError(
-                        f"camera {camera.name!r} cannot open {camera.device!r}"
-                    )
-                capture.set(cv2_module.CAP_PROP_FRAME_WIDTH, camera.width)
-                capture.set(cv2_module.CAP_PROP_FRAME_HEIGHT, camera.height)
-                capture.set(cv2_module.CAP_PROP_FPS, camera.fps)
-                if hasattr(cv2_module, "CAP_PROP_BUFFERSIZE"):
-                    capture.set(cv2_module.CAP_PROP_BUFFERSIZE, 1)
-            # Discard startup frames and validate every camera before connecting motors.
-            for _ in range(3):
-                self._capture_frames()
-        except BaseException:
-            self.close()
-            raise
-
-    def capture(self) -> tuple[ImagePayload, ...]:
-        frames = self._capture_frames()
-        images: list[ImagePayload] = []
-        for camera, frame in zip(self._cameras, frames):
-            encoded, jpeg = self._cv2.imencode(
-                ".jpg",
-                frame,
-                [int(self._cv2.IMWRITE_JPEG_QUALITY), 90],
-            )
-            if not encoded:
-                raise RuntimeExecutionError(
-                    f"camera {camera.name!r} frame could not be JPEG encoded"
-                )
-            images.append(
-                ImagePayload(
-                    name=camera.name,
-                    mime_type="image/jpeg",
-                    data=jpeg.tobytes(),
-                )
-            )
-        return tuple(images)
-
-    def _capture_frames(self) -> tuple[Any, ...]:
-        for camera, capture in zip(self._cameras, self._captures):
-            if not capture.grab():
-                raise RuntimeExecutionError(
-                    f"camera {camera.name!r} failed to grab a frame"
-                )
-        frames: list[Any] = []
-        for camera, capture in zip(self._cameras, self._captures):
-            ok, frame = capture.retrieve()
-            if not ok or frame is None:
-                raise RuntimeExecutionError(
-                    f"camera {camera.name!r} failed to retrieve a frame"
-                )
-            height, width = frame.shape[:2]
-            if (width, height) != (camera.width, camera.height):
-                raise RuntimeExecutionError(
-                    f"camera {camera.name!r} returned {width}x{height}; "
-                    f"expected {camera.width}x{camera.height}"
-                )
-            frames.append(frame)
-        return tuple(frames)
-
-    def close(self) -> None:
-        for capture in self._captures:
-            capture.release()
-        self._captures.clear()
-
-
 def execute(
     spec: SO101Pi05Spec,
     *,
-    camera_factory: Callable[[Sequence[CameraSpec]], CameraSource] = V4L2CameraSource,
+    camera_factory: Callable[
+        [Sequence[V4L2CameraConfig]], CameraSource
+    ] = V4L2CameraSource,
     robot_factory: Callable[[SO101Config], Any] = SO101Adapter,
     client_factory: Callable[..., Any] = VvlaHttpClient,
     runtime_factory: Callable[..., Any] = Pi05SO101Runtime,
@@ -287,9 +188,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _camera_spec(value: object, index: int) -> CameraSpec:
+def _camera_spec(value: object, index: int) -> V4L2CameraConfig:
     item = _mapping(value, f"runtime cameras[{index}]")
-    return CameraSpec(
+    return V4L2CameraConfig(
         name=_string(item, "name"),
         device=_string(item, "device"),
         width=_positive_integer(item, "width"),
@@ -299,9 +200,7 @@ def _camera_spec(value: object, index: int) -> CameraSpec:
 
 
 def _mapping(value: object, name: str) -> dict[str, Any]:
-    if not isinstance(value, Mapping) or any(
-        not isinstance(key, str) for key in value
-    ):
+    if not isinstance(value, Mapping) or any(not isinstance(key, str) for key in value):
         raise RuntimeExecutionError(f"{name} must be an object with string keys")
     return dict(value)
 
@@ -370,10 +269,8 @@ if __name__ == "__main__":
 
 
 __all__ = [
-    "CameraSpec",
     "RuntimeExecutionError",
     "SO101Pi05Spec",
-    "V4L2CameraSource",
     "execute",
     "main",
 ]

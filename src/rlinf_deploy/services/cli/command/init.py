@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import posixpath
+from dataclasses import dataclass
 from typing import Any
 
 from ...config import config_digest
@@ -23,7 +24,8 @@ from ...state import (
     ServiceState,
     StateStore,
 )
-from ..context import CommandContext, ExecutorPool, print_json, state_result
+from ..context import CommandContext
+from ..parallel import run_on_nodes
 
 DEPLOY_REPOSITORY = "git@github.com:BUAA-CI-LAB/RLinf-deploy.git"
 INFERENCE_REPOSITORY = "git@github.com:BUAA-CI-LAB/RLinf-inference.git"
@@ -32,6 +34,14 @@ DEFAULT_MANAGED_ROOT = ".local/share/rlinf-deploy"
 
 class InitError(RuntimeError):
     """A deployment node could not be initialized safely."""
+
+
+@dataclass(frozen=True, slots=True)
+class NodeInitialization:
+    """Initialized state produced independently by one node worker."""
+
+    node: NodeState
+    environments: tuple[EnvironmentState, ...]
 
 
 def register(commands: Any) -> None:
@@ -51,15 +61,28 @@ def register(commands: Any) -> None:
 
 
 def run(args: argparse.Namespace, context: CommandContext) -> int:
-    with context.executors() as executors:
-        state = _initialize(context, executors, managed_root_base=args.root)
-    print_json(state_result("init", context.state_path, state))
+    progress = context.progress
+    progress.begin("init", context.deployment.name)
+    for node_id in sorted(context.config.nodes):
+        progress.add_node(
+            node_id,
+            total=3 + len(_profiles_on(context.deployment, node_id)),
+        )
+    try:
+        state = _initialize(context, managed_root_base=args.root)
+    except BaseException:
+        progress.finish(success=False)
+        raise
+    progress.finish(success=True)
+    progress.message(
+        f"State saved to {context.state_path} "
+        f"({len(state.environments)} environments ready)"
+    )
     return 0
 
 
 def _initialize(
     context: CommandContext,
-    executors: ExecutorPool,
     *,
     managed_root_base: str,
 ) -> DeploymentState:
@@ -78,15 +101,55 @@ def _initialize(
                 + ", ".join(sorted(running))
             )
 
-    nodes: dict[str, NodeState] = {}
-    environments: dict[str, EnvironmentState] = {}
-    for node_id in sorted(context.config.nodes):
-        executor = executors.get(node_id)
+    def initialize(node_id: str) -> NodeInitialization:
+        try:
+            return _initialize_node(
+                context,
+                node_id,
+                managed_root_base=managed_root_base,
+            )
+        except Exception as error:
+            context.progress.fail(node_id, error)
+            raise
+
+    results = run_on_nodes(context.config.nodes, initialize)
+    nodes = {node_id: result.node for node_id, result in results.values.items()}
+    environments = {
+        environment.environment_id: environment
+        for result in results.values.values()
+        for environment in result.environments
+    }
+    state = DeploymentState(
+        name=context.deployment.name,
+        config_digest=digest,
+        deploy_commit=context.deployment.deploy_commit,
+        inference_commit=context.deployment.inference_commit,
+        nodes=nodes,
+        environments=environments,
+        services=_initial_service_state(context.deployment, previous, digest),
+    )
+    store.save(state)
+    if results.errors:
+        raise InitError(_node_error_summary("initialization", results.errors))
+    return state
+
+
+def _initialize_node(
+    context: CommandContext,
+    node_id: str,
+    *,
+    managed_root_base: str,
+) -> NodeInitialization:
+    progress = context.progress
+    with context.executor(node_id) as executor:
+        progress.update(node_id, "Probing node and required tools")
         probe = probe_node(executor, require_init_tools=True)
         assert probe.python is not None
         assert probe.python_version is not None
         assert probe.git is not None
         assert probe.uv is not None
+        progress.advance(node_id)
+
         root = managed_root(probe.home, managed_root_base, context.deployment.name)
         node_state = NodeState(
             node_id=node_id,
@@ -99,35 +162,39 @@ def _initialize(
             python=probe.python,
             python_version=probe.python_version,
         )
-        _prepare_projects(context, executors, node_state, git=probe.git)
-        _probe_resources(context, executors, node_state)
-        nodes[node_id] = node_state
+        progress.update(node_id, "Preparing locked sources")
+        _prepare_projects(context, executor, node_state, git=probe.git)
+        progress.advance(node_id)
+
+        environments: list[EnvironmentState] = []
         for profile in _profiles_on(context.deployment, node_id):
+            progress.update(
+                node_id,
+                "Synchronizing environment",
+                detail=f"{profile.project}/{profile.group}",
+            )
             project_dir = _project_dir(node_state, profile.project)
             UvEnvironmentManager(executor, uv_executable=probe.uv).prepare(
                 profile,
                 project_dir=project_dir,
             )
-            environments[profile.environment_id] = EnvironmentState(
-                environment_id=profile.environment_id,
-                node=node_id,
-                project=profile.project,
-                group=profile.group,
-                path=_environment_path(project_dir, profile.path),
-                status="ready",
+            environments.append(
+                EnvironmentState(
+                    environment_id=profile.environment_id,
+                    node=node_id,
+                    project=profile.project,
+                    group=profile.group,
+                    path=_environment_path(project_dir, profile.path),
+                    status="ready",
+                )
             )
+            progress.advance(node_id)
 
-    state = DeploymentState(
-        name=context.deployment.name,
-        config_digest=digest,
-        deploy_commit=context.deployment.deploy_commit,
-        inference_commit=context.deployment.inference_commit,
-        nodes=nodes,
-        environments=environments,
-        services=_initial_service_state(context.deployment, previous, digest),
-    )
-    store.save(state)
-    return state
+        progress.update(node_id, "Verifying configured resources")
+        _probe_resources(context, executor, node_state)
+        progress.advance(node_id)
+        progress.succeed(node_id)
+        return NodeInitialization(node_state, tuple(environments))
 
 
 def _profiles_on(
@@ -141,7 +208,7 @@ def _profiles_on(
 
 def _prepare_projects(
     context: CommandContext,
-    executors: ExecutorPool,
+    executor: Executor,
     node: NodeState,
     *,
     git: str,
@@ -157,7 +224,7 @@ def _prepare_projects(
     )
     if relative_adapter:
         projects.add("deploy")
-    manager = ProjectManager(executors.get(node.node_id), git_executable=git)
+    manager = ProjectManager(executor, git_executable=git)
     if "deploy" in projects:
         manager.prepare(
             repository=DEPLOY_REPOSITORY,
@@ -174,10 +241,9 @@ def _prepare_projects(
 
 def _probe_resources(
     context: CommandContext,
-    executors: ExecutorPool,
+    executor: Executor,
     node: NodeState,
 ) -> None:
-    executor = executors.get(node.node_id)
     for robot in context.config.robots.values():
         if robot.node != node.node_id:
             continue
@@ -271,6 +337,13 @@ def _require_path(
     result = executor.run(Command(("test", f"-{kind}", path)), check=False)
     if result.exit_code != 0:
         raise InitError(f"{description} was not found at {path!r}")
+
+
+def _node_error_summary(command: str, errors: dict[str, Exception]) -> str:
+    details = "; ".join(
+        f"{node_id}: {error}" for node_id, error in sorted(errors.items())
+    )
+    return f"{command} failed on {len(errors)} node(s): {details}"
 
 
 __all__ = [

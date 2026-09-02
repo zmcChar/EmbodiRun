@@ -12,7 +12,7 @@ from typing import Any
 from ...config import config_digest
 from ...executor import Command, CommandResult
 from ...state import StateStore
-from ..context import CommandContext, print_json
+from ..context import CommandContext
 
 
 class RunError(RuntimeError):
@@ -88,78 +88,97 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
     if runtime.binding != _SUPPORTED_BINDING:
         raise RunError(f"runtime binding {runtime.binding!r} has no executable runner")
 
-    state = StateStore(context.state_path).load()
-    if state is None:
-        raise RunError("deployment is not initialized; run `rlinf-deploy ... init`")
-    if state.config_digest != config_digest(context.config):
-        raise RunError("configuration changed since init; run init again")
-    environment = state.environments.get(runtime.environment_id)
-    if environment is None or environment.status != "ready":
-        raise RunError(
-            f"environment {runtime.environment_id!r} is not ready; run init again"
+    progress = context.progress
+    progress.begin("run", context.deployment.name)
+    progress.add_node(runtime.node, total=3)
+    try:
+        progress.update(
+            runtime.node, "Validating runtime state", detail=runtime.runtime_id
         )
-    service = state.services.get(runtime.model)
-    if service is None or service.status != "running":
-        raise RunError(
-            f"model service {runtime.model!r} is not running; run `rlinf-deploy ... up`"
-        )
-    node = state.nodes.get(runtime.node)
-    if node is None:
-        raise RunError(f"initialized state is missing node {runtime.node!r}")
+        state = StateStore(context.state_path).load()
+        if state is None:
+            raise RunError("deployment is not initialized; run `rlinf-deploy ... init`")
+        if state.config_digest != config_digest(context.config):
+            raise RunError("configuration changed since init; run init again")
+        environment = state.environments.get(runtime.environment_id)
+        if environment is None or environment.status != "ready":
+            raise RunError(
+                f"environment {runtime.environment_id!r} is not ready; run init again"
+            )
+        service = state.services.get(runtime.model)
+        if service is None or service.status != "running":
+            raise RunError(
+                f"model service {runtime.model!r} is not running; "
+                "run `rlinf-deploy ... up`"
+            )
+        node = state.nodes.get(runtime.node)
+        if node is None:
+            raise RunError(f"initialized state is missing node {runtime.node!r}")
 
-    robot = context.config.robots[runtime.robot]
-    payload = _so101_pi05_payload(
-        runtime_id=runtime.runtime_id,
-        prompt=args.prompt,
-        model_endpoint=runtime.model_endpoint,
-        robot_id=robot.robot_id,
-        robot_port=robot.port,
-        options=robot.options,
-        max_steps=args.max_steps,
-        control_hz=args.control_hz,
-        request_timeout_s=args.request_timeout,
-    )
-    python = posixpath.join(environment.path, "bin", "python")
-    command_timeout_s = max(
-        60.0,
-        args.max_steps * args.request_timeout + 30.0,
-    )
-    with context.executors() as executors:
-        executor = executors.get(runtime.node)
-        available = executor.run(Command(("test", "-x", python)), check=False)
-        if available.exit_code != 0:
-            raise RunError(
-                f"runtime Python is missing or not executable: {python}; run init again"
-            )
-        result = executor.run(
-            Command(
-                (
-                    python,
-                    "-m",
-                    "rlinf_deploy.bindings.lerobot.so101.pi05.runner",
-                    "--spec-json",
-                    json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-                ),
-                cwd=node.deploy_project,
-                timeout_s=command_timeout_s,
-            ),
-            check=False,
+        robot = context.config.robots[runtime.robot]
+        payload = _so101_pi05_payload(
+            runtime_id=runtime.runtime_id,
+            prompt=args.prompt,
+            model_endpoint=runtime.model_endpoint,
+            robot_id=robot.robot_id,
+            robot_port=robot.port,
+            options=robot.options,
+            max_steps=args.max_steps,
+            control_hz=args.control_hz,
+            request_timeout_s=args.request_timeout,
         )
-        if result.exit_code != 0:
-            raise RunError(
-                f"runtime {runtime.runtime_id!r} failed: {_failure_detail(result)}"
+        progress.advance(runtime.node)
+
+        python = posixpath.join(environment.path, "bin", "python")
+        command_timeout_s = max(
+            60.0,
+            args.max_steps * args.request_timeout
+            + max(0, args.max_steps - 1) / args.control_hz
+            + 30.0,
+        )
+        with context.executor(runtime.node) as executor:
+            progress.update(runtime.node, "Checking runtime executable")
+            available = executor.run(Command(("test", "-x", python)), check=False)
+            if available.exit_code != 0:
+                raise RunError(
+                    f"runtime Python is missing or not executable: {python}; "
+                    "run init again"
+                )
+            progress.advance(runtime.node)
+
+            progress.update(
+                runtime.node,
+                "Executing robot-policy loop",
+                detail=f"{args.max_steps} step(s)",
             )
-    print_json(
-        {
-            "ok": True,
-            "command": "run",
-            "deployment": context.deployment.name,
-            "runtime": runtime.runtime_id,
-            "node": runtime.node,
-            "steps": args.max_steps,
-            "output": result.stdout.splitlines(),
-        }
-    )
+            result = executor.run(
+                Command(
+                    (
+                        python,
+                        "-m",
+                        "rlinf_deploy.bindings.lerobot.so101.pi05.runner",
+                        "--spec-json",
+                        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                    ),
+                    cwd=node.deploy_project,
+                    timeout_s=command_timeout_s,
+                ),
+                check=False,
+            )
+            if result.exit_code != 0:
+                raise RunError(
+                    f"runtime {runtime.runtime_id!r} failed: {_failure_detail(result)}"
+                )
+            progress.advance(runtime.node)
+        progress.succeed(
+            runtime.node,
+            detail=f"Completed {args.max_steps} step(s)",
+        )
+    except BaseException as error:
+        progress.fail(runtime.node, error)
+        progress.finish(success=False)
+        raise
+    progress.finish(success=True)
     return 0
 
 

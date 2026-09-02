@@ -13,6 +13,7 @@ from ..executor import Executor, executor_for
 from ..service import ServiceError, build_plan
 from .command import down, init, probe, run, up, validate
 from .context import CommandContext, state_path
+from .progress import ConsoleProgressReporter
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -52,6 +53,7 @@ def main(
         deployment=deployment,
         state_path=state_path(args.state_dir, deployment.name),
         executor_factory=executor_factory,
+        progress=ConsoleProgressReporter(),
     )
     try:
         return args.command_handler(args, context)

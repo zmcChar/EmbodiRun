@@ -6,7 +6,7 @@ import argparse
 import math
 import posixpath
 import time
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from ...config import config_digest
@@ -19,11 +19,20 @@ from ...state import (
     ServiceState,
     StateStore,
 )
-from ..context import CommandContext, ExecutorPool, print_json, state_result
+from ..context import CommandContext
+from ..parallel import run_on_nodes
 
 
 class UpError(RuntimeError):
     """Configured services could not be started safely."""
+
+
+@dataclass(frozen=True, slots=True)
+class NodeUpResult:
+    """Service states produced by one node worker."""
+
+    services: dict[str, ServiceState]
+    error: Exception | None = None
 
 
 DEFAULT_WAIT_TIMEOUT_S = 600.0
@@ -61,16 +70,39 @@ def register(commands: Any) -> None:
 
 
 def run(args: argparse.Namespace, context: CommandContext) -> int:
-    with context.executors() as executors:
-        state = _up(context, executors, wait_timeout_s=args.wait_timeout)
-    print_json(state_result("up", context.state_path, state))
+    progress = context.progress
+    progress.begin("up", context.deployment.name)
+    services_by_node = _services_by_node(context)
+    for node_id in sorted(context.config.nodes):
+        progress.add_node(
+            node_id,
+            total=max(1, 3 * len(services_by_node[node_id])),
+        )
+    try:
+        state = _up(
+            context,
+            services_by_node=services_by_node,
+            wait_timeout_s=args.wait_timeout,
+        )
+    except BaseException:
+        progress.finish(success=False)
+        raise
+    progress.finish(success=True)
+    running = sum(service.status == "running" for service in state.services.values())
+    progress.message(f"{running}/{len(state.services)} services running")
+    for service in sorted(state.services.values(), key=lambda item: item.service_id):
+        if service.status == "running":
+            progress.message(
+                f"{service.service_id}: {service.endpoint} "
+                f"on {service.node} (PID {service.pid})"
+            )
     return 0
 
 
 def _up(
     context: CommandContext,
-    executors: ExecutorPool,
     *,
+    services_by_node: dict[str, tuple[ServiceSpec, ...]],
     wait_timeout_s: float,
 ) -> DeploymentState:
     store = StateStore(context.state_path)
@@ -85,59 +117,136 @@ def _up(
             "initialized state is missing nodes: " + ", ".join(sorted(missing_nodes))
         )
 
-    services = dict(state.services)
     for service in context.deployment.services:
         environment = state.environments.get(service.environment_id)
         if environment is None or environment.status != "ready":
             raise UpError(
                 f"environment {service.environment_id!r} is not ready; run init again"
             )
-        node = state.nodes[service.node]
-        executor = executors.get(service.node)
-        materialized = _materialize_service(service, node, environment)
-        executable = materialized.command.argv[0]
-        available = executor.run(Command(("test", "-x", executable)), check=False)
-        if available.exit_code != 0:
-            raise UpError(
-                f"service executable is missing or not executable: {executable}"
-            )
-        supervisor = ServiceSupervisor(
-            executor,
-            run_root=posixpath.join(node.root, "run"),
-            log_root=posixpath.join(node.root, "logs"),
-        )
-        process = supervisor.start(materialized)
+
+    def start_node(node_id: str) -> NodeUpResult:
         try:
-            _wait_until_ready(
-                materialized,
-                environment,
-                supervisor,
-                executor,
-                pid=process.pid,
-                log=process.log,
-                timeout_s=wait_timeout_s,
+            return _up_node(
+                context,
+                state,
+                node_id,
+                services_by_node[node_id],
+                wait_timeout_s=wait_timeout_s,
             )
-        except UpError:
-            services[service.service_id] = ServiceState(
-                service_id=service.service_id,
-                node=service.node,
-                status="failed",
-                pid=process.pid,
-                endpoint=service.endpoint,
-            )
-            state = replace(state, services=dict(services))
-            store.save(state)
+        except Exception as error:
+            context.progress.fail(node_id, error)
             raise
-        services[service.service_id] = ServiceState(
-            service_id=service.service_id,
-            node=service.node,
-            status="running",
-            pid=process.pid,
-            endpoint=service.endpoint,
-        )
-        state = replace(state, services=dict(services))
-        store.save(state)
+
+    results = run_on_nodes(context.config.nodes, start_node)
+    services = dict(state.services)
+    failures: dict[str, Exception] = dict(results.errors)
+    for node_id, result in results.values.items():
+        services.update(result.services)
+        if result.error is not None:
+            failures[node_id] = result.error
+    state = replace(state, services=services)
+    store.save(state)
+    if failures:
+        raise UpError(_node_error_summary("service startup", failures))
     return state
+
+
+def _up_node(
+    context: CommandContext,
+    state: DeploymentState,
+    node_id: str,
+    services: tuple[ServiceSpec, ...],
+    *,
+    wait_timeout_s: float,
+) -> NodeUpResult:
+    progress = context.progress
+    if not services:
+        progress.update(node_id, "No services configured")
+        progress.advance(node_id)
+        progress.succeed(node_id, detail="No services")
+        return NodeUpResult({})
+
+    service_states: dict[str, ServiceState] = {}
+    with context.executor(node_id) as executor:
+        node = state.nodes[node_id]
+        for service in services:
+            process = None
+            try:
+                environment = state.environments[service.environment_id]
+                materialized = _materialize_service(service, node, environment)
+                executable = materialized.command.argv[0]
+                progress.update(
+                    node_id,
+                    "Checking model executable",
+                    detail=service.service_id,
+                )
+                available = executor.run(
+                    Command(("test", "-x", executable)),
+                    check=False,
+                )
+                if available.exit_code != 0:
+                    raise UpError(
+                        f"service executable is missing or not executable: {executable}"
+                    )
+                progress.advance(node_id)
+
+                supervisor = ServiceSupervisor(
+                    executor,
+                    run_root=posixpath.join(node.root, "run"),
+                    log_root=posixpath.join(node.root, "logs"),
+                )
+                progress.update(node_id, "Starting model", detail=service.service_id)
+                process = supervisor.start(materialized)
+                progress.advance(node_id)
+
+                progress.update(
+                    node_id,
+                    "Waiting for model health",
+                    detail=service.service_id,
+                )
+                _wait_until_ready(
+                    materialized,
+                    environment,
+                    supervisor,
+                    executor,
+                    pid=process.pid,
+                    log=process.log,
+                    timeout_s=wait_timeout_s,
+                )
+                progress.advance(node_id)
+                service_states[service.service_id] = ServiceState(
+                    service_id=service.service_id,
+                    node=service.node,
+                    status="running",
+                    pid=process.pid,
+                    endpoint=service.endpoint,
+                )
+            except (OSError, RuntimeError, ValueError) as error:
+                service_states[service.service_id] = ServiceState(
+                    service_id=service.service_id,
+                    node=service.node,
+                    status="failed",
+                    pid=process.pid if process is not None else None,
+                    endpoint=service.endpoint,
+                )
+                progress.fail(node_id, error)
+                return NodeUpResult(service_states, error)
+
+    progress.succeed(node_id, detail=f"{len(services)} service(s) ready")
+    return NodeUpResult(service_states)
+
+
+def _services_by_node(
+    context: CommandContext,
+) -> dict[str, tuple[ServiceSpec, ...]]:
+    return {
+        node_id: tuple(
+            service
+            for service in context.deployment.services
+            if service.node == node_id
+        )
+        for node_id in context.config.nodes
+    }
 
 
 def _wait_until_ready(
@@ -228,6 +337,13 @@ def _positive_seconds(value: str) -> float:
     if not math.isfinite(seconds) or seconds <= 0:
         raise argparse.ArgumentTypeError("must be a finite positive number")
     return seconds
+
+
+def _node_error_summary(command: str, errors: dict[str, Exception]) -> str:
+    details = "; ".join(
+        f"{node_id}: {error}" for node_id, error in sorted(errors.items())
+    )
+    return f"{command} failed on {len(errors)} node(s): {details}"
 
 
 __all__ = ["UpError", "register", "run"]

@@ -3,11 +3,10 @@ from types import SimpleNamespace
 import pytest
 
 from rlinf_deploy.bindings.lerobot.so101.pi05.runner import (
-    CameraSpec,
     SO101Pi05Spec,
     execute,
 )
-from rlinf_deploy.inference import ImagePayload
+from rlinf_deploy.robots.cameras import CameraFrame, V4L2CameraConfig
 
 
 def spec(*, max_steps=2):
@@ -24,7 +23,7 @@ def spec(*, max_steps=2):
         max_gripper_step=20.0,
         step_limit_mode="reject",
         cameras=(
-            CameraSpec(
+            V4L2CameraConfig(
                 "observation.images.front",
                 "/dev/video0",
                 640,
@@ -45,7 +44,7 @@ class FakeCameras:
 
     def capture(self):
         self.capture_calls += 1
-        return (ImagePayload("observation.images.front", "image/jpeg", b"jpeg"),)
+        return (CameraFrame("observation.images.front", "image/jpeg", b"jpeg"),)
 
     def close(self):
         self.closed = True
