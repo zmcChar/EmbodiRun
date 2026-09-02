@@ -22,7 +22,7 @@ robot-specific safety and motion execution
 | HTTP client, retries, deadlines | Prompt and model forward |
 | Session and step identifiers | Session memory and batching |
 | Robot action validation | Model-output parsing |
-| Go2, FR3, and SO-101 control | DP, TP, CUDA Graph, compilation |
+| Go2 and FR3 control | DP, TP, CUDA Graph, compilation |
 | SSH deployment and service routing | Canonical policy actions |
 
 `third_party/vvla` pins the server implementation for integration and deployment
@@ -45,25 +45,6 @@ DELETE /v1/sessions/{session_id}
 Step requests use `multipart/form-data`: one JSON metadata part followed by
 binary image parts. Images are never base64 encoded. `request_id`, `step_id`,
 and `session_revision` provide idempotency and ordering.
-
-## Cameras
-
-Camera capture is independent of robot adapters. `rlinf_deploy.robots.cameras`
-provides a `CameraSource` contract and a `CameraRig` for ordered multi-camera
-capture and cleanup. `RGBCameraSource` can wrap any `RGBFrameDevice`; the first
-ready-made factories cover OpenCV devices (USB/UVC, laptop, or phone cameras)
-and Intel RealSense RGB:
-
-```bash
-python -m pip install -e '.[opencv]'
-python -m pip install -e '.[realsense]'
-```
-
-Captured RGB frames are JPEG-encoded into the same `ImagePayload` used by every
-robot runtime. Camera ownership therefore stays out of SO-101 and FR3 motion
-adapters. The ready-made factories currently reuse LeRobot's camera drivers as
-an optional implementation detail; custom camera SDKs do not depend on a robot
-type and only need to implement `connect()`, `read()`, and `close()`.
 
 ## FR3
 
@@ -108,70 +89,6 @@ python examples/fr3_http_step.py \
   --instruction "pick up the object" \
   --image /path/to/image.jpg
 ```
-
-## SO-101
-
-SO-101 support wraps LeRobot's official `SO101Follower` API while keeping
-policy-to-hardware validation in this package. Install the optional dependency:
-
-```bash
-python -m pip install -e '.[so101]'
-```
-
-This includes ordinary USB/UVC cameras through LeRobot's OpenCV backend. Add
-the RealSense extra when an Intel RealSense camera is used:
-
-```bash
-python -m pip install -e '.[so101,realsense]'
-```
-
-Configure and calibrate the follower with LeRobot first. The same calibration
-ID must be used for setup, calibration, and deployment. The adapter exposes five
-joint positions in degrees plus the normalized gripper position in `[0, 100]`.
-It rejects non-finite values, wrong action spaces, incomplete commands, and
-targets that exceed the configured per-step limits.
-
-Deployment never starts interactive calibration. If the configured calibration
-is missing or does not match the motors, the adapter disconnects and fails before
-accepting an action; use `lerobot-calibrate` beforehand.
-
-Use `configs/pi05_so101_http_serve.example.json` only with a checkpoint whose
-state/action schema and normalization were trained for SO-101. An FR3 checkpoint
-is not compatible merely by dropping one action dimension.
-
-```bash
-python examples/so101_http_step.py \
-  --robot-port /dev/ttyACM0 \
-  --robot-id my_follower_arm \
-  --vvla-url http://<thor-ip>:8000 \
-  --instruction "pick up the object" \
-  --image /path/to/image.jpg
-```
-
-For live cameras, first list the devices with `lerobot-find-cameras opencv` or
-`lerobot-find-cameras realsense`. Camera names must appear in the server
-adapter's `image_fields`; that server-side list orders the views and must match
-the checkpoint's training setup. For the two-camera example below, set
-`image_fields` to `["camera-0", "camera-1"]`:
-
-```bash
-python examples/so101_camera_step.py \
-  --robot-port /dev/ttyACM0 \
-  --robot-id my_follower_arm \
-  --vvla-url http://<thor-ip>:8000 \
-  --instruction "pick up the object" \
-  --opencv-camera camera-0=/dev/video0 \
-  --opencv-camera camera-1=/dev/video2
-```
-
-Use `--realsense-camera camera-0=<serial>` instead for a RealSense device. The
-initial RealSense integration sends its RGB stream only: the current inference
-image contract has no depth-image semantics. Multiple cameras are captured
-sequentially and are not hardware synchronized.
-
-`stop()` holds the most recently measured pose because SO-101 has no dedicated
-stop primitive. This is a software stop, not a safety-rated emergency stop.
-Provide a physical power cutoff when the deployment risk requires one.
 
 ## Go2
 

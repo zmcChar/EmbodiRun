@@ -1,4 +1,4 @@
-"""Physical device adapters, SDK bindings, and device-resident services."""
+"""Physical robot drivers, SDK bindings, and robot-resident services."""
 
 from __future__ import annotations
 

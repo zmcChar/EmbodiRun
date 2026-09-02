@@ -54,8 +54,3 @@ session state only once.
 The VVLA HTTP layer is only responsible for model-native action chunks. Deploy
 maps `pi05.action_chunk.v1` to FR3 `joint_position` through
 `bindings.fr3.pi05`.
-
-The SO-101 binding uses the same policy action-space version but validates and
-maps the six named LeRobot features through `bindings.lerobot.so101.pi05`.
-Feature names are part of the safety contract: wire order alone is never used
-to decide which SO-101 motor receives a value.
