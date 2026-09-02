@@ -31,4 +31,29 @@ class CameraSource(Protocol):
     def close(self) -> None: ...
 
 
-__all__ = ["CameraFrame", "CameraSource"]
+class CameraSources:
+    """Expose multiple camera implementations as one capture source."""
+
+    def __init__(self, sources: tuple[CameraSource, ...]) -> None:
+        if not sources:
+            raise ValueError("at least one camera source is required")
+        self._sources = sources
+
+    def capture(self) -> tuple[CameraFrame, ...]:
+        return tuple(
+            frame for source in self._sources for frame in source.capture()
+        )
+
+    def close(self) -> None:
+        first_error: Exception | None = None
+        for source in reversed(self._sources):
+            try:
+                source.close()
+            except Exception as error:  # pragma: no cover - hardware cleanup failure
+                if first_error is None:
+                    first_error = error
+        if first_error is not None:
+            raise first_error
+
+
+__all__ = ["CameraFrame", "CameraSource", "CameraSources"]

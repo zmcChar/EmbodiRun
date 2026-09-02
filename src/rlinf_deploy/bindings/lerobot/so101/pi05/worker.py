@@ -10,10 +10,10 @@ from typing import Any
 
 from rlinf_deploy.inference import VvlaHttpClient
 from rlinf_deploy.robots.lerobot.so101 import SO101Adapter, SO101Config
+from rlinf_deploy.robots.sensors import SensorInput
 from rlinf_deploy.robots.sensors.cameras import (
     CameraSource,
-    V4L2CameraConfig,
-    V4L2CameraSource,
+    create_camera_source,
 )
 
 from .runtime import Pi05SO101Runtime
@@ -27,9 +27,9 @@ class RuntimeExecutionError(RuntimeError):
 def execute(
     spec: SO101Pi05Spec,
     *,
-    camera_factory: Callable[
-        [Sequence[V4L2CameraConfig]], CameraSource
-    ] = V4L2CameraSource,
+    camera_factory: Callable[[Sequence[SensorInput]], CameraSource] = (
+        create_camera_source
+    ),
     robot_factory: Callable[[SO101Config], Any] = SO101Adapter,
     client_factory: Callable[..., Any] = VvlaHttpClient,
     runtime_factory: Callable[..., Any] = Pi05SO101Runtime,
@@ -47,7 +47,7 @@ def execute(
             f"model service at {spec.model_endpoint} is not healthy"
         )
 
-    cameras = camera_factory(spec.cameras)
+    cameras = camera_factory(spec.inputs)
     robot: Any | None = None
     controller: Any | None = None
     completed = 0

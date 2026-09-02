@@ -9,6 +9,7 @@ import posixpath
 from typing import Any
 
 from rlinf_deploy.bindings import BindingRunRequest, binding_definition
+from rlinf_deploy.robots.sensors import SensorInput
 
 from ...config import config_digest
 from ...executor import Command, CommandResult
@@ -125,6 +126,15 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
 
         robot = context.config.robots[runtime.robot]
         runtime_config = context.config.runtimes[runtime.runtime_id]
+        inputs = tuple(
+            SensorInput(
+                sensor_id=sensor_id,
+                name=input_name,
+                kind=context.config.sensors[sensor_id].kind,
+                options=context.config.sensors[sensor_id].options,
+            )
+            for input_name, sensor_id in runtime_config.inputs.items()
+        )
         try:
             invocation = build_run(
                 BindingRunRequest(
@@ -134,6 +144,7 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
                     robot_id=robot.robot_id,
                     robot_kind=robot.kind,
                     robot_options=robot.options,
+                    inputs=inputs,
                     runtime_options=runtime_config.options,
                     max_steps=args.max_steps,
                     control_hz=args.control_hz,

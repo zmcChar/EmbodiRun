@@ -28,6 +28,7 @@ def build_plan(config: DeploymentConfig) -> DeploymentPlan:
         robot = config.robots[runtime.robot]
         model = config.models[runtime.model]
         _validate_binding(runtime.binding, robot.kind, model.kind)
+        _validate_sensor_nodes(config, runtime.runtime_id, runtime.inputs, robot.node)
         model_endpoint = _endpoint(config, model, consumer_node=robot.node)
         robot_environment = _find_environment(
             environments,
@@ -163,6 +164,22 @@ def _validate_binding(binding: str, robot_kind: str, model_kind: str) -> None:
             f"binding {binding!r} does not match robot {robot_kind!r} and model "
             f"{model_kind!r}"
         )
+
+
+def _validate_sensor_nodes(
+    config: DeploymentConfig,
+    runtime_id: str,
+    inputs: dict[str, str],
+    runtime_node: str,
+) -> None:
+    for input_name, sensor_id in inputs.items():
+        sensor = config.sensors[sensor_id]
+        if sensor.node != runtime_node:
+            raise ServiceError(
+                f"runtime {runtime_id!r} input {input_name!r} uses sensor "
+                f"{sensor_id!r} on node {sensor.node!r}; cross-node sensor inputs "
+                "are not supported yet"
+            )
 
 
 def _option_string(

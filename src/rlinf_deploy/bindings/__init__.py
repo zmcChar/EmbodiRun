@@ -11,6 +11,7 @@ from typing import Any, Protocol
 
 from rlinf_deploy.inference import PolicyResult
 from rlinf_deploy.robots import RobotAction
+from rlinf_deploy.robots.sensors import SensorInput
 
 
 class ActionMapper(Protocol):
@@ -30,6 +31,7 @@ class BindingRunRequest:
     robot_id: str
     robot_kind: str
     robot_options: Mapping[str, Any]
+    inputs: tuple[SensorInput, ...]
     runtime_options: Mapping[str, Any]
     max_steps: int
     control_hz: float

@@ -25,20 +25,22 @@ robots:
     max_gripper_step: 10.0
     step_limit_mode: clip
 
-    sensors:
-      observation.images.front:
-        type: v4l2
-        device: /dev/v4l/by-id/usb-icSpring_icspring_camera_202404160005-video-index0
-        width: 640
-        height: 480
-        fps: 30
+sensors:
+  front-camera:
+    type: v4l2
+    node: jetson-agx-thor-232
+    device: /dev/v4l/by-id/usb-icSpring_icspring_camera_202404160005-video-index0
+    width: 640
+    height: 480
+    fps: 30
 
-      observation.images.wrist:
-        type: v4l2
-        device: /dev/v4l/by-id/usb-icSpring_icspring_camera-video-index0
-        width: 640
-        height: 480
-        fps: 30
+  wrist-camera:
+    type: v4l2
+    node: jetson-agx-thor-232
+    device: /dev/v4l/by-id/usb-icSpring_icspring_camera-video-index0
+    width: 640
+    height: 480
+    fps: 30
 
 models:
   pi05-01:
@@ -63,3 +65,6 @@ runtimes:
     robot: so101-1
     model: pi05-01
     binding: lerobot.so101.pi05
+    inputs:
+      observation.images.front: front-camera
+      observation.images.wrist: wrist-camera

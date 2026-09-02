@@ -62,7 +62,6 @@ def parse_so101_config(
             "max_joint_step_deg",
             "max_gripper_step",
             "step_limit_mode",
-            "sensors",
         },
         context,
     )

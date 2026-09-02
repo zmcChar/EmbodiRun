@@ -7,6 +7,7 @@ from .model import ModelConfig, ServerConfig
 from .node import NodeConfig
 from .robot import RobotConfig
 from .runtime import RuntimeConfig
+from .sensor import SensorConfig
 from .validation import ConfigError
 
 __all__ = [
@@ -18,6 +19,7 @@ __all__ = [
     "NodeConfig",
     "RobotConfig",
     "RuntimeConfig",
+    "SensorConfig",
     "ServerConfig",
     "config_digest",
     "load_config",

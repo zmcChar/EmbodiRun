@@ -450,8 +450,8 @@ def test_two_robots_cannot_claim_the_same_device_port(tmp_path) -> None:
 """
     config_path.write_text(
         EXAMPLE.read_text(encoding="utf-8").replace(
-            "\nmodels:\n",
-            f"{duplicate_robot}\nmodels:\n",
+            "\nsensors:\n",
+            f"{duplicate_robot}\nsensors:\n",
         ),
         encoding="utf-8",
     )
@@ -578,10 +578,15 @@ def test_cli_routes_prompt_to_selected_runtime(tmp_path, capsys) -> None:
     assert payload["max_joint_step_deg"] == 5.0
     assert payload["max_gripper_step"] == 10.0
     assert payload["step_limit_mode"] == "clip"
-    assert {camera["name"] for camera in payload["cameras"]} == {
+    assert {item["name"] for item in payload["inputs"]} == {
         "observation.images.front",
         "observation.images.wrist",
     }
+    assert {item["sensor_id"] for item in payload["inputs"]} == {
+        "front-camera",
+        "wrist-camera",
+    }
+    assert {item["type"] for item in payload["inputs"]} == {"v4l2"}
     assert executor.closed is True
 
 

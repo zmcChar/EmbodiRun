@@ -12,9 +12,10 @@ from .model import ModelConfig, parse_model
 from .node import NodeConfig, parse_node
 from .robot import RobotConfig, parse_robot
 from .runtime import RuntimeConfig, parse_runtime
+from .sensor import SensorConfig, parse_sensor
 from .validation import ConfigError, mapping, named_section
 
-_TOP_LEVEL_KEYS = {"metadata", "nodes", "robots", "models", "runtimes"}
+_TOP_LEVEL_KEYS = {"metadata", "nodes", "robots", "sensors", "models", "runtimes"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +24,7 @@ class DeploymentConfig:
     metadata: MetadataConfig
     nodes: dict[str, NodeConfig]
     robots: dict[str, RobotConfig]
+    sensors: dict[str, SensorConfig]
     models: dict[str, ModelConfig]
     runtimes: dict[str, RuntimeConfig]
 
@@ -39,12 +41,13 @@ def load_config(path: str | Path) -> DeploymentConfig:
     metadata = parse_metadata(mapping(root.get("metadata"), "metadata"))
     nodes = named_section(root.get("nodes"), "nodes", parse_node)
     robots = named_section(root.get("robots", {}), "robots", parse_robot)
+    sensors = named_section(root.get("sensors", {}), "sensors", parse_sensor)
     models = named_section(root.get("models", {}), "models", parse_model)
     runtimes = named_section(root.get("runtimes", {}), "runtimes", parse_runtime)
     if not nodes:
         raise ConfigError("nodes must contain at least one node")
 
-    _validate_references(nodes, robots, models, runtimes)
+    _validate_references(nodes, robots, sensors, models, runtimes)
     _validate_unique_robot_ports(robots)
     _validate_unique_model_ports(models)
     return DeploymentConfig(
@@ -52,6 +55,7 @@ def load_config(path: str | Path) -> DeploymentConfig:
         metadata=metadata,
         nodes=nodes,
         robots=robots,
+        sensors=sensors,
         models=models,
         runtimes=runtimes,
     )
@@ -112,6 +116,7 @@ def _load_yaml(path: Path) -> Any:
 def _validate_references(
     nodes: dict[str, NodeConfig],
     robots: dict[str, RobotConfig],
+    sensors: dict[str, SensorConfig],
     models: dict[str, ModelConfig],
     runtimes: dict[str, RuntimeConfig],
 ) -> None:
@@ -125,6 +130,12 @@ def _validate_references(
             raise ConfigError(
                 f"model {model.model_id!r} references unknown node {model.node!r}"
             )
+    for sensor in sensors.values():
+        if sensor.node not in nodes:
+            raise ConfigError(
+                f"sensor {sensor.sensor_id!r} references unknown node "
+                f"{sensor.node!r}"
+            )
     for runtime in runtimes.values():
         if runtime.robot not in robots:
             raise ConfigError(
@@ -136,6 +147,12 @@ def _validate_references(
                 f"runtime {runtime.runtime_id!r} references unknown model "
                 f"{runtime.model!r}"
             )
+        for input_name, sensor_id in runtime.inputs.items():
+            if sensor_id not in sensors:
+                raise ConfigError(
+                    f"runtime {runtime.runtime_id!r} input {input_name!r} "
+                    f"references unknown sensor {sensor_id!r}"
+                )
 
 
 def _validate_unique_robot_ports(robots: dict[str, RobotConfig]) -> None:

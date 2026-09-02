@@ -11,7 +11,7 @@ from typing import Any
 
 from rlinf_deploy.bindings import BindingRun, BindingRunRequest
 from rlinf_deploy.robots.lerobot.so101 import SO101Config
-from rlinf_deploy.robots.sensors.cameras import V4L2CameraConfig
+from rlinf_deploy.robots.sensors import SensorInput
 from rlinf_deploy.services.config.robot import parse_so101_config
 
 SPEC_SCHEMA = "rlinf.runtime.so101-pi05.v1"
@@ -27,7 +27,7 @@ class SO101Pi05Spec:
     prompt: str
     model_endpoint: str
     robot: SO101Config
-    cameras: tuple[V4L2CameraConfig, ...]
+    inputs: tuple[SensorInput, ...]
     max_steps: int
     control_hz: float
     request_timeout_s: float
@@ -54,15 +54,14 @@ class SO101Pi05Spec:
                 "max_joint_step_deg": self.robot.max_joint_step_deg,
                 "max_gripper_step": self.robot.max_gripper_step,
                 "step_limit_mode": self.robot.step_limit_mode,
-                "cameras": [
+                "inputs": [
                     {
-                        "name": camera.name,
-                        "device": camera.device,
-                        "width": camera.width,
-                        "height": camera.height,
-                        "fps": camera.fps,
+                        "sensor_id": item.sensor_id,
+                        "name": item.name,
+                        "type": item.kind,
+                        "options": dict(item.options),
                     }
-                    for camera in self.cameras
+                    for item in self.inputs
                 ],
                 "max_steps": self.max_steps,
                 "control_hz": self.control_hz,
@@ -83,19 +82,19 @@ class SO101Pi05Spec:
         root = _mapping(payload, "runtime specification")
         if root.get("schema") != SPEC_SCHEMA:
             raise SO101Pi05SpecError("unsupported runtime specification schema")
-        cameras_value = root.get("cameras")
-        if not isinstance(cameras_value, list) or not cameras_value:
-            raise SO101Pi05SpecError("runtime cameras must be a non-empty list")
-        cameras = tuple(
-            _camera_spec(item, index) for index, item in enumerate(cameras_value)
+        inputs_value = root.get("inputs")
+        if not isinstance(inputs_value, list) or not inputs_value:
+            raise SO101Pi05SpecError("runtime inputs must be a non-empty list")
+        inputs = tuple(
+            _sensor_input(item, index) for index, item in enumerate(inputs_value)
         )
-        _validate_unique_cameras(cameras)
+        _validate_unique_inputs(inputs)
         return cls(
             runtime_id=_string(root, "runtime_id"),
             prompt=_string(root, "prompt"),
             model_endpoint=_string(root, "model_endpoint"),
             robot=_robot_config(root),
-            cameras=cameras,
+            inputs=inputs,
             max_steps=_positive_integer(root, "max_steps"),
             control_hz=_positive_number(root, "control_hz"),
             request_timeout_s=_positive_number(root, "request_timeout_s"),
@@ -110,12 +109,18 @@ def build_run(request: BindingRunRequest) -> BindingRun:
         request.robot_kind,
         request.robot_options,
     )
+    inputs = tuple(request.inputs)
+    if not inputs:
+        raise SO101Pi05SpecError(
+            f"runtime {request.runtime_id!r} requires at least one sensor input"
+        )
+    _validate_unique_inputs(inputs)
     spec = SO101Pi05Spec(
         runtime_id=request.runtime_id,
         prompt=request.prompt,
         model_endpoint=request.model_endpoint,
         robot=robot,
-        cameras=_configured_cameras(request.robot_options, request.robot_id),
+        inputs=inputs,
         max_steps=request.max_steps,
         control_hz=request.control_hz,
         request_timeout_s=request.request_timeout_s,
@@ -123,58 +128,23 @@ def build_run(request: BindingRunRequest) -> BindingRun:
     return BindingRun(arguments=("--spec-json", spec.to_json()))
 
 
-def _configured_cameras(
-    robot_options: Mapping[str, Any],
-    robot_id: str,
-) -> tuple[V4L2CameraConfig, ...]:
-    sensors = robot_options.get("sensors")
-    if not isinstance(sensors, Mapping) or not sensors:
-        raise SO101Pi05SpecError(
-            f"robot {robot_id!r} requires at least one camera sensor"
+def _sensor_input(value: object, index: int) -> SensorInput:
+    item = _mapping(value, f"runtime inputs[{index}]")
+    try:
+        return SensorInput(
+            sensor_id=_string(item, "sensor_id"),
+            name=_string(item, "name"),
+            kind=_string(item, "type"),
+            options=_mapping(item.get("options"), f"runtime inputs[{index}].options"),
         )
-    cameras: list[V4L2CameraConfig] = []
-    for name, value in sensors.items():
-        if not isinstance(name, str) or not isinstance(value, Mapping):
-            raise SO101Pi05SpecError(
-                f"robot {robot_id!r} sensors must be named objects"
-            )
-        if value.get("type") != "v4l2":
-            raise SO101Pi05SpecError(
-                f"robot {robot_id!r} sensor {name!r} must use type 'v4l2'"
-            )
-        item = _mapping(value, f"robot {robot_id!r} sensor {name!r}")
-        cameras.append(
-            V4L2CameraConfig(
-                name=name,
-                device=_string(item, "device"),
-                width=_positive_integer(item, "width"),
-                height=_positive_integer(item, "height"),
-                fps=_positive_number(item, "fps"),
-            )
-        )
-    result = tuple(cameras)
-    _validate_unique_cameras(result)
-    return result
+    except ValueError as error:
+        raise SO101Pi05SpecError(f"runtime input is invalid: {error}") from error
 
 
-def _camera_spec(value: object, index: int) -> V4L2CameraConfig:
-    item = _mapping(value, f"runtime cameras[{index}]")
-    return V4L2CameraConfig(
-        name=_string(item, "name"),
-        device=_string(item, "device"),
-        width=_positive_integer(item, "width"),
-        height=_positive_integer(item, "height"),
-        fps=_positive_number(item, "fps"),
-    )
-
-
-def _validate_unique_cameras(cameras: tuple[V4L2CameraConfig, ...]) -> None:
-    names = [camera.name for camera in cameras]
-    devices = [camera.device for camera in cameras]
+def _validate_unique_inputs(inputs: tuple[SensorInput, ...]) -> None:
+    names = [item.name for item in inputs]
     if len(names) != len(set(names)):
-        raise SO101Pi05SpecError("runtime camera names must be unique")
-    if len(devices) != len(set(devices)):
-        raise SO101Pi05SpecError("runtime camera devices must be unique")
+        raise SO101Pi05SpecError("runtime input names must be unique")
 
 
 def _robot_config(value: Mapping[str, Any]) -> SO101Config:
