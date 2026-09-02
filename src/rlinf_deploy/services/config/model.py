@@ -30,12 +30,20 @@ class ModelConfig:
     node: str
     environment: str | None
     python: str | None
+    environment_index: str | None
+    environment_packages: tuple[str, ...]
     server: ServerConfig
     options: dict[str, Any] = field(default_factory=dict, repr=False)
 
 
 def parse_model(model_id: str, value: dict[str, Any]) -> ModelConfig:
     context = f"models.{model_id}"
+    environment_packages = _environment_packages(value, context)
+    environment_index = optional_string(value, "environment_index", context)
+    if environment_index is not None and not environment_packages:
+        raise ConfigError(
+            f"{context}.environment_index requires environment_packages"
+        )
     server_value = mapping(value.get("server"), f"{context}.server")
     reject_unknown(server_value, {"bind", "port"}, f"{context}.server")
     server = ServerConfig(
@@ -52,9 +60,37 @@ def parse_model(model_id: str, value: dict[str, Any]) -> ModelConfig:
         node=string(value, "node", context),
         environment=optional_string(value, "environment", context),
         python=optional_string(value, "python", context),
+        environment_index=environment_index,
+        environment_packages=environment_packages,
         server=server,
         options=dict(value),
     )
+
+
+def _environment_packages(
+    value: dict[str, Any],
+    context: str,
+) -> tuple[str, ...]:
+    packages = value.get("environment_packages")
+    if packages is None:
+        return ()
+    if not isinstance(packages, list) or not packages:
+        raise ConfigError(
+            f"{context}.environment_packages must be a non-empty list"
+        )
+    result: list[str] = []
+    for index, package in enumerate(packages):
+        if (
+            not isinstance(package, str)
+            or not package.strip()
+            or package.startswith("-")
+        ):
+            raise ConfigError(
+                f"{context}.environment_packages[{index}] must be a package "
+                "requirement"
+            )
+        result.append(package)
+    return tuple(result)
 
 
 __all__ = ["ModelConfig", "ServerConfig"]

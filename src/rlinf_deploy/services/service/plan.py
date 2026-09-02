@@ -81,12 +81,14 @@ def _model_service(
     if gpu is not None:
         argv.extend(("--device", gpu))
     argv.extend(("--host", model.server.bind, "--port", str(model.server.port)))
+    endpoint = _endpoint(config, model, consumer_node=model.node)
     return ServiceSpec(
         service_id=model.model_id,
         kind="model",
         node=model.node,
         environment_id=environment.environment_id,
-        endpoint=_endpoint(config, model, consumer_node=model.node),
+        endpoint=endpoint,
+        health_endpoint=f"{endpoint}/healthz",
         command=Command(tuple(argv)),
     )
 

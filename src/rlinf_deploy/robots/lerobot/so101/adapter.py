@@ -47,6 +47,11 @@ def _numbers(value: object, name: str, length: int) -> tuple[float, ...]:
     return tuple(_number(item, f"{name}[{index}]") for index, item in enumerate(value))
 
 
+def _clip_step(target: float, present: float, limit: float) -> float:
+    delta = target - present
+    return present + max(-limit, min(limit, delta))
+
+
 class SO101Adapter:
     """Synchronous adapter for one calibrated SO-101 follower arm."""
 
@@ -72,7 +77,7 @@ class SO101Adapter:
                 "id": config.calibration_id or config.robot_id,
                 "disable_torque_on_disconnect": config.disable_torque_on_disconnect,
                 "use_degrees": True,
-                # This adapter rejects oversized steps instead of allowing the SDK to clip them.
+                # RLinf validates or clips steps before reaching the SDK.
                 "max_relative_target": None,
                 "cameras": {},
             }
@@ -156,16 +161,27 @@ class SO101Adapter:
             abs(target - present)
             for target, present in zip(target_joints, current[:-1])
         )
-        if maximum_joint_step > self.config.max_joint_step_deg:
-            raise SO101AdapterError(
-                f"joint step {maximum_joint_step:.6f} exceeds "
-                f"{self.config.max_joint_step_deg:.6f} degrees"
-            )
         gripper_step = abs(target_gripper - current[-1])
-        if gripper_step > self.config.max_gripper_step:
-            raise SO101AdapterError(
-                f"gripper step {gripper_step:.6f} exceeds "
-                f"{self.config.max_gripper_step:.6f}"
+        if self.config.step_limit_mode == "reject":
+            if maximum_joint_step > self.config.max_joint_step_deg:
+                raise SO101AdapterError(
+                    f"joint step {maximum_joint_step:.6f} exceeds "
+                    f"{self.config.max_joint_step_deg:.6f} degrees"
+                )
+            if gripper_step > self.config.max_gripper_step:
+                raise SO101AdapterError(
+                    f"gripper step {gripper_step:.6f} exceeds "
+                    f"{self.config.max_gripper_step:.6f}"
+                )
+        else:
+            target_joints = tuple(
+                _clip_step(target, present, self.config.max_joint_step_deg)
+                for target, present in zip(target_joints, current[:-1])
+            )
+            target_gripper = _clip_step(
+                target_gripper,
+                current[-1],
+                self.config.max_gripper_step,
             )
         command = {
             feature: value

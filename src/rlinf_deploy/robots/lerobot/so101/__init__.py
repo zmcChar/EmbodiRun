@@ -8,7 +8,7 @@ from .adapter import (
     SO101Adapter,
     SO101AdapterError,
 )
-from .config import SO101Config
+from .config import SO101Config, StepLimitMode
 
 __all__ = [
     "SO101_ACTION_SPACE",
@@ -18,4 +18,5 @@ __all__ = [
     "SO101Adapter",
     "SO101AdapterError",
     "SO101Config",
+    "StepLimitMode",
 ]

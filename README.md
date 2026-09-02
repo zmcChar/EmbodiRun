@@ -76,13 +76,16 @@ start services, or write deployment state.
 Initialize the nodes, then start their persistent services:
 
 ```bash
-# First replace the example commit, checkpoint, calibration, and camera values.
-export JETSON_AGX_THOR_232_SSH_PASSWORD='<ssh-password>'
+# The checked-in configuration uses key-based SSH to the lab Thor and its
+# verified SO-101, calibration, camera, and pi0.5 checkpoint paths.
 uv run rlinf-deploy \
   --config examples/muti-nodes.example.yaml init
 
 uv run rlinf-deploy \
   --config examples/muti-nodes.example.yaml up
+
+uv run rlinf-deploy \
+  --config examples/muti-nodes.example.yaml down
 ```
 
 `init` probes Python, Git, and uv; checks configured robot, calibration, model,
@@ -95,9 +98,33 @@ dependencies. Successful initialization is recorded locally below
 
 `up` refuses to run without state from a successful `init`, or if the YAML has
 changed since initialization. It starts PID-supervised model services and is
-idempotent for services that are already running. The two SO101 binding runtimes
-remain independent and will be invoked later by the runtime-oriented `run`
-command; `up` does not connect to or move either arm.
+idempotent for services that are already running. The SO101 binding runtime
+remains independent; `up` does not connect to or move the arm. `down` stops only
+identity-checked model service processes and is also available when the YAML has
+changed, allowing a safe `down` → `init` → `up` reconfiguration sequence.
+
+After `up` reports the model service as healthy, route one prompt through a
+configured runtime:
+
+```bash
+rlinf-deploy \
+  --config examples/muti-nodes.example.yaml \
+  --runtime so101-1-runtime \
+  --prompt "Pick up the cube and put it into the bowl." \
+  --execute
+```
+
+`--execute` is required because this command can move a physical robot. The
+default is one inference/action step. Use `--max-steps N` to keep the same
+policy session open for a bounded multi-step task. Before connecting the arm,
+the binding checks model health and opens, warms up, and validates every camera.
+Each returned action is still subject to the SO101 joint and gripper step limits
+from the deployment YAML. `step_limit_mode: reject` rejects an oversized target
+without sending it. `step_limit_mode: clip` bounds every joint and the gripper
+independently before sending one command; the checked-in Thor configuration uses
+5 degrees and 10 gripper units for its initial tests. Clipping is a per-step
+rate limit, not collision avoidance. A PI0.5 response has no task-complete
+signal, so the step bound is always the stopping condition.
 
 ## HTTP contract
 

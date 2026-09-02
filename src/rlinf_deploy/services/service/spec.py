@@ -18,6 +18,7 @@ class ServiceSpec:
     node: str
     environment_id: str
     endpoint: str
+    health_endpoint: str
     command: Command
 
 

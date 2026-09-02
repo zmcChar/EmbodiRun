@@ -28,6 +28,8 @@ class EnvironmentProfile:
     group: str
     path: str
     python: str | None = None
+    package_index: str | None = None
+    packages: tuple[str, ...] = ()
 
 
 def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, ...]:
@@ -73,6 +75,8 @@ def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, 
                 group=group,
                 path=path,
                 python=model.python or _MODEL_PYTHON.get(group),
+                package_index=model.environment_index,
+                packages=model.environment_packages,
             )
         )
 

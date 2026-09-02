@@ -98,37 +98,104 @@ class FailingExecutor:
         self.closed = True
 
 
-def test_example_resolves_shared_environments_and_two_runtimes() -> None:
+class ServiceReadinessExecutor:
+    def __init__(
+        self,
+        *,
+        process_state="running",
+        health_exit_code=0,
+    ) -> None:
+        self.process_state = process_state
+        self.health_exit_code = health_exit_code
+        self.commands = []
+        self.closed = False
+
+    def run(self, command, *, check=True):
+        self.commands.append((command, check))
+        if command.argv[:2] == ("test", "-x"):
+            return CommandResult(0)
+        if command.argv[:2] == ("sh", "-c"):
+            if "nohup" in command.argv[2]:
+                return CommandResult(0, "running\t321\n")
+            return CommandResult(0, f"{self.process_state}\t321\n")
+        if any(argument.endswith("/healthz") for argument in command.argv):
+            return CommandResult(self.health_exit_code)
+        raise AssertionError(f"unexpected command: {command.argv!r}")
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class RuntimeExecutor:
+    def __init__(self, result=None) -> None:
+        self.commands = []
+        self.closed = False
+        self.result = result or CommandResult(
+            0,
+            '{"event":"step","step":1}\n'
+            '{"event":"complete","steps":1}\n',
+        )
+
+    def run(self, command, *, check=True):
+        self.commands.append((command, check))
+        if command.argv[:2] == ("test", "-x"):
+            return CommandResult(0)
+        if command.argv[1:4] == (
+            "-m",
+            "rlinf_deploy.bindings.lerobot.so101.pi05.runner",
+            "--spec-json",
+        ):
+            return self.result
+        raise AssertionError(f"unexpected command: {command.argv!r}")
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class DownExecutor:
+    def __init__(self) -> None:
+        self.commands = []
+        self.closed = False
+
+    def run(self, command, *, check=True):
+        self.commands.append((command, check))
+        if command.argv[:2] == ("sh", "-c"):
+            return CommandResult(0, "stopped\n")
+        raise AssertionError(f"unexpected command: {command.argv!r}")
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_example_resolves_real_thor_environment_and_runtime() -> None:
     config = load_config(EXAMPLE)
     profiles = environment_profiles(config)
     plan = build_plan(config)
 
-    assert config.metadata.name == "thor-dual-so101-pi05-example"
+    assert config.metadata.name == "thor-so101-pi05"
     assert len(profiles) == 2
     assert {(item.project, item.group) for item in profiles} == {
         ("deploy", "robot-so101"),
         ("inference", "pi05"),
     }
     assert len(plan.services) == 1
+    assert plan.services[0].health_endpoint == "http://127.0.0.1:8000/healthz"
     assert plan.services[0].command.argv == (
         "vvla-http-serve",
         "--policy",
         "pi05",
         "--checkpoint",
-        "/path/to/pi05-so101-checkpoint",
+        "/home/user/models/pi05_so101",
         "--adapter-config",
-        "configs/pi05_so101_http_serve.example.json",
+        "/home/user/.config/rlinf-deploy/pi05_so101_http_serve.json",
         "--device",
         "cuda:0",
         "--host",
-        "0.0.0.0",
+        "127.0.0.1",
         "--port",
         "8000",
     )
-    assert {runtime.runtime_id for runtime in plan.runtimes} == {
-        "so101-1-runtime",
-        "so101-2-runtime",
-    }
+    assert {runtime.runtime_id for runtime in plan.runtimes} == {"so101-1-runtime"}
     assert {runtime.model_endpoint for runtime in plan.runtimes} == {
         "http://127.0.0.1:8000"
     }
@@ -161,6 +228,36 @@ def test_uv_environment_manager_uses_only_the_selected_group() -> None:
     )
     assert command.cwd == "/opt/rlinf-deploy"
     assert command.environment == {"UV_PROJECT_ENVIRONMENT": ".venv-robot-so101"}
+
+
+def test_uv_environment_manager_applies_configured_package_overlay() -> None:
+    profile = next(
+        item
+        for item in environment_profiles(load_config(EXAMPLE))
+        if item.project == "inference"
+    )
+    executor = RecordingExecutor()
+
+    UvEnvironmentManager(executor).prepare(
+        profile,
+        project_dir="/opt/rlinf-inference",
+    )
+
+    assert len(executor.commands) == 2
+    command, check = executor.commands[1]
+    assert check is True
+    assert command.argv == (
+        "uv",
+        "pip",
+        "install",
+        "--python",
+        "/opt/rlinf-inference/.venv-vvla/bin/python",
+        "--index-url",
+        "https://download.pytorch.org/whl/cu130",
+        "torch==2.10.0+cu130",
+        "torchvision==0.25.0+cu130",
+    )
+    assert command.timeout_s == 1800.0
 
 
 def test_project_manager_clones_and_fetches_only_when_missing() -> None:
@@ -282,10 +379,16 @@ def test_unknown_node_reference_is_rejected(tmp_path) -> None:
 
 def test_two_robots_cannot_claim_the_same_device_port(tmp_path) -> None:
     config_path = tmp_path / "port-conflict.yaml"
+    duplicate_robot = """
+  so101-conflict:
+    type: lerobot.so101
+    node: jetson-agx-thor-232
+    port: /dev/ttyACM0
+"""
     config_path.write_text(
         EXAMPLE.read_text(encoding="utf-8").replace(
-            "port: /dev/ttyACM1",
-            "port: /dev/ttyACM0",
+            "\nmodels:\n",
+            f"{duplicate_robot}\nmodels:\n",
         ),
         encoding="utf-8",
     )
@@ -345,8 +448,202 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
         command.argv[2] for command in up_commands if command.argv[:2] == ("sh", "-c")
     )
     assert "/sources/inference/.venv-vvla/bin/vvla-http-serve" in start_script
-    assert "/sources/deploy/configs/pi05_so101_http_serve.example.json" in start_script
+    assert (
+        "/home/user/.config/rlinf-deploy/pi05_so101_http_serve.json"
+        in start_script
+    )
+    health_command, health_check = next(
+        (command, check)
+        for command, check in executors[1].commands
+        if any(argument.endswith("/healthz") for argument in command.argv)
+    )
+    assert health_command.argv[-2] == "http://127.0.0.1:8000/healthz"
+    assert health_check is False
     assert "123456" not in up_output.out
+
+
+def test_cli_routes_prompt_to_selected_runtime(tmp_path, capsys) -> None:
+    state_dir = tmp_path / "state"
+    base_args = (
+        "--config",
+        str(EXAMPLE),
+        "--state-dir",
+        str(state_dir),
+    )
+    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
+    capsys.readouterr()
+    assert (
+        main(
+            (*base_args, "up"),
+            executor_factory=lambda _node: ServiceReadinessExecutor(),
+        )
+        == 0
+    )
+    capsys.readouterr()
+    executor = RuntimeExecutor()
+
+    exit_code = main(
+        (
+            *base_args,
+            "--runtime",
+            "so101-1-runtime",
+            "--prompt",
+            "把红色积木放进盒子",
+            "--execute",
+        ),
+        executor_factory=lambda _node: executor,
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.err == ""
+    result = json.loads(captured.out)
+    assert result["command"] == "run"
+    assert result["runtime"] == "so101-1-runtime"
+    command = executor.commands[-1][0]
+    assert command.argv[1:4] == (
+        "-m",
+        "rlinf_deploy.bindings.lerobot.so101.pi05.runner",
+        "--spec-json",
+    )
+    payload = json.loads(command.argv[4])
+    assert payload["prompt"] == "把红色积木放进盒子"
+    assert payload["model_endpoint"] == "http://127.0.0.1:8000"
+    assert payload["max_steps"] == 1
+    assert payload["max_joint_step_deg"] == 5.0
+    assert payload["max_gripper_step"] == 10.0
+    assert payload["step_limit_mode"] == "clip"
+    assert {camera["name"] for camera in payload["cameras"]} == {
+        "observation.images.front",
+        "observation.images.wrist",
+    }
+    assert executor.closed is True
+
+
+def test_cli_runtime_requires_explicit_motion_confirmation(tmp_path, capsys) -> None:
+    factory_called = False
+
+    def factory(_node):
+        nonlocal factory_called
+        factory_called = True
+        return RuntimeExecutor()
+
+    exit_code = main(
+        (
+            "--config",
+            str(EXAMPLE),
+            "--state-dir",
+            str(tmp_path),
+            "--runtime",
+            "so101-1-runtime",
+            "--prompt",
+            "move",
+        ),
+        executor_factory=factory,
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "physical motion is disabled" in captured.err
+    assert factory_called is False
+
+
+def test_cli_runtime_surfaces_remote_binding_error(tmp_path, capsys) -> None:
+    state_dir = tmp_path / "state"
+    base_args = (
+        "--config",
+        str(EXAMPLE),
+        "--state-dir",
+        str(state_dir),
+    )
+    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
+    capsys.readouterr()
+    assert (
+        main(
+            (*base_args, "up"),
+            executor_factory=lambda _node: ServiceReadinessExecutor(),
+        )
+        == 0
+    )
+    capsys.readouterr()
+    executor = RuntimeExecutor(
+        CommandResult(
+            1,
+            '{"event":"error","error":"joint step exceeds 12 degrees"}\n',
+            "remote warning",
+        )
+    )
+
+    exit_code = main(
+        (
+            *base_args,
+            "--runtime",
+            "so101-1-runtime",
+            "--prompt",
+            "move",
+            "--execute",
+        ),
+        executor_factory=lambda _node: executor,
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "joint step exceeds 12 degrees" in captured.err
+    runtime_command, check = executor.commands[-1]
+    assert runtime_command.argv[1:3] == (
+        "-m",
+        "rlinf_deploy.bindings.lerobot.so101.pi05.runner",
+    )
+    assert check is False
+
+
+@pytest.mark.parametrize(
+    ("process_state", "health_exit_code", "error"),
+    [
+        ("stale", 1, "exited before becoming ready"),
+        ("running", 1, "did not become healthy"),
+    ],
+)
+def test_cli_up_fails_until_service_is_healthy(
+    tmp_path,
+    capsys,
+    process_state,
+    health_exit_code,
+    error,
+) -> None:
+    state_dir = tmp_path / "state"
+    base_args = (
+        "--config",
+        str(EXAMPLE),
+        "--state-dir",
+        str(state_dir),
+    )
+    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
+    capsys.readouterr()
+    executor = ServiceReadinessExecutor(
+        process_state=process_state,
+        health_exit_code=health_exit_code,
+    )
+
+    exit_code = main(
+        (*base_args, "up", "--wait-timeout", "0.01"),
+        executor_factory=lambda _node: executor,
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert error in captured.err
+    assert "/logs/pi05-01.log" in captured.err
+    state = StateStore(state_dir / "thor-so101-pi05.json").load()
+    assert state is not None
+    assert state.services["pi05-01"] == ServiceState(
+        service_id="pi05-01",
+        node="jetson-agx-thor-232",
+        status="failed",
+        pid=321,
+        endpoint="http://127.0.0.1:8000",
+    )
+    assert executor.closed is True
 
 
 def test_cli_probe_only_checks_connectivity_and_does_not_write_state(
@@ -435,6 +732,39 @@ def test_cli_up_requires_successful_matching_init(tmp_path, capsys) -> None:
     captured = capsys.readouterr()
     assert exit_code == 1
     assert "not initialized" in captured.err
+
+
+def test_cli_down_stops_services_after_configuration_changes(tmp_path, capsys) -> None:
+    config_path = tmp_path / "deployment.yaml"
+    config_path.write_text(EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
+    state_dir = tmp_path / "state"
+    base_args = ("--config", str(config_path), "--state-dir", str(state_dir))
+    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
+    capsys.readouterr()
+    assert (
+        main(
+            (*base_args, "up"),
+            executor_factory=lambda _node: ServiceReadinessExecutor(),
+        )
+        == 0
+    )
+    capsys.readouterr()
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8") + "\n# safety changed\n",
+        encoding="utf-8",
+    )
+    executor = DownExecutor()
+
+    exit_code = main(
+        (*base_args, "down"),
+        executor_factory=lambda _node: executor,
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out)["services"][0]["status"] == "stopped"
+    assert "kill -TERM" in executor.commands[0][0].argv[2]
+    assert executor.closed is True
 
 
 def test_cli_up_rejects_config_changed_after_init(tmp_path, capsys) -> None:

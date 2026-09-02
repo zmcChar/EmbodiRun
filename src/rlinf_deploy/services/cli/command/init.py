@@ -25,8 +25,8 @@ from ...state import (
 )
 from ..context import CommandContext, ExecutorPool, print_json, state_result
 
-DEPLOY_REPOSITORY = "https://github.com/BUAA-CI-LAB/RLinf-deploy.git"
-INFERENCE_REPOSITORY = "https://github.com/BUAA-CI-LAB/RLinf-inference.git"
+DEPLOY_REPOSITORY = "git@github.com:BUAA-CI-LAB/RLinf-deploy.git"
+INFERENCE_REPOSITORY = "git@github.com:BUAA-CI-LAB/RLinf-inference.git"
 DEFAULT_MANAGED_ROOT = ".local/share/rlinf-deploy"
 
 

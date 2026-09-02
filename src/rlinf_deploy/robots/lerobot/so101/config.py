@@ -5,6 +5,10 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
+
+
+StepLimitMode = Literal["reject", "clip"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +20,7 @@ class SO101Config:
     disable_torque_on_disconnect: bool = True
     max_joint_step_deg: float = 12.0
     max_gripper_step: float = 20.0
+    step_limit_mode: StepLimitMode = "reject"
 
     def __post_init__(self) -> None:
         if not self.port.strip():
@@ -28,6 +33,8 @@ class SO101Config:
             raise ValueError("max_joint_step_deg must be positive")
         if not math.isfinite(self.max_gripper_step) or self.max_gripper_step <= 0:
             raise ValueError("max_gripper_step must be positive")
+        if self.step_limit_mode not in {"reject", "clip"}:
+            raise ValueError("step_limit_mode must be 'reject' or 'clip'")
 
 
-__all__ = ["SO101Config"]
+__all__ = ["SO101Config", "StepLimitMode"]

@@ -1,0 +1,354 @@
+"""Route a prompt to one configured robot-policy runtime."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import posixpath
+from collections.abc import Mapping
+from typing import Any
+
+from ...config import config_digest
+from ...executor import Command, CommandResult
+from ...state import StateStore
+from ..context import CommandContext, print_json
+
+
+class RunError(RuntimeError):
+    """A configured runtime cannot be started safely."""
+
+
+DEFAULT_MAX_STEPS = 1
+DEFAULT_CONTROL_HZ = 5.0
+DEFAULT_REQUEST_TIMEOUT_S = 60.0
+_SUPPORTED_BINDING = "lerobot.so101.pi05"
+
+
+def register(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--runtime",
+        help="configured runtime ID to execute (used without a subcommand)",
+    )
+    parser.add_argument(
+        "--prompt",
+        help="instruction sent unchanged to the configured inference runtime",
+    )
+    parser.add_argument(
+        "--max-steps",
+        type=_positive_integer,
+        default=DEFAULT_MAX_STEPS,
+        metavar="N",
+        help=f"maximum actions to execute (default: {DEFAULT_MAX_STEPS})",
+    )
+    parser.add_argument(
+        "--control-hz",
+        type=_positive_number,
+        default=DEFAULT_CONTROL_HZ,
+        metavar="HZ",
+        help=f"maximum control-loop rate (default: {DEFAULT_CONTROL_HZ:g})",
+    )
+    parser.add_argument(
+        "--request-timeout",
+        type=_positive_number,
+        default=DEFAULT_REQUEST_TIMEOUT_S,
+        metavar="SECONDS",
+        help=(
+            "timeout for one inference request "
+            f"(default: {DEFAULT_REQUEST_TIMEOUT_S:g})"
+        ),
+    )
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="confirm that the selected physical robot may move",
+    )
+
+
+def selected(args: argparse.Namespace) -> bool:
+    return args.runtime is not None or args.prompt is not None or args.execute
+
+
+def run(args: argparse.Namespace, context: CommandContext) -> int:
+    if args.runtime is None or args.prompt is None:
+        raise RunError("--runtime and --prompt must be provided together")
+    if not args.prompt.strip():
+        raise RunError("--prompt must not be empty")
+    if not args.execute:
+        raise RunError(
+            "physical motion is disabled; inspect the workspace, then pass --execute"
+        )
+
+    runtime = next(
+        (
+            item
+            for item in context.deployment.runtimes
+            if item.runtime_id == args.runtime
+        ),
+        None,
+    )
+    if runtime is None:
+        available = ", ".join(
+            item.runtime_id for item in context.deployment.runtimes
+        )
+        raise RunError(
+            f"unknown runtime {args.runtime!r}; available runtimes: "
+            f"{available or 'none'}"
+        )
+    if runtime.binding != _SUPPORTED_BINDING:
+        raise RunError(
+            f"runtime binding {runtime.binding!r} has no executable runner"
+        )
+
+    state = StateStore(context.state_path).load()
+    if state is None:
+        raise RunError("deployment is not initialized; run `rlinf-deploy ... init`")
+    if state.config_digest != config_digest(context.config):
+        raise RunError("configuration changed since init; run init again")
+    environment = state.environments.get(runtime.environment_id)
+    if environment is None or environment.status != "ready":
+        raise RunError(
+            f"environment {runtime.environment_id!r} is not ready; run init again"
+        )
+    service = state.services.get(runtime.model)
+    if service is None or service.status != "running":
+        raise RunError(
+            f"model service {runtime.model!r} is not running; run `rlinf-deploy ... up`"
+        )
+    node = state.nodes.get(runtime.node)
+    if node is None:
+        raise RunError(f"initialized state is missing node {runtime.node!r}")
+
+    robot = context.config.robots[runtime.robot]
+    payload = _so101_pi05_payload(
+        runtime_id=runtime.runtime_id,
+        prompt=args.prompt,
+        model_endpoint=runtime.model_endpoint,
+        robot_id=robot.robot_id,
+        robot_port=robot.port,
+        options=robot.options,
+        max_steps=args.max_steps,
+        control_hz=args.control_hz,
+        request_timeout_s=args.request_timeout,
+    )
+    python = posixpath.join(environment.path, "bin", "python")
+    command_timeout_s = max(
+        60.0,
+        args.max_steps * args.request_timeout + 30.0,
+    )
+    with context.executors() as executors:
+        executor = executors.get(runtime.node)
+        available = executor.run(Command(("test", "-x", python)), check=False)
+        if available.exit_code != 0:
+            raise RunError(
+                f"runtime Python is missing or not executable: {python}; run init again"
+            )
+        result = executor.run(
+            Command(
+                (
+                    python,
+                    "-m",
+                    "rlinf_deploy.bindings.lerobot.so101.pi05.runner",
+                    "--spec-json",
+                    json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                ),
+                cwd=node.deploy_project,
+                timeout_s=command_timeout_s,
+            ),
+            check=False,
+        )
+        if result.exit_code != 0:
+            raise RunError(
+                f"runtime {runtime.runtime_id!r} failed: {_failure_detail(result)}"
+            )
+    print_json(
+        {
+            "ok": True,
+            "command": "run",
+            "deployment": context.deployment.name,
+            "runtime": runtime.runtime_id,
+            "node": runtime.node,
+            "steps": args.max_steps,
+            "output": result.stdout.splitlines(),
+        }
+    )
+    return 0
+
+
+def _so101_pi05_payload(
+    *,
+    runtime_id: str,
+    prompt: str,
+    model_endpoint: str,
+    robot_id: str,
+    robot_port: str | None,
+    options: Mapping[str, Any],
+    max_steps: int,
+    control_hz: float,
+    request_timeout_s: float,
+) -> dict[str, object]:
+    if robot_port is None:
+        raise RunError(f"robot {robot_id!r} requires a serial port")
+    sensors = options.get("sensors")
+    if not isinstance(sensors, Mapping) or not sensors:
+        raise RunError(f"robot {robot_id!r} requires at least one camera sensor")
+    cameras: list[dict[str, object]] = []
+    for name, value in sensors.items():
+        if not isinstance(name, str) or not isinstance(value, Mapping):
+            raise RunError(f"robot {robot_id!r} sensors must be named objects")
+        if value.get("type") != "v4l2":
+            raise RunError(
+                f"robot {robot_id!r} sensor {name!r} must use type 'v4l2'"
+            )
+        cameras.append(
+            {
+                "name": name,
+                "device": _option_string(value, "device", f"sensor {name!r}"),
+                "width": _option_integer(value, "width", f"sensor {name!r}"),
+                "height": _option_integer(value, "height", f"sensor {name!r}"),
+                "fps": _option_number(value, "fps", f"sensor {name!r}"),
+            }
+        )
+    return {
+        "schema": "rlinf.runtime.so101-pi05.v1",
+        "runtime_id": runtime_id,
+        "prompt": prompt,
+        "model_endpoint": model_endpoint,
+        "robot_port": robot_port,
+        "robot_id": robot_id,
+        "calibration_id": _optional_option_string(options, "calibration_id"),
+        "calibration_dir": _optional_option_string(options, "calibration_dir"),
+        "disable_torque_on_disconnect": _option_boolean(
+            options,
+            "disable_torque_on_disconnect",
+            default=True,
+        ),
+        "max_joint_step_deg": _option_number(
+            options,
+            "max_joint_step_deg",
+            "robot options",
+            default=12.0,
+        ),
+        "max_gripper_step": _option_number(
+            options,
+            "max_gripper_step",
+            "robot options",
+            default=20.0,
+        ),
+        "step_limit_mode": _option_choice(
+            options,
+            "step_limit_mode",
+            {"reject", "clip"},
+            default="reject",
+        ),
+        "cameras": cameras,
+        "max_steps": max_steps,
+        "control_hz": control_hz,
+        "request_timeout_s": request_timeout_s,
+    }
+
+
+def _optional_option_string(options: Mapping[str, Any], name: str) -> str | None:
+    value = options.get(name)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise RunError(f"robot option {name!r} must be a non-empty string")
+    return value
+
+
+def _option_string(options: Mapping[str, Any], name: str, context: str) -> str:
+    value = options.get(name)
+    if not isinstance(value, str) or not value.strip():
+        raise RunError(f"{context} requires a non-empty {name!r}")
+    return value
+
+
+def _option_integer(options: Mapping[str, Any], name: str, context: str) -> int:
+    value = options.get(name)
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise RunError(f"{context} requires a positive integer {name!r}")
+    return value
+
+
+def _option_number(
+    options: Mapping[str, Any],
+    name: str,
+    context: str,
+    *,
+    default: float | None = None,
+) -> float:
+    value = options.get(name, default)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise RunError(f"{context} requires a positive number {name!r}")
+    number = float(value)
+    if not math.isfinite(number) or number <= 0:
+        raise RunError(f"{context} requires a positive number {name!r}")
+    return number
+
+
+def _option_boolean(
+    options: Mapping[str, Any],
+    name: str,
+    *,
+    default: bool,
+) -> bool:
+    value = options.get(name, default)
+    if not isinstance(value, bool):
+        raise RunError(f"robot option {name!r} must be a boolean")
+    return value
+
+
+def _option_choice(
+    options: Mapping[str, Any],
+    name: str,
+    choices: set[str],
+    *,
+    default: str,
+) -> str:
+    value = options.get(name, default)
+    if not isinstance(value, str) or value not in choices:
+        raise RunError(f"robot option {name!r} must be one of {sorted(choices)!r}")
+    return value
+
+
+def _positive_integer(value: str) -> int:
+    try:
+        result = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be an integer") from error
+    if result <= 0:
+        raise argparse.ArgumentTypeError("must be positive")
+    return result
+
+
+def _positive_number(value: str) -> float:
+    try:
+        result = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be a number") from error
+    if not math.isfinite(result) or result <= 0:
+        raise argparse.ArgumentTypeError("must be a finite positive number")
+    return result
+
+
+def _failure_detail(result: CommandResult) -> str:
+    for line in reversed(result.stdout.splitlines()):
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if (
+            isinstance(payload, dict)
+            and payload.get("event") == "error"
+            and isinstance(payload.get("error"), str)
+            and payload["error"].strip()
+        ):
+            return payload["error"].strip()
+    lines = (result.stderr or result.stdout).strip().splitlines()
+    if lines:
+        return lines[-1]
+    return f"remote process exited with code {result.exit_code}"
+
+
+__all__ = ["RunError", "register", "run", "selected"]

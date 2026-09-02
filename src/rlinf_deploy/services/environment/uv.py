@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import posixpath
+
 from ..executor import Command, CommandResult, Executor
 from .profile import EnvironmentProfile
 
@@ -39,7 +41,41 @@ class UvEnvironmentManager:
     ) -> CommandResult:
         """Synchronize exactly the locked capability group for one profile."""
 
-        return self.executor.run(self.sync_command(profile, project_dir=project_dir))
+        result = self.executor.run(
+            self.sync_command(profile, project_dir=project_dir)
+        )
+        if not profile.packages:
+            return result
+        return self.executor.run(
+            self.package_command(profile, project_dir=project_dir)
+        )
+
+    def package_command(
+        self,
+        profile: EnvironmentProfile,
+        *,
+        project_dir: str,
+    ) -> Command:
+        if not profile.packages:
+            raise ValueError("environment profile has no package overlay")
+        environment_path = profile.path
+        if not environment_path.startswith("/"):
+            environment_path = posixpath.join(project_dir, environment_path)
+        argv = [
+            self.uv_executable,
+            "pip",
+            "install",
+            "--python",
+            posixpath.join(environment_path, "bin", "python"),
+        ]
+        if profile.package_index is not None:
+            argv.extend(("--index-url", profile.package_index))
+        argv.extend(profile.packages)
+        return Command(
+            argv=tuple(argv),
+            cwd=project_dir,
+            timeout_s=1800.0,
+        )
 
 
 __all__ = ["UvEnvironmentManager"]

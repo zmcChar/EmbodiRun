@@ -1,7 +1,7 @@
 metadata:
-  name: thor-dual-so101-pi05-example
-  deploy-commit: xxx
-  inference-commit: xxx
+  name: thor-so101-pi05
+  deploy-commit: 992b3f4162f3d30b3954718d3eb16ea3a05b776f
+  inference-commit: 5deebca26beab7d13d51f7a6cf25a6ea5ada8c57
 
 nodes:
   jetson-agx-thor-232:
@@ -11,7 +11,6 @@ nodes:
       host: 192.168.2.232
       port: 22
       username: operator
-      password_env: JETSON_AGX_THOR_232_SSH_PASSWORD
       accept_new_host_key: false
 
 robots:
@@ -19,34 +18,24 @@ robots:
     type: lerobot.so101
     node: jetson-agx-thor-232
     port: /dev/ttyACM0
-    calibration_id: so101-1
-    calibration_dir: /path/to/lerobot/calibration
+    calibration_id: thor_so101_follower
+    calibration_dir: /home/user/.cache/huggingface/lerobot/calibration/robots/so_follower
     disable_torque_on_disconnect: true
-    max_joint_step_deg: 12.0
-    max_gripper_step: 20.0
+    max_joint_step_deg: 5.0
+    max_gripper_step: 10.0
+    step_limit_mode: clip
 
     sensors:
-      camera-0:
-        type: realsense
-        serial: REPLACE_WITH_SO101_1_CAMERA_SERIAL
+      observation.images.front:
+        type: v4l2
+        device: /dev/v4l/by-id/usb-icSpring_icspring_camera_202404160005-video-index0
         width: 640
         height: 480
         fps: 30
 
-  so101-2:
-    type: lerobot.so101
-    node: jetson-agx-thor-232
-    port: /dev/ttyACM1
-    calibration_id: so101-2
-    calibration_dir: /path/to/lerobot/calibration
-    disable_torque_on_disconnect: true
-    max_joint_step_deg: 12.0
-    max_gripper_step: 20.0
-
-    sensors:
-      camera-0:
-        type: realsense
-        serial: REPLACE_WITH_SO101_2_CAMERA_SERIAL
+      observation.images.wrist:
+        type: v4l2
+        device: /dev/v4l/by-id/usb-icSpring_icspring_camera-video-index0
         width: 640
         height: 480
         fps: 30
@@ -59,19 +48,18 @@ models:
     node: jetson-agx-thor-232
     gpu: cuda:0
     environment: .venv-vvla
-    source: /path/to/pi05-so101-checkpoint
-    adapter_config: configs/pi05_so101_http_serve.example.json
+    environment_index: https://download.pytorch.org/whl/cu130
+    environment_packages:
+      - torch==2.10.0+cu130
+      - torchvision==0.25.0+cu130
+    source: /home/user/models/pi05_so101
+    adapter_config: /home/user/.config/rlinf-deploy/pi05_so101_http_serve.json
     server:
-      bind: 0.0.0.0
+      bind: 127.0.0.1
       port: 8000
 
 runtimes:
   so101-1-runtime:
     robot: so101-1
-    model: pi05-01
-    binding: lerobot.so101.pi05
-
-  so101-2-runtime:
-    robot: so101-2
     model: pi05-01
     binding: lerobot.so101.pi05
