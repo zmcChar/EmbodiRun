@@ -29,6 +29,26 @@ robot-specific safety and motion execution
 reproducibility. Runtime communication still crosses the versioned HTTP API; the
 deploy package never imports VVLA Python modules.
 
+## Environments
+
+Use uv 0.12.x from the repository root. Each process installs only the capability
+group it needs:
+
+```bash
+uv sync --frozen                                      # core + development tools
+uv sync --frozen --no-dev --group host                # SSH orchestration
+uv sync --python 3.12 --frozen --no-dev \
+  --group robot-so101                                 # SO-101 control agent
+uv sync --frozen --no-dev --group robot-fr3           # FR3 control agent
+```
+
+`robot-so101` requires Python 3.12 or newer. The repository does not set a global
+Python version because the other environments continue to support Python 3.10.
+Groups may be combined when one process genuinely needs multiple capabilities;
+they are not mutually exclusive. Model inference dependencies remain owned and
+locked by the Inference project, even when inference and robot services run on
+the same physical node.
+
 ## HTTP contract
 
 The client expects these endpoints:
@@ -51,7 +71,7 @@ and `session_revision` provide idempotency and ordering.
 Install the official Franky binding that matches the robot server version:
 
 ```bash
-python -m pip install -e '.[fr3]'
+uv sync --frozen --no-dev --group robot-fr3
 ```
 
 The adapter follows the official Franky API:

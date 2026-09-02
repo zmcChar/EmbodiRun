@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,14 +8,21 @@ version = "0.1.0"
 description = "Robot and simulator deployment clients for RLinf inference services"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "Apache-2.0"}
+license = "Apache-2.0"
 dependencies = []
 
-[project.optional-dependencies]
-ssh = ["paramiko>=3.4,<5"]
-fr3 = ["franky-control>=1.1.4,<2"]
-so101 = ["lerobot[feetech]>=0.6,<0.7"]
-test = ["pytest>=8,<9"]
+[dependency-groups]
+dev = ["pytest>=8,<9"]
+host = ["paramiko>=3.4,<5"]
+robot-so101 = ["lerobot[feetech]>=0.6,<0.7"]
+robot-fr3 = ["franky-control>=1.1.4,<2"]
+
+[tool.uv]
+required-version = ">=0.12.0,<0.13"
+default-groups = ["dev"]
+
+[tool.uv.dependency-groups]
+robot-so101 = { requires-python = ">=3.12" }
 
 [project.scripts]
 rlinf-go2-streamvln = "rlinf_deploy.bindings.unitree.go2.streamvln.cli:main"
