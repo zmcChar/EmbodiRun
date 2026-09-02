@@ -41,7 +41,7 @@ def __getattr__(name: str) -> Any:
 
         value = RobotDefinition(
             kind="unitree.go2",
-            config_type=Go2Config,
+            config_factory=Go2Config.from_mapping,
             adapter_type=Go2Adapter,
             environment_group="robot-go2",
         )

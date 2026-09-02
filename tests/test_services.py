@@ -28,7 +28,7 @@ from rlinf_deploy.services.state import (
 )
 
 ROOT = Path(__file__).parents[1]
-EXAMPLE = ROOT / "examples" / "muti-nodes.example.yaml"
+EXAMPLE = ROOT / "configs" / "muti-nodes.example.yaml"
 
 
 class RecordingExecutor:
@@ -142,7 +142,7 @@ class RuntimeExecutor:
             return CommandResult(0)
         if command.argv[1:4] == (
             "-m",
-            "rlinf_deploy.bindings.lerobot.so101.worker",
+            "rlinf_deploy.bindings.worker",
             "--request-json",
         ):
             return self.result
@@ -568,16 +568,18 @@ def test_cli_routes_prompt_to_selected_runtime(tmp_path, capsys) -> None:
     command = executor.commands[-1][0]
     assert command.argv[1:4] == (
         "-m",
-        "rlinf_deploy.bindings.lerobot.so101.worker",
+        "rlinf_deploy.bindings.worker",
         "--request-json",
     )
     payload = json.loads(command.argv[4])
     assert payload["prompt"] == "把红色积木放进盒子"
     assert payload["model_endpoint"] == "http://127.0.0.1:8000"
     assert payload["max_steps"] == 1
-    assert payload["max_joint_step_deg"] == 5.0
-    assert payload["max_gripper_step"] == 10.0
-    assert payload["step_limit_mode"] == "clip"
+    assert payload["robot"]["id"] == "so101-1"
+    assert payload["robot"]["type"] == "lerobot.so101"
+    assert payload["robot"]["options"]["max_joint_step_deg"] == 5.0
+    assert payload["robot"]["options"]["max_gripper_step"] == 10.0
+    assert payload["robot"]["options"]["step_limit_mode"] == "clip"
     assert {item["name"] for item in payload["inputs"]} == {
         "observation.images.front",
         "observation.images.wrist",
@@ -637,7 +639,7 @@ def test_cli_runtime_surfaces_remote_binding_error(tmp_path, capsys) -> None:
     runtime_command, check = executor.commands[-1]
     assert runtime_command.argv[1:3] == (
         "-m",
-        "rlinf_deploy.bindings.lerobot.so101.worker",
+        "rlinf_deploy.bindings.worker",
     )
     assert check is False
 

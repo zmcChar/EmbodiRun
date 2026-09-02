@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import cache
 from importlib import import_module
-from typing import Any, Protocol
+from typing import Protocol
 
 from rlinf_deploy.inference import PolicyObservation, PolicyResult
 from rlinf_deploy.robots import RobotAction, RobotObservation
-from rlinf_deploy.robots.sensors import SensorInput
 from rlinf_deploy.robots.sensors.cameras import CameraFrame
 
 
@@ -37,40 +36,13 @@ class BindingMapper(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class BindingRunRequest:
-    """Generic inputs available when launching one configured binding."""
-
-    runtime_id: str
-    binding_kind: str
-    prompt: str
-    model_endpoint: str
-    robot_id: str
-    robot_kind: str
-    robot_options: Mapping[str, Any]
-    inputs: tuple[SensorInput, ...]
-    runtime_options: Mapping[str, Any]
-    max_steps: int
-    control_hz: float
-    request_timeout_s: float
-
-
-@dataclass(frozen=True, slots=True)
-class BindingRun:
-    """Arguments passed to a binding's remote worker module."""
-
-    arguments: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
 class BindingDefinition:
     """Static compatibility and execution information for one binding."""
 
     kind: str
     robot_kind: str
     model_kind: str
-    worker_module: str | None = None
-    build_run: Callable[[BindingRunRequest], BindingRun] | None = None
-    mapper_factory: Callable[[], BindingMapper] | None = None
+    mapper_factory: Callable[[], BindingMapper]
 
     def __post_init__(self) -> None:
         if not self.kind.strip():
@@ -79,18 +51,8 @@ class BindingDefinition:
             raise ValueError("binding robot kind must not be empty")
         if not self.model_kind.strip():
             raise ValueError("binding model kind must not be empty")
-        executable_parts = (
-            self.worker_module,
-            self.build_run,
-            self.mapper_factory,
-        )
-        if any(part is not None for part in executable_parts) and any(
-            part is None for part in executable_parts
-        ):
-            raise ValueError(
-                "binding worker_module, build_run, and mapper_factory must be "
-                "declared together"
-            )
+        if not callable(self.mapper_factory):
+            raise TypeError("mapper_factory must be callable")
 
 
 _BINDING_KIND = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\Z")
@@ -127,7 +89,5 @@ def binding_definition(kind: str) -> BindingDefinition:
 __all__ = [
     "BindingMapper",
     "BindingDefinition",
-    "BindingRun",
-    "BindingRunRequest",
     "binding_definition",
 ]

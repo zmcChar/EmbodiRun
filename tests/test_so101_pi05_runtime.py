@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from rlinf_deploy.bindings.lerobot.so101 import SO101Runtime
+from rlinf_deploy.bindings.runtime import BindingRuntime
 from rlinf_deploy.bindings.lerobot.so101.pi05 import Pi05SO101Mapper
 from rlinf_deploy.inference import ImagePayload, Session
 from rlinf_deploy.robots import RobotAction
@@ -45,7 +45,7 @@ class FakeMapper(Pi05SO101Mapper):
 def test_so101_binding_converts_camera_frames_to_inference_images() -> None:
     robot = FakeRobot()
     client = FakeClient()
-    runtime = SO101Runtime(
+    runtime = BindingRuntime(
         robot,
         client,
         instruction="pick up the block",

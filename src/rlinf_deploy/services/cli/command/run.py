@@ -8,7 +8,7 @@ import math
 import posixpath
 from typing import Any
 
-from rlinf_deploy.bindings import BindingRunRequest, binding_definition
+from rlinf_deploy.bindings.request import BindingWorkerRequest
 from rlinf_deploy.robots.sensors import SensorInput
 
 from ...config import config_digest
@@ -24,6 +24,7 @@ class RunError(RuntimeError):
 DEFAULT_MAX_STEPS = 1
 DEFAULT_CONTROL_HZ = 5.0
 DEFAULT_REQUEST_TIMEOUT_S = 60.0
+WORKER_MODULE = "rlinf_deploy.bindings.worker"
 
 
 def register(commands: Any) -> None:
@@ -86,17 +87,6 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
             f"unknown runtime {args.runtime!r}; available runtimes: "
             f"{available or 'none'}"
         )
-    try:
-        binding = binding_definition(runtime.binding)
-    except (KeyError, TypeError):
-        raise RunError(
-            f"runtime binding {runtime.binding!r} is not available"
-        ) from None
-    build_run = binding.build_run
-    worker_module = binding.worker_module
-    if build_run is None or worker_module is None:
-        raise RunError(f"runtime binding {runtime.binding!r} has no executable worker")
-
     progress = context.progress
     progress.begin("run", context.deployment.name)
     progress.add_node(runtime.node, total=3)
@@ -136,22 +126,21 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
             for input_name, sensor_id in runtime_config.inputs.items()
         )
         try:
-            invocation = build_run(
-                BindingRunRequest(
-                    runtime_id=runtime.runtime_id,
-                    binding_kind=runtime.binding,
-                    prompt=args.prompt,
-                    model_endpoint=runtime.model_endpoint,
-                    robot_id=robot.robot_id,
-                    robot_kind=robot.kind,
-                    robot_options=robot.options,
-                    inputs=inputs,
-                    runtime_options=runtime_config.options,
-                    max_steps=args.max_steps,
-                    control_hz=args.control_hz,
-                    request_timeout_s=args.request_timeout,
-                )
+            worker_request = BindingWorkerRequest(
+                runtime_id=runtime.runtime_id,
+                binding_kind=runtime.binding,
+                prompt=args.prompt,
+                model_endpoint=runtime.model_endpoint,
+                robot_id=robot.robot_id,
+                robot_kind=robot.kind,
+                robot_options=robot.options,
+                inputs=inputs,
+                runtime_options=runtime_config.options,
+                max_steps=args.max_steps,
+                control_hz=args.control_hz,
+                request_timeout_s=args.request_timeout,
             )
+            worker_request_json = worker_request.to_json()
         except (TypeError, ValueError, RuntimeError) as error:
             raise RunError(str(error)) from error
         progress.advance(runtime.node)
@@ -183,8 +172,9 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
                     (
                         python,
                         "-m",
-                        worker_module,
-                        *invocation.arguments,
+                        WORKER_MODULE,
+                        "--request-json",
+                        worker_request_json,
                     ),
                     cwd=node.deploy_project,
                     timeout_s=command_timeout_s,

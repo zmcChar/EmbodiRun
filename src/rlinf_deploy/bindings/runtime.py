@@ -1,22 +1,23 @@
-"""Coordinate one SO-101 robot with a policy binding."""
+"""Generic request-response control loop for a robot-policy binding."""
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
 
-from rlinf_deploy.bindings import BindingMapper
 from rlinf_deploy.inference import InferenceClient, PolicyResult
-from rlinf_deploy.robots.lerobot.so101 import SO101Adapter
+from rlinf_deploy.robots import RobotAdapter
 from rlinf_deploy.robots.sensors.cameras import CameraFrame
 
+from . import BindingMapper
 
-class SO101Runtime:
-    """Own one policy session and execute validated actions on an SO-101."""
+
+class BindingRuntime:
+    """Own one policy session and execute mapped actions on one robot."""
 
     def __init__(
         self,
-        robot: SO101Adapter,
+        robot: RobotAdapter,
         client: InferenceClient,
         *,
         instruction: str,
@@ -52,8 +53,7 @@ class SO101Runtime:
             frames=tuple(frames),
         )
         result = self.client.step(request)
-        action = self.mapper.map_result(result)
-        self.robot.execute(action)
+        self.robot.execute(self.mapper.map_result(result))
         self.step_id += 1
         return result
 
@@ -72,4 +72,4 @@ class SO101Runtime:
             self.client.close(self.session.session_id)
 
 
-__all__ = ["SO101Runtime"]
+__all__ = ["BindingRuntime"]

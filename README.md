@@ -62,10 +62,10 @@ its nodes:
 
 ```bash
 uv run rlinf-deploy \
-  --config examples/muti-nodes.example.yaml validate
+  --config configs/muti-nodes.example.yaml validate
 
 uv run rlinf-deploy \
-  --config examples/muti-nodes.example.yaml probe
+  --config configs/muti-nodes.example.yaml probe
 ```
 
 `probe` checks every node even if another node is unreachable. It reports the
@@ -80,13 +80,13 @@ Initialize the nodes, then start their persistent services:
 # The checked-in configuration uses key-based SSH to the lab Thor and its
 # verified SO-101, calibration, camera, and pi0.5 checkpoint paths.
 uv run rlinf-deploy \
-  --config examples/muti-nodes.example.yaml init
+  --config configs/muti-nodes.example.yaml init
 
 uv run rlinf-deploy \
-  --config examples/muti-nodes.example.yaml up
+  --config configs/muti-nodes.example.yaml up
 
 uv run rlinf-deploy \
-  --config examples/muti-nodes.example.yaml down
+  --config configs/muti-nodes.example.yaml down
 ```
 
 `init` probes Python, Git, and uv; checks configured robot, calibration, model,
@@ -113,7 +113,7 @@ configured runtime:
 
 ```bash
 rlinf-deploy \
-  --config examples/muti-nodes.example.yaml run \
+  --config configs/muti-nodes.example.yaml run \
   --runtime so101-1-runtime \
   --prompt "Pick up the cube and put it into the bowl."
 ```
@@ -200,30 +200,9 @@ The adapter follows the official Franky API:
 Physical execution is intentionally fail-closed. Joint and Cartesian step
 limits are checked before Franky receives a command.
 
-See `examples/fr3_http_step.py` for a single HTTP inference step followed by
-execution of the returned action chunk.
-
-Quick end-to-end flow:
-
-```bash
-# On Thor: run VVLA HTTP service for pi0.5
-cd third_party/vvla
-vvla-http-serve \
-  --policy pi05 \
-  --checkpoint <pi05-checkpoint> \
-  --adapter-config ../../configs/pi05_http_serve.example.json \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --max-batch 1
-
-# On deploy side: send one image + state and execute one FR3 command
-cd ../..
-python examples/fr3_http_step.py \
-  --robot-host <fr3-ip> \
-  --vvla-url http://<thor-ip>:8000 \
-  --instruction "pick up the object" \
-  --image /path/to/image.jpg
-```
+FR3 and SO-101 share the generic `bindings/request.py`, `bindings/runtime.py`,
+and `bindings/worker.py` execution path. Their `pi05` packages contain only the
+policy-specific mapper and binding definition.
 
 ## Go2
 

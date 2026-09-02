@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import cache
 from importlib import import_module
@@ -17,7 +18,7 @@ class RobotDefinition:
     """Static information Deploy needs before constructing a robot adapter."""
 
     kind: str
-    config_type: type[Any]
+    config_factory: Callable[[str, Mapping[str, Any]], Any]
     adapter_type: type[RobotAdapter]
     environment_group: str
     python: str | None = None
@@ -27,6 +28,8 @@ class RobotDefinition:
             raise ValueError("robot kind must not be empty")
         if not self.environment_group.strip():
             raise ValueError("robot environment group must not be empty")
+        if not callable(self.config_factory):
+            raise TypeError("config_factory must be callable")
         if not issubclass(self.adapter_type, RobotAdapter):
             raise TypeError("adapter_type must inherit RobotAdapter")
 

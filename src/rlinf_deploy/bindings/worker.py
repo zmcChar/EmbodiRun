@@ -1,4 +1,4 @@
-"""Run one bounded SO-101 binding worker on its deployment node."""
+"""Generic process entry point for a configured robot-policy binding."""
 
 from __future__ import annotations
 
@@ -8,37 +8,50 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from rlinf_deploy.bindings import BindingMapper, binding_definition
 from rlinf_deploy.inference import VvlaHttpClient
-from rlinf_deploy.robots.lerobot.so101 import SO101Adapter, SO101Config
+from rlinf_deploy.robots import RobotDefinition, robot_definition
 from rlinf_deploy.robots.sensors import SensorInput
 from rlinf_deploy.robots.sensors.cameras import (
     CameraSource,
     create_camera_source,
 )
 
-from .request import SO101WorkerRequest
-from .runtime import SO101Runtime
+from . import BindingDefinition, binding_definition
+from .request import BindingWorkerRequest
+from .runtime import BindingRuntime
 
 
 class WorkerExecutionError(RuntimeError):
-    """The configured SO-101 worker cannot execute safely."""
+    """The configured binding worker cannot execute safely."""
 
 
 def execute(
-    request: SO101WorkerRequest,
+    request: BindingWorkerRequest,
     *,
     camera_factory: Callable[[Sequence[SensorInput]], CameraSource] = (
         create_camera_source
     ),
-    robot_factory: Callable[[SO101Config], Any] = SO101Adapter,
     client_factory: Callable[..., Any] = VvlaHttpClient,
-    runtime_factory: Callable[..., Any] = SO101Runtime,
+    runtime_factory: Callable[..., Any] = BindingRuntime,
     emit: Callable[[Mapping[str, object]], None] | None = None,
     monotonic: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
 ) -> None:
-    """Run at most ``max_steps`` actions and always release cameras and motors."""
+    """Run a bounded control loop and always release cameras and hardware."""
+
+    binding, robot_definition_value = _definitions(request)
+    if request.runtime_options:
+        names = ", ".join(sorted(request.runtime_options))
+        raise WorkerExecutionError(f"unsupported runtime options: {names}")
+    try:
+        robot_config = robot_definition_value.config_factory(
+            request.robot_id,
+            request.robot_options,
+        )
+    except (TypeError, ValueError) as error:
+        raise WorkerExecutionError(
+            f"robot {request.robot_id!r} configuration is invalid: {error}"
+        ) from error
 
     output = emit or _emit
     client = client_factory(
@@ -51,13 +64,13 @@ def execute(
             f"model service at {request.model_endpoint} is not healthy"
         )
 
-    mapper = _binding_mapper(request.binding_kind)
+    mapper = binding.mapper_factory()
     cameras = camera_factory(request.inputs)
     robot: Any | None = None
     controller: Any | None = None
     completed = 0
     try:
-        robot = robot_factory(request.robot)
+        robot = robot_definition_value.adapter_type(robot_config)
         robot.connect()
         controller = runtime_factory(
             robot,
@@ -101,11 +114,11 @@ def execute(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="rlinf-so101-worker")
+    parser = argparse.ArgumentParser(prog="rlinf-binding-worker")
     parser.add_argument("--request-json", required=True)
     args = parser.parse_args(argv)
     try:
-        execute(SO101WorkerRequest.from_json(args.request_json))
+        execute(BindingWorkerRequest.from_json(args.request_json))
     except (OSError, RuntimeError, ValueError) as error:
         print(
             json.dumps(
@@ -119,22 +132,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _binding_mapper(binding_kind: str) -> BindingMapper:
+def _definitions(
+    request: BindingWorkerRequest,
+) -> tuple[BindingDefinition, RobotDefinition]:
     try:
-        definition = binding_definition(binding_kind)
+        binding = binding_definition(request.binding_kind)
     except (KeyError, TypeError):
         raise WorkerExecutionError(
-            f"binding {binding_kind!r} is not available"
+            f"binding {request.binding_kind!r} is not available"
         ) from None
-    if definition.robot_kind != "lerobot.so101":
+    if binding.robot_kind != request.robot_kind:
         raise WorkerExecutionError(
-            f"binding {binding_kind!r} does not target lerobot.so101"
+            f"binding {request.binding_kind!r} does not target "
+            f"{request.robot_kind!r}"
         )
-    if definition.mapper_factory is None:
+    try:
+        robot = robot_definition(request.robot_kind)
+    except (KeyError, TypeError):
         raise WorkerExecutionError(
-            f"binding {binding_kind!r} does not provide a mapper"
-        )
-    return definition.mapper_factory()
+            f"robot type {request.robot_kind!r} is not available"
+        ) from None
+    return binding, robot
 
 
 def _emit(payload: Mapping[str, object]) -> None:
@@ -146,7 +164,7 @@ if __name__ == "__main__":
 
 
 __all__ = [
-    "SO101WorkerRequest",
+    "BindingWorkerRequest",
     "WorkerExecutionError",
     "execute",
     "main",

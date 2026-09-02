@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 StepLimitMode = Literal["reject", "clip"]
 
@@ -22,6 +23,48 @@ class SO101Config:
     max_joint_step_deg: float = 12.0
     max_gripper_step: float = 20.0
     step_limit_mode: StepLimitMode = "reject"
+
+    @classmethod
+    def from_mapping(
+        cls,
+        robot_id: str,
+        value: Mapping[str, Any],
+    ) -> SO101Config:
+        """Build one SO-101 configuration from its deployment YAML options."""
+
+        options = dict(value)
+        allowed = {
+            "port",
+            "calibration_id",
+            "calibration_dir",
+            "disable_torque_on_disconnect",
+            "max_joint_step_deg",
+            "max_gripper_step",
+            "step_limit_mode",
+        }
+        unknown = sorted(set(options) - allowed)
+        if unknown:
+            raise ValueError(
+                f"unknown SO-101 configuration fields: {', '.join(unknown)}"
+            )
+        calibration_dir = options.get("calibration_dir")
+        if calibration_dir is not None and (
+            not isinstance(calibration_dir, str) or not calibration_dir.strip()
+        ):
+            raise ValueError("calibration_dir must be a non-empty string")
+        return cls(
+            port=options.get("port"),
+            robot_id=robot_id,
+            calibration_id=options.get("calibration_id"),
+            calibration_dir=Path(calibration_dir) if calibration_dir else None,
+            disable_torque_on_disconnect=options.get(
+                "disable_torque_on_disconnect",
+                True,
+            ),
+            max_joint_step_deg=options.get("max_joint_step_deg", 12.0),
+            max_gripper_step=options.get("max_gripper_step", 20.0),
+            step_limit_mode=options.get("step_limit_mode", "reject"),
+        )
 
     def __post_init__(self) -> None:
         if not isinstance(self.port, str) or not self.port.strip():

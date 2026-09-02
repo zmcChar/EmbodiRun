@@ -6,7 +6,7 @@ from .config import FR3Config
 
 ROBOT_DEFINITION = RobotDefinition(
     kind="franka.fr3",
-    config_type=FR3Config,
+    config_factory=FR3Config.from_mapping,
     adapter_type=FR3Adapter,
     environment_group="robot-fr3",
 )
