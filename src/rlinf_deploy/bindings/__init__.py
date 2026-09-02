@@ -3,19 +3,34 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
 from importlib import import_module
 from typing import Any, Protocol
 
-from rlinf_deploy.inference import PolicyResult
-from rlinf_deploy.robots import RobotAction
+from rlinf_deploy.inference import PolicyObservation, PolicyResult
+from rlinf_deploy.robots import RobotAction, RobotObservation
 from rlinf_deploy.robots.sensors import SensorInput
+from rlinf_deploy.robots.sensors.cameras import CameraFrame
 
 
-class ActionMapper(Protocol):
-    """Translate one policy result into a validated robot action."""
+class BindingMapper(Protocol):
+    """Translate observations and results for one policy-robot binding."""
+
+    policy_action_space: str
+
+    def map_observation(
+        self,
+        observation: RobotObservation,
+        *,
+        session_id: str,
+        request_id: str,
+        step_id: int,
+        instruction: str,
+        frames: Sequence[CameraFrame],
+    ) -> PolicyObservation:
+        """Build one policy request without performing inference."""
 
     def map_result(self, result: PolicyResult) -> RobotAction:
         """Map one policy result without executing it."""
@@ -26,6 +41,7 @@ class BindingRunRequest:
     """Generic inputs available when launching one configured binding."""
 
     runtime_id: str
+    binding_kind: str
     prompt: str
     model_endpoint: str
     robot_id: str
@@ -54,6 +70,7 @@ class BindingDefinition:
     model_kind: str
     worker_module: str | None = None
     build_run: Callable[[BindingRunRequest], BindingRun] | None = None
+    mapper_factory: Callable[[], BindingMapper] | None = None
 
     def __post_init__(self) -> None:
         if not self.kind.strip():
@@ -62,9 +79,17 @@ class BindingDefinition:
             raise ValueError("binding robot kind must not be empty")
         if not self.model_kind.strip():
             raise ValueError("binding model kind must not be empty")
-        if (self.worker_module is None) != (self.build_run is None):
+        executable_parts = (
+            self.worker_module,
+            self.build_run,
+            self.mapper_factory,
+        )
+        if any(part is not None for part in executable_parts) and any(
+            part is None for part in executable_parts
+        ):
             raise ValueError(
-                "binding worker_module and build_run must be declared together"
+                "binding worker_module, build_run, and mapper_factory must be "
+                "declared together"
             )
 
 
@@ -100,7 +125,7 @@ def binding_definition(kind: str) -> BindingDefinition:
 
 
 __all__ = [
-    "ActionMapper",
+    "BindingMapper",
     "BindingDefinition",
     "BindingRun",
     "BindingRunRequest",

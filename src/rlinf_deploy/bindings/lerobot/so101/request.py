@@ -1,4 +1,4 @@
-"""Host-to-worker specification for the SO-101/Pi0.5 binding."""
+"""Serializable request for an SO-101 binding worker."""
 
 from __future__ import annotations
 
@@ -14,16 +14,17 @@ from rlinf_deploy.robots.lerobot.so101 import SO101Config
 from rlinf_deploy.robots.sensors import SensorInput
 from rlinf_deploy.services.config.robot import parse_so101_config
 
-SPEC_SCHEMA = "rlinf.runtime.so101-pi05.v1"
+REQUEST_SCHEMA = "rlinf.worker.lerobot-so101.v1"
 
 
-class SO101Pi05SpecError(ValueError):
-    """The SO-101/Pi0.5 worker specification is invalid."""
+class SO101WorkerRequestError(ValueError):
+    """The SO-101 worker request is invalid."""
 
 
 @dataclass(frozen=True, slots=True)
-class SO101Pi05Spec:
+class SO101WorkerRequest:
     runtime_id: str
+    binding_kind: str
     prompt: str
     model_endpoint: str
     robot: SO101Config
@@ -33,13 +34,14 @@ class SO101Pi05Spec:
     request_timeout_s: float
 
     def to_json(self) -> str:
-        """Encode the complete runtime specification for remote execution."""
+        """Encode the complete worker request for remote execution."""
 
         calibration_dir = self.robot.calibration_dir
         return json.dumps(
             {
-                "schema": SPEC_SCHEMA,
+                "schema": REQUEST_SCHEMA,
                 "runtime_id": self.runtime_id,
+                "binding_kind": self.binding_kind,
                 "prompt": self.prompt,
                 "model_endpoint": self.model_endpoint,
                 "robot_port": self.robot.port,
@@ -72,25 +74,26 @@ class SO101Pi05Spec:
         )
 
     @classmethod
-    def from_json(cls, value: str) -> SO101Pi05Spec:
+    def from_json(cls, value: str) -> SO101WorkerRequest:
         try:
             payload = json.loads(value)
         except json.JSONDecodeError as error:
-            raise SO101Pi05SpecError(
-                f"runtime specification is invalid JSON: {error}"
+            raise SO101WorkerRequestError(
+                f"worker request is invalid JSON: {error}"
             ) from error
-        root = _mapping(payload, "runtime specification")
-        if root.get("schema") != SPEC_SCHEMA:
-            raise SO101Pi05SpecError("unsupported runtime specification schema")
+        root = _mapping(payload, "worker request")
+        if root.get("schema") != REQUEST_SCHEMA:
+            raise SO101WorkerRequestError("unsupported worker request schema")
         inputs_value = root.get("inputs")
         if not isinstance(inputs_value, list) or not inputs_value:
-            raise SO101Pi05SpecError("runtime inputs must be a non-empty list")
+            raise SO101WorkerRequestError("worker inputs must be a non-empty list")
         inputs = tuple(
             _sensor_input(item, index) for index, item in enumerate(inputs_value)
         )
         _validate_unique_inputs(inputs)
         return cls(
             runtime_id=_string(root, "runtime_id"),
+            binding_kind=_string(root, "binding_kind"),
             prompt=_string(root, "prompt"),
             model_endpoint=_string(root, "model_endpoint"),
             robot=_robot_config(root),
@@ -102,7 +105,7 @@ class SO101Pi05Spec:
 
 
 def build_run(request: BindingRunRequest) -> BindingRun:
-    """Build the remote invocation for one configured SO-101/Pi0.5 runtime."""
+    """Build the remote invocation for one configured SO-101 runtime."""
 
     robot = parse_so101_config(
         request.robot_id,
@@ -111,12 +114,13 @@ def build_run(request: BindingRunRequest) -> BindingRun:
     )
     inputs = tuple(request.inputs)
     if not inputs:
-        raise SO101Pi05SpecError(
+        raise SO101WorkerRequestError(
             f"runtime {request.runtime_id!r} requires at least one sensor input"
         )
     _validate_unique_inputs(inputs)
-    spec = SO101Pi05Spec(
+    worker_request = SO101WorkerRequest(
         runtime_id=request.runtime_id,
+        binding_kind=request.binding_kind,
         prompt=request.prompt,
         model_endpoint=request.model_endpoint,
         robot=robot,
@@ -125,7 +129,7 @@ def build_run(request: BindingRunRequest) -> BindingRun:
         control_hz=request.control_hz,
         request_timeout_s=request.request_timeout_s,
     )
-    return BindingRun(arguments=("--spec-json", spec.to_json()))
+    return BindingRun(arguments=("--request-json", worker_request.to_json()))
 
 
 def _sensor_input(value: object, index: int) -> SensorInput:
@@ -138,13 +142,13 @@ def _sensor_input(value: object, index: int) -> SensorInput:
             options=_mapping(item.get("options"), f"runtime inputs[{index}].options"),
         )
     except ValueError as error:
-        raise SO101Pi05SpecError(f"runtime input is invalid: {error}") from error
+        raise SO101WorkerRequestError(f"worker input is invalid: {error}") from error
 
 
 def _validate_unique_inputs(inputs: tuple[SensorInput, ...]) -> None:
     names = [item.name for item in inputs]
     if len(names) != len(set(names)):
-        raise SO101Pi05SpecError("runtime input names must be unique")
+        raise SO101WorkerRequestError("worker input names must be unique")
 
 
 def _robot_config(value: Mapping[str, Any]) -> SO101Config:
@@ -163,21 +167,21 @@ def _robot_config(value: Mapping[str, Any]) -> SO101Config:
             step_limit_mode=value.get("step_limit_mode", "reject"),
         )
     except (TypeError, ValueError) as error:
-        raise SO101Pi05SpecError(
+        raise SO101WorkerRequestError(
             f"runtime robot configuration is invalid: {error}"
         ) from error
 
 
 def _mapping(value: object, name: str) -> dict[str, Any]:
     if not isinstance(value, Mapping) or any(not isinstance(key, str) for key in value):
-        raise SO101Pi05SpecError(f"{name} must be an object with string keys")
+        raise SO101WorkerRequestError(f"{name} must be an object with string keys")
     return dict(value)
 
 
 def _string(value: Mapping[str, object], name: str) -> str:
     result = value.get(name)
     if not isinstance(result, str) or not result.strip():
-        raise SO101Pi05SpecError(f"runtime {name} must be a non-empty string")
+        raise SO101WorkerRequestError(f"worker {name} must be a non-empty string")
     return result
 
 
@@ -186,8 +190,8 @@ def _optional_string(value: Mapping[str, object], name: str) -> str | None:
     if result is None:
         return None
     if not isinstance(result, str) or not result.strip():
-        raise SO101Pi05SpecError(
-            f"runtime {name} must be a non-empty string when provided"
+        raise SO101WorkerRequestError(
+            f"worker {name} must be a non-empty string when provided"
         )
     return result
 
@@ -195,23 +199,23 @@ def _optional_string(value: Mapping[str, object], name: str) -> str | None:
 def _positive_integer(value: Mapping[str, object], name: str) -> int:
     result = value.get(name)
     if isinstance(result, bool) or not isinstance(result, int) or result <= 0:
-        raise SO101Pi05SpecError(f"runtime {name} must be a positive integer")
+        raise SO101WorkerRequestError(f"worker {name} must be a positive integer")
     return result
 
 
 def _positive_number(value: Mapping[str, object], name: str) -> float:
     result = value.get(name)
     if isinstance(result, bool) or not isinstance(result, (int, float)):
-        raise SO101Pi05SpecError(f"runtime {name} must be a positive number")
+        raise SO101WorkerRequestError(f"worker {name} must be a positive number")
     number = float(result)
     if not math.isfinite(number) or number <= 0:
-        raise SO101Pi05SpecError(f"runtime {name} must be a positive number")
+        raise SO101WorkerRequestError(f"worker {name} must be a positive number")
     return number
 
 
 __all__ = [
-    "SPEC_SCHEMA",
-    "SO101Pi05Spec",
-    "SO101Pi05SpecError",
+    "REQUEST_SCHEMA",
+    "SO101WorkerRequest",
+    "SO101WorkerRequestError",
     "build_run",
 ]

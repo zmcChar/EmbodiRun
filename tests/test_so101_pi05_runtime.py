@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
-from rlinf_deploy.bindings.lerobot.so101.pi05.runtime import Pi05SO101Runtime
+from rlinf_deploy.bindings.lerobot.so101 import SO101Runtime
+from rlinf_deploy.bindings.lerobot.so101.pi05 import Pi05SO101Mapper
 from rlinf_deploy.inference import ImagePayload, Session
 from rlinf_deploy.robots import RobotAction
 from rlinf_deploy.robots.sensors.cameras import CameraFrame
@@ -36,7 +37,7 @@ class FakeClient:
         return SimpleNamespace(session_revision=1)
 
 
-class FakeMapper:
+class FakeMapper(Pi05SO101Mapper):
     def map_result(self, _result):
         return RobotAction(2.0, {"type": "joint_position"})
 
@@ -44,7 +45,7 @@ class FakeMapper:
 def test_so101_binding_converts_camera_frames_to_inference_images() -> None:
     robot = FakeRobot()
     client = FakeClient()
-    runtime = Pi05SO101Runtime(
+    runtime = SO101Runtime(
         robot,
         client,
         instruction="pick up the block",

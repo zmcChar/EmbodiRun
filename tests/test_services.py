@@ -142,8 +142,8 @@ class RuntimeExecutor:
             return CommandResult(0)
         if command.argv[1:4] == (
             "-m",
-            "rlinf_deploy.bindings.lerobot.so101.pi05.worker",
-            "--spec-json",
+            "rlinf_deploy.bindings.lerobot.so101.worker",
+            "--request-json",
         ):
             return self.result
         raise AssertionError(f"unexpected command: {command.argv!r}")
@@ -568,8 +568,8 @@ def test_cli_routes_prompt_to_selected_runtime(tmp_path, capsys) -> None:
     command = executor.commands[-1][0]
     assert command.argv[1:4] == (
         "-m",
-        "rlinf_deploy.bindings.lerobot.so101.pi05.worker",
-        "--spec-json",
+        "rlinf_deploy.bindings.lerobot.so101.worker",
+        "--request-json",
     )
     payload = json.loads(command.argv[4])
     assert payload["prompt"] == "把红色积木放进盒子"
@@ -637,7 +637,7 @@ def test_cli_runtime_surfaces_remote_binding_error(tmp_path, capsys) -> None:
     runtime_command, check = executor.commands[-1]
     assert runtime_command.argv[1:3] == (
         "-m",
-        "rlinf_deploy.bindings.lerobot.so101.pi05.worker",
+        "rlinf_deploy.bindings.lerobot.so101.worker",
     )
     assert check is False
 

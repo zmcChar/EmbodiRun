@@ -1,4 +1,4 @@
-"""Transport-independent policy client contract."""
+"""Transport-independent inference client contract."""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ from typing import Any, Protocol
 from .contracts import PolicyObservation, PolicyResult, Session
 
 
-class PolicyClient(Protocol):
-    """Session-oriented client implemented by each inference transport."""
+class InferenceClient(Protocol):
+    """Manage policy sessions without exposing a transport implementation."""
 
-    def health(self) -> dict[str, Any]: ...
+    def health(self) -> Mapping[str, Any]: ...
 
-    def capabilities(self) -> dict[str, Any]: ...
+    def capabilities(self) -> Mapping[str, Any]: ...
 
     def open_session(
         self,
@@ -30,4 +30,9 @@ class PolicyClient(Protocol):
     def close(self, session_id: str) -> None: ...
 
 
-__all__ = ["PolicyClient"]
+# Preserve the established public name while bindings migrate to the more
+# transport-neutral interface name.
+PolicyClient = InferenceClient
+
+
+__all__ = ["InferenceClient", "PolicyClient"]

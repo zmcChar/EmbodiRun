@@ -1,6 +1,6 @@
 """Versioned transport boundaries to RLinf Inference/VVLA."""
 
-from .client import PolicyClient
+from .client import InferenceClient, PolicyClient
 from .contracts import (
     ImagePayload,
     PolicyAction,
@@ -15,6 +15,7 @@ __all__ = [
     "HttpResponse",
     "HttpTransport",
     "ImagePayload",
+    "InferenceClient",
     "PolicyAction",
     "PolicyClient",
     "PolicyObservation",

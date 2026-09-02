@@ -5,7 +5,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from rlinf_deploy.bindings.lerobot.so101.pi05 import Pi05SO101Runtime
+from rlinf_deploy.bindings.lerobot.so101 import SO101Runtime
+from rlinf_deploy.bindings.lerobot.so101.pi05 import Pi05SO101Mapper
 from rlinf_deploy.inference import ImagePayload, VvlaHttpClient
 from rlinf_deploy.robots.lerobot.so101 import SO101Adapter, SO101Config
 
@@ -43,7 +44,12 @@ def main() -> None:
         client = VvlaHttpClient(
             args.vvla_url, token=args.token, timeout_s=args.timeout_s
         )
-        controller = Pi05SO101Runtime(robot, client, instruction=args.instruction)
+        controller = SO101Runtime(
+            robot,
+            client,
+            instruction=args.instruction,
+            mapper=Pi05SO101Mapper(),
+        )
         try:
             result = controller.step(images)
             print(

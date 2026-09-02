@@ -139,6 +139,7 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
             invocation = build_run(
                 BindingRunRequest(
                     runtime_id=runtime.runtime_id,
+                    binding_kind=runtime.binding,
                     prompt=args.prompt,
                     model_endpoint=runtime.model_endpoint,
                     robot_id=robot.robot_id,
