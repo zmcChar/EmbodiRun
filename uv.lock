@@ -1597,7 +1597,7 @@ robot-so101 = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "wireless-comm", marker = "extra == 'wireless'", editable = "../WirelessComm" }]
+requires-dist = [{ name = "wireless-comm", marker = "extra == 'wireless'", git = "ssh://git@github.com/BUAA-CI-LAB/WirelessComm.git?rev=da66e99d391d6e2ef76583aa973b03f9dc8b12d5" }]
 provides-extras = ["wireless"]
 
 [package.metadata.requires-dev]
@@ -2159,20 +2159,9 @@ wheels = [
 [[package]]
 name = "wireless-comm"
 version = "0.1.0"
-source = { editable = "../WirelessComm" }
+source = { git = "ssh://git@github.com/BUAA-CI-LAB/WirelessComm.git?rev=da66e99d391d6e2ef76583aa973b03f9dc8b12d5#da66e99d391d6e2ef76583aa973b03f9dc8b12d5" }
 dependencies = [
     { name = "msgpack" },
     { name = "pyyaml" },
     { name = "typing-extensions" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "msgpack", specifier = ">=1.0" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=8" },
-    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "torch", marker = "extra == 'tensor'", specifier = ">=2.6" },
-    { name = "typing-extensions", specifier = ">=4.0" },
-]
-provides-extras = ["tensor", "test"]

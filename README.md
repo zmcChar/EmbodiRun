@@ -44,8 +44,8 @@ uv sync --python 3.12 --frozen --no-dev \
 uv sync --frozen --no-dev --group robot-fr3           # FR3 control agent
 ```
 
-The `wireless` extra resolves `wireless-comm` from the sibling
-`../WirelessComm` checkout used by this workspace.
+The `wireless` extra pins WirelessComm to a reviewed commit in the
+BUAA-CI-LAB repository. Private Git access must be configured for pip or uv.
 
 `robot-so101` requires Python 3.12 or newer. The repository does not set a global
 Python version because the other environments continue to support Python 3.10.

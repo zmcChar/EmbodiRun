@@ -13,11 +13,8 @@ dependencies = []
 
 [project.optional-dependencies]
 wireless = [
-    "wireless-comm>=0.1,<0.2",
+    "wireless-comm @ git+ssh://git@github.com/BUAA-CI-LAB/WirelessComm.git@da66e99d391d6e2ef76583aa973b03f9dc8b12d5",
 ]
-
-[tool.uv.sources]
-wireless-comm = { path = "../WirelessComm", editable = true }
 
 [dependency-groups]
 dev = ["pytest>=8,<9"]
