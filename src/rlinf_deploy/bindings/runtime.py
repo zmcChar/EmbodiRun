@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import math
+import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from rlinf_deploy.inference import InferenceClient, PolicyResult
-from rlinf_deploy.robots import RobotAdapter
+from rlinf_deploy.robots import RobotAction, RobotAdapter
 from rlinf_deploy.robots.sensors.cameras import CameraFrame
 
 from . import BindingMapper
@@ -22,13 +24,26 @@ class BindingRuntime:
         *,
         instruction: str,
         mapper: BindingMapper,
+        control_hz: float = 5.0,
+        monotonic: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         if not instruction.strip():
             raise ValueError("instruction must not be empty")
+        if (
+            isinstance(control_hz, bool)
+            or not isinstance(control_hz, (int, float))
+            or not math.isfinite(control_hz)
+            or control_hz <= 0
+        ):
+            raise ValueError("control_hz must be a finite positive number")
         self.robot = robot
         self.client = client
         self.instruction = instruction
         self.mapper = mapper
+        self.action_period_s = 1.0 / control_hz
+        self.monotonic = monotonic
+        self.sleep = sleep
         self.session = client.open_session(
             robot_id=robot.robot_id,
             action_space=mapper.policy_action_space,
@@ -53,7 +68,20 @@ class BindingRuntime:
             frames=tuple(frames),
         )
         result = self.client.step(request)
-        self.robot.execute(self.mapper.map_result(result))
+        actions = tuple(self.mapper.map_result(result))
+        if not actions:
+            raise RuntimeError("binding returned an empty action chunk")
+        if any(not isinstance(action, RobotAction) for action in actions):
+            raise TypeError("binding action chunk must contain RobotAction values")
+        deadline_s = self.monotonic()
+        for index, action in enumerate(actions):
+            self.robot.execute(action)
+            if index + 1 == len(actions):
+                continue
+            deadline_s += self.action_period_s
+            remaining_s = deadline_s - self.monotonic()
+            if remaining_s > 0:
+                self.sleep(remaining_s)
         self.step_id += 1
         return result
 

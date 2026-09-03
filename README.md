@@ -119,18 +119,20 @@ rlinf-deploy \
 ```
 
 `run` can move the selected physical robot. The default is one inference/action
-step. Use `--max-steps N` to keep the same policy session open for a bounded
-multi-step task. Before connecting the arm, the binding checks model health and
-opens, warms up, and validates every camera. V4L2 capture is implemented in the
-robot sensor camera layer and returns model-independent camera frames; the
+chunk; the checked-in Pi0.5 adapter returns ten action rows per chunk. Use
+`--max-steps N` to keep the same policy session open for a bounded number of
+chunks, and `--control-hz HZ` to select the rate at which rows within each chunk
+are sent to the robot. Before connecting the arm, the binding checks model health
+and opens, warms up, and validates every camera. V4L2 capture is implemented in
+the robot sensor camera layer and returns model-independent camera frames; the
 SO101/Pi0.5 binding converts those frames into inference image payloads.
-Each returned action is still subject to the SO101 joint and gripper step limits
+Each returned row is still subject to the SO101 joint and gripper step limits
 from the deployment YAML. `step_limit_mode: reject` rejects an oversized target
 without sending it. `step_limit_mode: clip` bounds every joint and the gripper
-independently before sending one command; the checked-in Thor configuration uses
-5 degrees and 10 gripper units for its initial tests. Clipping is a per-step
-rate limit, not collision avoidance. A PI0.5 response has no task-complete
-signal, so the step bound is always the stopping condition.
+independently before sending that row; the checked-in Thor configuration uses 5
+degrees and 10 gripper units for its initial tests. Clipping is a per-row rate
+limit, not collision avoidance. A Pi0.5 response has no task-complete signal, so
+the chunk bound is always the stopping condition.
 
 ## HTTP contract
 

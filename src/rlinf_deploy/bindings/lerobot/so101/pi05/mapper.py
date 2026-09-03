@@ -55,7 +55,7 @@ class Pi05SO101Mapper:
             metadata={"robot_timestamp_s": observation.timestamp_s},
         )
 
-    def map_result(self, result: PolicyResult) -> RobotAction:
+    def map_result(self, result: PolicyResult) -> tuple[RobotAction, ...]:
         if result.action_space != self.policy_action_space:
             raise Pi05SO101MapperError(
                 f"policy action_space mismatch: got {result.action_space!r}, "
@@ -71,15 +71,8 @@ class Pi05SO101Mapper:
             raise Pi05SO101MapperError(
                 "action_chunk values.data must be a sequence"
             )
-        if len(data) != 1:
-            raise Pi05SO101MapperError(
-                "SO-101 runtime expects exactly one action row"
-            )
-        first = data[0]
-        if isinstance(first, (str, bytes)) or not isinstance(first, Sequence):
-            raise Pi05SO101MapperError(
-                "action_chunk first row must be a numeric sequence"
-            )
+        if not data:
+            raise Pi05SO101MapperError("action_chunk values.data must not be empty")
         declared = raw.values.get("feature_names")
         if isinstance(declared, (str, bytes)) or not isinstance(declared, Sequence):
             raise Pi05SO101MapperError(
@@ -94,10 +87,6 @@ class Pi05SO101Mapper:
             raise Pi05SO101MapperError(
                 "action_chunk feature_names must be unique"
             )
-        if len(first) != len(names):
-            raise Pi05SO101MapperError(
-                "action row and feature_names lengths differ"
-            )
         actual_names = set(names)
         expected_names = set(SO101_POSITION_FEATURES)
         if actual_names != expected_names:
@@ -107,35 +96,50 @@ class Pi05SO101Mapper:
                 "action features do not match SO-101; "
                 f"missing={sorted(missing)!r}, unexpected={sorted(unexpected)!r}"
             )
-        by_name: dict[str, float] = {}
-        for name, item in zip(names, first):
-            if isinstance(item, bool):
-                raise Pi05SO101MapperError("action values must be numeric")
-            try:
-                value = float(item)
-            except (TypeError, ValueError):
+        actions: list[RobotAction] = []
+        for row_index, row in enumerate(data):
+            if isinstance(row, (str, bytes)) or not isinstance(row, Sequence):
                 raise Pi05SO101MapperError(
-                    "action values must be numeric"
-                ) from None
-            if not math.isfinite(value):
-                raise Pi05SO101MapperError("action values must be finite")
-            by_name[name] = value
-        positions = [by_name[name] for name in SO101_POSITION_FEATURES]
-        return RobotAction(
-            timestamp_s=time.time(),
-            values={
-                "type": "joint_position",
-                "joint_positions_deg": positions[:-1],
-                "gripper_position": positions[-1],
-            },
-            metadata={
-                "action_space": SO101_ACTION_SPACE,
-                "request_id": result.request_id,
-                "session_id": result.session_id,
-                "step_id": result.step_id,
-                "session_revision": result.session_revision,
-            },
-        )
+                    f"action_chunk row {row_index} must be a numeric sequence"
+                )
+            if len(row) != len(names):
+                raise Pi05SO101MapperError(
+                    f"action_chunk row {row_index} and feature_names lengths differ"
+                )
+            by_name: dict[str, float] = {}
+            for name, item in zip(names, row):
+                if isinstance(item, bool):
+                    raise Pi05SO101MapperError("action values must be numeric")
+                try:
+                    value = float(item)
+                except (TypeError, ValueError):
+                    raise Pi05SO101MapperError(
+                        "action values must be numeric"
+                    ) from None
+                if not math.isfinite(value):
+                    raise Pi05SO101MapperError("action values must be finite")
+                by_name[name] = value
+            positions = [by_name[name] for name in SO101_POSITION_FEATURES]
+            actions.append(
+                RobotAction(
+                    timestamp_s=time.time(),
+                    values={
+                        "type": "joint_position",
+                        "joint_positions_deg": positions[:-1],
+                        "gripper_position": positions[-1],
+                    },
+                    metadata={
+                        "action_space": SO101_ACTION_SPACE,
+                        "request_id": result.request_id,
+                        "session_id": result.session_id,
+                        "step_id": result.step_id,
+                        "session_revision": result.session_revision,
+                        "chunk_index": row_index,
+                        "chunk_size": len(data),
+                    },
+                )
+            )
+        return tuple(actions)
 
 
 __all__ = [

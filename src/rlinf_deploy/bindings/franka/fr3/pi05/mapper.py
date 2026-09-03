@@ -76,7 +76,7 @@ class Pi05FR3Mapper:
             metadata={"robot_timestamp_s": observation.timestamp_s},
         )
 
-    def map_result(self, result: PolicyResult) -> RobotAction:
+    def map_result(self, result: PolicyResult) -> tuple[RobotAction, ...]:
         if result.action_space != POLICY_ACTION_SPACE:
             raise Pi05FR3MapperError(
                 f"policy action_space mismatch: got {result.action_space!r}, "
@@ -94,52 +94,62 @@ class Pi05FR3Mapper:
             )
         if not data:
             raise Pi05FR3MapperError("action_chunk values.data must not be empty")
-        first = data[0]
-        if isinstance(first, (str, bytes)) or not isinstance(first, Sequence):
-            raise Pi05FR3MapperError(
-                "action_chunk first row must be a numeric sequence"
-            )
-
-        row: list[float] = []
-        for item in first:
-            if isinstance(item, bool):
-                raise Pi05FR3MapperError("action values must be numeric")
-            try:
-                value = float(item)
-            except (TypeError, ValueError):
-                raise Pi05FR3MapperError("action values must be numeric") from None
-            row.append(value)
-            if not math.isfinite(row[-1]):
-                raise Pi05FR3MapperError("action values must be finite")
         indices = self.config.joint_indices + (
             (self.config.gripper_index,)
             if self.config.gripper_index is not None
             else ()
         )
         max_index = max(indices)
-        if len(row) <= max_index:
-            raise Pi05FR3MapperError(
-                "action_chunk row is too short for configured indices"
+        actions: list[RobotAction] = []
+        for row_index, raw_row in enumerate(data):
+            if isinstance(raw_row, (str, bytes)) or not isinstance(
+                raw_row, Sequence
+            ):
+                raise Pi05FR3MapperError(
+                    f"action_chunk row {row_index} must be a numeric sequence"
+                )
+            row: list[float] = []
+            for item in raw_row:
+                if isinstance(item, bool):
+                    raise Pi05FR3MapperError("action values must be numeric")
+                try:
+                    value = float(item)
+                except (TypeError, ValueError):
+                    raise Pi05FR3MapperError(
+                        "action values must be numeric"
+                    ) from None
+                if not math.isfinite(value):
+                    raise Pi05FR3MapperError("action values must be finite")
+                row.append(value)
+            if len(row) <= max_index:
+                raise Pi05FR3MapperError(
+                    f"action_chunk row {row_index} is too short for configured indices"
+                )
+
+            robot = {
+                "type": "joint_position",
+                "joint_positions_rad": [
+                    row[index] for index in self.config.joint_indices
+                ],
+            }
+            if self.config.gripper_index is not None:
+                robot["gripper_width_m"] = row[self.config.gripper_index]
+            actions.append(
+                RobotAction(
+                    timestamp_s=time.time(),
+                    values=robot,
+                    metadata={
+                        "action_space": FR3_ACTION_SPACE,
+                        "request_id": result.request_id,
+                        "session_id": result.session_id,
+                        "step_id": result.step_id,
+                        "session_revision": result.session_revision,
+                        "chunk_index": row_index,
+                        "chunk_size": len(data),
+                    },
+                )
             )
-
-        robot = {
-            "type": "joint_position",
-            "joint_positions_rad": [row[index] for index in self.config.joint_indices],
-        }
-        if self.config.gripper_index is not None:
-            robot["gripper_width_m"] = row[self.config.gripper_index]
-
-        return RobotAction(
-            timestamp_s=time.time(),
-            values=robot,
-            metadata={
-                "action_space": FR3_ACTION_SPACE,
-                "request_id": result.request_id,
-                "session_id": result.session_id,
-                "step_id": result.step_id,
-                "session_revision": result.session_revision,
-            },
-        )
+        return tuple(actions)
 
 
 __all__ = [

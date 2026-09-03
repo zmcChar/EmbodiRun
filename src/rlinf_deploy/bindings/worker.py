@@ -77,10 +77,11 @@ def execute(
             client,
             instruction=request.prompt,
             mapper=mapper,
+            control_hz=request.control_hz,
+            monotonic=monotonic,
+            sleep=sleep,
         )
-        period_s = 1.0 / request.control_hz
         for _ in range(request.max_steps):
-            started_s = monotonic()
             result = controller.step(cameras.capture())
             completed += 1
             output(
@@ -91,9 +92,6 @@ def execute(
                     "session_revision": result.session_revision,
                 }
             )
-            remaining_s = period_s - (monotonic() - started_s)
-            if remaining_s > 0 and completed < request.max_steps:
-                sleep(remaining_s)
     finally:
         try:
             if controller is not None:

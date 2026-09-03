@@ -1,0 +1,16 @@
+{
+  "state_fields": ["joint_positions_deg", "gripper_position"],
+  "image_fields": [
+    "observation.images.front",
+    "observation.images.wrist"
+  ],
+  "return_steps": 10,
+  "action_feature_names": [
+    "shoulder_pan.pos",
+    "shoulder_lift.pos",
+    "elbow_flex.pos",
+    "wrist_flex.pos",
+    "wrist_roll.pos",
+    "gripper.pos"
+  ]
+}

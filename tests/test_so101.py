@@ -27,6 +27,7 @@ class FakeSO101:
 
     def send_action(self, action):
         self.actions.append(dict(action))
+        self.positions.update(action)
 
     def disconnect(self):
         self.is_connected = False
@@ -82,6 +83,26 @@ def test_so101_clip_mode_bounds_every_joint_and_gripper() -> None:
             "gripper.pos": 60.0,
         }
     ]
+
+
+def test_so101_clip_mode_bounds_each_command_in_a_sequence() -> None:
+    hardware = FakeSO101([0.0, 0.0, 0.0, 0.0, 0.0, 50.0])
+    adapter = SO101Adapter(
+        SO101Config(
+            port="/dev/fake",
+            max_joint_step_deg=5.0,
+            max_gripper_step=10.0,
+            step_limit_mode="clip",
+        ),
+        lerobot_robot=hardware,
+    )
+    adapter.connect()
+
+    target = action([20.0, 0.0, 0.0, 0.0, 0.0], 50.0)
+    adapter.execute(target)
+    adapter.execute(target)
+
+    assert [item["shoulder_pan.pos"] for item in hardware.actions] == [5.0, 10.0]
 
 
 def test_so101_config_rejects_unknown_step_limit_mode() -> None:

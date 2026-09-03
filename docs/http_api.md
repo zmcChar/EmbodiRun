@@ -53,8 +53,8 @@ session state only once.
 ```
 
 The VVLA HTTP layer is only responsible for model-native action chunks. Deploy
-maps `pi05.action_chunk.v1` to FR3 `joint_position` through
-`bindings.fr3.pi05`.
+maps every row in `pi05.action_chunk.v1` to ordered robot commands through the
+selected binding and plays them at the runtime control rate.
 
 ## WirelessComm mapping
 

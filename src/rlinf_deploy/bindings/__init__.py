@@ -31,8 +31,8 @@ class BindingMapper(Protocol):
     ) -> PolicyObservation:
         """Build one policy request without performing inference."""
 
-    def map_result(self, result: PolicyResult) -> RobotAction:
-        """Map one policy result without executing it."""
+    def map_result(self, result: PolicyResult) -> Sequence[RobotAction]:
+        """Map one policy result to an ordered, non-empty action chunk."""
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,7 +1,7 @@
 metadata:
   name: thor-so101-pi05
-  deploy-commit: e2b4f55e8a215b2be6a8d0bdb212508752e288af
-  inference-commit: 5deebca26beab7d13d51f7a6cf25a6ea5ada8c57
+  deploy-commit: e43f767e0b5b294a8375d2e9c745b9424ffcdf3a
+  inference-commit: c641b3a3c49bb20e03914aa792034de431dcbc26
 
 nodes:
   jetson-agx-thor-232:
@@ -50,12 +50,8 @@ models:
     node: jetson-agx-thor-232
     gpu: cuda:0
     environment: .venv-vvla
-    environment_index: https://download.pytorch.org/whl/cu130
-    environment_packages:
-      - torch==2.10.0+cu130
-      - torchvision==0.25.0+cu130
     source: /home/user/models/pi05_so101
-    adapter_config: /home/user/.config/rlinf-deploy/pi05_so101_http_serve.json
+    adapter_config: configs/pi05_so101_http_serve.json
     server:
       bind: 127.0.0.1
       port: 8000

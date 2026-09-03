@@ -95,11 +95,11 @@ class FakeVvlaClient:
         assert session_id == "session-1"
 
 
-def test_pi05_mapper_extracts_joint_positions() -> None:
+def test_pi05_mapper_extracts_joint_position_chunk() -> None:
     mapper = Pi05FR3Mapper(
         config=Pi05FR3MapperConfig(joint_indices=(0, 1, 2, 3, 4, 5, 6))
     )
-    action = mapper.map_result(
+    actions = mapper.map_result(
         PolicyResult(
             request_id="r1",
             session_id="s1",
@@ -110,15 +110,36 @@ def test_pi05_mapper_extracts_joint_positions() -> None:
                 PolicyAction(
                     "action_chunk",
                     {
-                        "data": [[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]],
+                        "data": [
+                            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+                            [8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0],
+                        ],
                         "feature_names": [],
                     },
                 ),
             ),
         )
     )
-    assert action.values["type"] == "joint_position"
-    assert action.values["joint_positions_rad"] == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+    assert len(actions) == 2
+    assert actions[0].values["type"] == "joint_position"
+    assert actions[0].values["joint_positions_rad"] == [
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+    ]
+    assert actions[1].values["joint_positions_rad"] == [
+        8.0,
+        7.0,
+        6.0,
+        5.0,
+        4.0,
+        3.0,
+        2.0,
+    ]
 
 
 def test_pi05_runtime_steps_and_reset_flow() -> None:

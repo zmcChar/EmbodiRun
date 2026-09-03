@@ -47,14 +47,17 @@ def register(commands: Any) -> None:
         type=_positive_integer,
         default=DEFAULT_MAX_STEPS,
         metavar="N",
-        help=f"maximum actions to execute (default: {DEFAULT_MAX_STEPS})",
+        help=(
+            "maximum inference/action chunks to execute "
+            f"(default: {DEFAULT_MAX_STEPS})"
+        ),
     )
     parser.add_argument(
         "--control-hz",
         type=_positive_number,
         default=DEFAULT_CONTROL_HZ,
         metavar="HZ",
-        help=f"maximum control-loop rate (default: {DEFAULT_CONTROL_HZ:g})",
+        help=f"action playback rate (default: {DEFAULT_CONTROL_HZ:g})",
     )
     parser.add_argument(
         "--request-timeout",

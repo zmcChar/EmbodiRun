@@ -1,5 +1,6 @@
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 from threading import Barrier
 
@@ -232,6 +233,11 @@ def two_node_model_config(tmp_path: Path) -> Path:
 
 def test_example_resolves_real_thor_environment_and_runtime() -> None:
     config = load_config(EXAMPLE)
+    adapter_config = json.loads(
+        (ROOT / "configs" / "pi05_so101_http_serve.json").read_text(
+            encoding="utf-8"
+        )
+    )
     profiles = environment_profiles(config)
     plan = build_plan(config)
 
@@ -250,7 +256,7 @@ def test_example_resolves_real_thor_environment_and_runtime() -> None:
         "--checkpoint",
         "/home/user/models/pi05_so101",
         "--adapter-config",
-        "/home/user/.config/rlinf-deploy/pi05_so101_http_serve.json",
+        "configs/pi05_so101_http_serve.json",
         "--device",
         "cuda:0",
         "--host",
@@ -262,6 +268,7 @@ def test_example_resolves_real_thor_environment_and_runtime() -> None:
     assert {runtime.model_endpoint for runtime in plan.runtimes} == {
         "http://127.0.0.1:8000"
     }
+    assert adapter_config["return_steps"] == 10
 
 
 def test_uv_environment_manager_uses_only_the_selected_group() -> None:
@@ -294,10 +301,14 @@ def test_uv_environment_manager_uses_only_the_selected_group() -> None:
 
 
 def test_uv_environment_manager_applies_configured_package_overlay() -> None:
-    profile = next(
-        item
-        for item in environment_profiles(load_config(EXAMPLE))
-        if item.project == "inference"
+    profile = replace(
+        next(
+            item
+            for item in environment_profiles(load_config(EXAMPLE))
+            if item.project == "inference"
+        ),
+        package_index="https://download.pytorch.org/whl/cu130",
+        packages=("torch==2.10.0+cu130", "torchvision==0.25.0+cu130"),
     )
     executor = RecordingExecutor()
 
@@ -513,7 +524,9 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
         command.argv[2] for command in up_commands if command.argv[:2] == ("sh", "-c")
     )
     assert "/sources/inference/.venv-vvla/bin/vvla-http-serve" in start_script
-    assert "/home/user/.config/rlinf-deploy/pi05_so101_http_serve.json" in start_script
+    assert (
+        "/sources/deploy/configs/pi05_so101_http_serve.json" in start_script
+    )
     health_command, health_check = next(
         (command, check)
         for command, check in executors[1].commands
