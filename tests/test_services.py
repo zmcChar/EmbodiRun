@@ -547,6 +547,25 @@ def test_ssh_executor_reads_health_without_remote_script() -> None:
     assert not thread.is_alive()
 
 
+def test_ssh_executor_normalizes_health_channel_failure() -> None:
+    class Transport:
+        def is_active(self):
+            return True
+
+        def open_channel(self, kind, destination, source, timeout):
+            raise Exception("Connect failed")
+
+    executor = object.__new__(SshExecutor)
+    executor._client = SimpleNamespace(get_transport=lambda: Transport())
+    executor._password = None
+
+    with pytest.raises(RuntimeError, match="SSH HTTP channel failed: Connect failed"):
+        executor.get_json(
+            "http://127.0.0.1:8000/healthz",
+            timeout_s=2.0,
+        )
+
+
 def test_service_supervisor_uses_identity_checked_pid_lifecycle() -> None:
     service = build_plan(load_config(EXAMPLE)).services[0]
     executor = ResultExecutor(

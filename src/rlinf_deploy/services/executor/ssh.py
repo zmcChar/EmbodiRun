@@ -113,12 +113,16 @@ class SshExecutor:
         transport = self._connect().get_transport()
         if transport is None or not transport.is_active():
             raise RuntimeError("SSH transport is not active")
-        channel = transport.open_channel(
-            "direct-tcpip",
-            (parsed.hostname, port),
-            ("127.0.0.1", 0),
-            timeout=timeout_s,
-        )
+        try:
+            channel = transport.open_channel(
+                "direct-tcpip",
+                (parsed.hostname, port),
+                ("127.0.0.1", 0),
+                timeout=timeout_s,
+            )
+        except Exception as error:  # noqa: BLE001 - normalize Paramiko errors
+            detail = _redact(str(error), self._password)
+            raise RuntimeError(f"SSH HTTP channel failed: {detail}") from None
         channel.settimeout(timeout_s)
         connection = http.client.HTTPConnection(
             parsed.hostname,
