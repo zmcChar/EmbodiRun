@@ -165,6 +165,12 @@ def managed_root(home: str, base: str, deployment_name: str) -> str:
     return root
 
 
+def active_deploy_project(deployment_root: str) -> str:
+    """Return the stable path to the currently active Deploy source tree."""
+
+    return posixpath.join(deployment_root, "overlays", "deploy", "current")
+
+
 def build_source_archive(value: Path) -> SourceArchive:
     """Validate and archive one local RLinf Deploy source tree."""
 
@@ -289,6 +295,7 @@ __all__ = [
     "SourceArchive",
     "SourceError",
     "SourceRelease",
+    "active_deploy_project",
     "build_source_archive",
     "install_source_release",
     "managed_root",

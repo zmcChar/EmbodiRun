@@ -15,7 +15,7 @@ from ...environment import (
 from ...executor import Command, Executor
 from ...plan import DeploymentPlan
 from ...probe import probe_node
-from ...source import ProjectManager, managed_root
+from ...source import ProjectManager, active_deploy_project, managed_root
 from ...state import (
     DeploymentState,
     EnvironmentState,
@@ -163,6 +163,10 @@ def _initialize_node(
         )
         progress.update(node_id, "Preparing locked sources")
         _prepare_projects(context, executor, node_state, git=probe.git)
+        executor.replace_symlink(
+            active_deploy_project(node_state.root),
+            node_state.deploy_project,
+        )
         progress.advance(node_id)
 
         environments: list[EnvironmentState] = []

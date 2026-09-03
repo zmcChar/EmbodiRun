@@ -12,6 +12,7 @@ from typing import Any
 from ...config import config_digest
 from ...executor import Command, Executor
 from ...plan import ServiceSpec
+from ...source import active_deploy_project
 from ...state import (
     DeploymentState,
     EnvironmentState,
@@ -156,6 +157,7 @@ def _up_node(
     service_states: dict[str, ServiceState] = {}
     with context.executor(node_id) as executor:
         node = state.nodes[node_id]
+        deploy_project = active_deploy_project(node.root)
         for service in services:
             process = None
             try:
@@ -186,7 +188,7 @@ def _up_node(
                     executor,
                     python=node.python,
                     agent_path=posixpath.join(
-                        node.deploy_project,
+                        deploy_project,
                         "src/rlinf_deploy/services/host/supervisor.py",
                     ),
                     run_root=posixpath.join(node.root, "run"),
@@ -304,6 +306,7 @@ def _materialize_service(
     node: NodeState,
     environment: EnvironmentState,
 ) -> ServiceSpec:
+    deploy_project = active_deploy_project(node.root)
     argv = list(service.command.argv)
     argv[0] = posixpath.join(environment.path, "bin", posixpath.basename(argv[0]))
     if service.adapter_config_json is not None:
@@ -333,20 +336,14 @@ def _materialize_service(
     except ValueError:
         pass
     else:
-        argv[adapter_index] = _configured_path(argv[adapter_index], node.deploy_project)
-    project = node.inference_project if service.kind == "model" else node.deploy_project
+        argv[adapter_index] = _configured_path(argv[adapter_index], deploy_project)
+    project = node.inference_project if service.kind == "model" else deploy_project
     if "--comm-config" in argv:
         config_index = argv.index("--comm-config") + 1
         argv[config_index] = _configured_path(argv[config_index], project)
     environment_variables = dict(service.command.environment)
     if service.kind == "control":
-        environment_variables["PYTHONPATH"] = posixpath.join(
-            node.root,
-            "overlays",
-            "deploy",
-            "current",
-            "src",
-        )
+        environment_variables["PYTHONPATH"] = posixpath.join(deploy_project, "src")
     return replace(
         service,
         command=Command(

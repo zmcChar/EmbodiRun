@@ -10,7 +10,12 @@ from typing import Any
 
 from ...environment import EnvironmentProfile, UvEnvironmentManager
 from ...executor import Command, Executor
-from ...source import SourceArchive, build_source_archive, install_source_release
+from ...source import (
+    SourceArchive,
+    active_deploy_project,
+    build_source_archive,
+    install_source_release,
+)
 from ...state import DeploymentState, NodeState, StateStore
 from ..context import CommandContext
 from ..parallel import run_on_nodes
@@ -159,7 +164,7 @@ def _sync_node(
     node = state.nodes[node_id]
     overlay_root = posixpath.join(node.root, "overlays", "deploy")
     dependency_marker = posixpath.join(overlay_root, "dependency-digest")
-    current = posixpath.join(overlay_root, "current")
+    current = active_deploy_project(node.root)
 
     with context.executor(node_id) as executor:
         progress.update(node_id, "Uploading Deploy source", detail=archive.digest[:12])
@@ -175,6 +180,7 @@ def _sync_node(
             executor,
             node=node,
             release=installed.path,
+            active_project=current,
             dependency_marker=dependency_marker,
             profiles=profiles,
             archive=archive,
@@ -192,13 +198,14 @@ def _synchronize_dependencies(
     *,
     node: NodeState,
     release: str,
+    active_project: str,
     dependency_marker: str,
     profiles: tuple[EnvironmentProfile, ...],
     archive: SourceArchive,
 ) -> bool:
     recorded = _read_optional_file(executor, dependency_marker)
     expected = f"{archive.dependency_digest}\n".encode()
-    if recorded == expected:
+    if recorded == expected and _symlink_target(executor, active_project) == release:
         return False
 
     changed = not _managed_dependencies_match(executor, node, archive)
@@ -214,6 +221,16 @@ def _synchronize_dependencies(
         mode=0o600,
     )
     return changed
+
+
+def _symlink_target(executor: Executor, path: str) -> str | None:
+    result = executor.run(Command(("readlink", path)), check=False)
+    if result.exit_code == 1:
+        return None
+    if result.exit_code != 0:
+        detail = result.stderr.strip() or f"exit code {result.exit_code}"
+        raise SyncError(f"could not inspect active Deploy source: {detail}")
+    return result.stdout.strip()
 
 
 def _managed_dependencies_match(

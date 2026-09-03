@@ -29,7 +29,7 @@ from rlinf_deploy.services.host.executor import (
     SshExecutor,
 )
 from rlinf_deploy.services.host.plan import ServiceError, ServiceSpec, build_plan
-from rlinf_deploy.services.host.source import ProjectManager
+from rlinf_deploy.services.host.source import ProjectManager, active_deploy_project
 from rlinf_deploy.services.host.state import (
     DeploymentState,
     EnvironmentState,
@@ -74,6 +74,7 @@ class FakeNodeExecutor:
         self.commands = []
         self.files = {}
         self.health_requests = []
+        self.symlinks = {}
         self.closed = False
 
     def run(self, command, *, check=True):
@@ -108,6 +109,9 @@ class FakeNodeExecutor:
     def get_json(self, url, *, timeout_s):
         self.health_requests.append((url, timeout_s))
         return JsonHttpResponse(200, {"status": "ok"})
+
+    def replace_symlink(self, path, target):
+        self.symlinks[path] = target
 
     def close(self) -> None:
         self.closed = True
@@ -210,6 +214,9 @@ class SyncExecutor:
             return CommandResult(1)
         if argv[:2] == ("test", "-x"):
             return CommandResult(0)
+        if argv[:1] == ("readlink",):
+            target = self.symlinks.get(argv[1])
+            return CommandResult(0, f"{target}\n") if target else CommandResult(1)
         if argv[0] in {"mkdir", "tar"}:
             return CommandResult(0)
         if "sync" in argv and "--group" in argv:
@@ -912,6 +919,14 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
     assert any(argv[-2:] == ("--group", "pi05") for argv in init_argv)
     assert any(argv[-2:] == ("--group", "robot-so101") for argv in init_argv)
     assert executors[0].closed is True
+    active_source = active_deploy_project(
+        "/home/user/.local/share/rlinf-deploy/thor-so101-pi05"
+    )
+    assert executors[0].symlinks == {
+        active_source: (
+            "/home/user/.local/share/rlinf-deploy/thor-so101-pi05/sources/deploy"
+        )
+    }
 
     up_exit_code = main((*base_args, "up"), executor_factory=factory)
     up_output = capsys.readouterr()
@@ -945,6 +960,10 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
         and command.argv[2] == "start"
     ]
     assert len(start_commands) == 2
+    assert all(
+        command.argv[1].startswith(f"{active_source}/")
+        for command in start_commands
+    )
     start_requests = [json.loads(command.stdin) for command in start_commands]
     model_request = next(
         request for request in start_requests if request["argv"][0].endswith("vvla-http-serve")
@@ -963,7 +982,7 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
         for request in start_requests
         if request["argv"][0].endswith("rlinf-control-serve")
     )
-    assert control_request["cwd"].endswith("/sources/deploy")
+    assert control_request["cwd"] == active_source
     assert control_request["environment"]["PYTHONPATH"].endswith(
         "/overlays/deploy/current/src"
     )

@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from ...state import NodeState, ServiceState, StateStore
+from ...source import active_deploy_project
 from ...supervisor import ServiceSupervisor
 from ..context import CommandContext
 from ..parallel import run_on_nodes
@@ -128,7 +129,7 @@ def _down_node(
             executor,
             python=node.python,
             agent_path=posixpath.join(
-                node.deploy_project,
+                active_deploy_project(node.root),
                 "src/rlinf_deploy/services/host/supervisor.py",
             ),
             run_root=posixpath.join(node.root, "run"),
