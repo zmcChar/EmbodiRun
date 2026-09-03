@@ -1,6 +1,6 @@
 metadata:
   name: thor-so101-pi05
-  deploy-commit: e43f767e0b5b294a8375d2e9c745b9424ffcdf3a
+  deploy-commit: ce060b1fcc6d72fefc39c24ea24cb5ac2eab260b
   inference-commit: c641b3a3c49bb20e03914aa792034de431dcbc26
 
 nodes:
