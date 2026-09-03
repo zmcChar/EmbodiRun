@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from rlinf_deploy.inference import ImagePayload, PolicyObservation, VvlaHttpClient
+from rlinf_deploy.services.inference import (
+    ImagePayload,
+    PolicyObservation,
+    VvlaHttpClient,
+)
 
 
 VVLA_ROOT = Path(__file__).parents[1] / "third_party" / "vvla"

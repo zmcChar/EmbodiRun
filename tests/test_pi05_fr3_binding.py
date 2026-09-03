@@ -3,12 +3,18 @@ from types import SimpleNamespace
 import pytest
 
 from rlinf_deploy.bindings.franka.fr3.pi05 import (
-    Pi05ActionMapper,
-    Pi05ActionMapperConfig,
-    Pi05ActionMapperError,
+    Pi05FR3Mapper,
+    Pi05FR3MapperConfig,
+    Pi05FR3MapperError,
 )
-from rlinf_deploy.bindings.franka.fr3.pi05.runtime import Pi05FR3Runtime
-from rlinf_deploy.inference import ImagePayload, PolicyAction, PolicyObservation, PolicyResult, Session
+from rlinf_deploy.services.control.runtime import ControlRuntime
+from rlinf_deploy.services.inference import (
+    PolicyAction,
+    PolicyObservation,
+    PolicyResult,
+    Session,
+)
+from rlinf_deploy.robots.sensors.cameras import CameraFrame
 
 
 class FakeRobot:
@@ -18,7 +24,10 @@ class FakeRobot:
         self.stopped = False
 
     def observe(self):
-        return SimpleNamespace(timestamp_s=1.0, values={"joint_positions_rad": [0.0] * 7})
+        return SimpleNamespace(
+            timestamp_s=1.0,
+            values={"joint_positions_rad": [0.0] * 7},
+        )
 
     def execute(self, action) -> None:
         self.executed.append(action)
@@ -34,7 +43,13 @@ class FakeVvlaClient:
         self.reset_called = False
         self.closed = False
 
-    def open_session(self, *, robot_id: str, action_space: str, metadata=None) -> Session:
+    def open_session(
+        self,
+        *,
+        robot_id: str,
+        action_space: str,
+        metadata=None,
+    ) -> Session:
         self.open_session_called += 1
         assert robot_id == "fr3"
         assert action_space == "pi05.action_chunk.v1"
@@ -80,9 +95,11 @@ class FakeVvlaClient:
         assert session_id == "session-1"
 
 
-def test_pi05_mapper_extracts_joint_positions() -> None:
-    mapper = Pi05ActionMapper(config=Pi05ActionMapperConfig(joint_indices=(0, 1, 2, 3, 4, 5, 6)))
-    action = mapper.map_result(
+def test_pi05_mapper_extracts_joint_position_chunk() -> None:
+    mapper = Pi05FR3Mapper(
+        config=Pi05FR3MapperConfig(joint_indices=(0, 1, 2, 3, 4, 5, 6))
+    )
+    actions = mapper.map_result(
         PolicyResult(
             request_id="r1",
             session_id="s1",
@@ -93,28 +110,56 @@ def test_pi05_mapper_extracts_joint_positions() -> None:
                 PolicyAction(
                     "action_chunk",
                     {
-                        "data": [[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]],
+                        "data": [
+                            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+                            [8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0],
+                        ],
                         "feature_names": [],
                     },
                 ),
             ),
         )
     )
-    assert action.values["type"] == "joint_position"
-    assert action.values["joint_positions_rad"] == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+    assert len(actions) == 2
+    assert actions[0].values["type"] == "joint_position"
+    assert actions[0].values["joint_positions_rad"] == [
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+    ]
+    assert actions[1].values["joint_positions_rad"] == [
+        8.0,
+        7.0,
+        6.0,
+        5.0,
+        4.0,
+        3.0,
+        2.0,
+    ]
 
 
 def test_pi05_runtime_steps_and_reset_flow() -> None:
     robot = FakeRobot()
     client = FakeVvlaClient()
-    runtime = Pi05FR3Runtime(robot, client, instruction="pick")
-    result = runtime.step((ImagePayload("camera-0", "image/jpeg", b"123"),))
+    runtime = ControlRuntime(
+        robot,
+        client,
+        instruction="pick",
+        mapper=Pi05FR3Mapper(),
+        chunk_steps=1,
+    )
+    frame = CameraFrame("camera-0", "image/jpeg", b"123")
+    result = runtime.step((frame,))
     assert result.step_id == 0
     assert len(robot.executed) == 1
     assert client.step_called == 1
     assert robot.executed[0].values["joint_positions_rad"][0] == 0.1
     assert client.open_session_called == 1
-    runtime.step((ImagePayload("camera-0", "image/jpeg", b"123"),), reset=True)
+    runtime.step((frame,), reset=True)
     assert client.reset_called
     assert len(robot.executed) == 2
     assert client.step_called == 2
@@ -123,8 +168,8 @@ def test_pi05_runtime_steps_and_reset_flow() -> None:
 
 
 def test_pi05_mapper_guard_on_wrong_kind() -> None:
-    mapper = Pi05ActionMapper()
-    with pytest.raises(Pi05ActionMapperError):
+    mapper = Pi05FR3Mapper()
+    with pytest.raises(Pi05FR3MapperError):
         mapper.map_result(
             PolicyResult(
                 request_id="r1",
@@ -132,6 +177,11 @@ def test_pi05_mapper_guard_on_wrong_kind() -> None:
                 step_id=0,
                 session_revision=1,
                 action_space="pi05.action_chunk.v1",
-                actions=(PolicyAction("joint_position", {"joint_positions_rad": [0.0] * 7}),),
+                actions=(
+                    PolicyAction(
+                        "joint_position",
+                        {"joint_positions_rad": [0.0] * 7},
+                    ),
+                ),
             )
         )

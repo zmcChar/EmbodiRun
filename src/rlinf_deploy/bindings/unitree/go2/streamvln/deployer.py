@@ -5,9 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import posixpath
-import shlex
 from pathlib import Path
-from typing import cast
+
+from rlinf_deploy.services.host.executor import Command
 
 from .options import ServiceSelection, StartOptions
 from .services import SERVICE_MODULES, Go2ServiceSupervisor
@@ -36,19 +36,21 @@ class Go2AgentDeployer:
         )
 
     def probe(self, python: str = "python3") -> dict[str, object]:
-        probe_code = (
-            "import json,platform,sys;"
-            "print(json.dumps({'python':sys.executable,'python_version':platform.python_version(),"
-            "'machine':platform.machine(),'platform':platform.system()}))"
-        )
-        result = self.transport.run(shlex.join([python, "-c", probe_code]))
-        try:
-            payload = json.loads(result.stdout.strip())
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("remote Python probe returned invalid JSON") from exc
-        if not isinstance(payload, dict):
-            raise TypeError("remote Python probe returned an invalid payload")
-        return cast(dict[str, object], payload)
+        version_result = self.transport.run(Command((python, "--version")))
+        version_output = (version_result.stdout or version_result.stderr).strip()
+        prefix = "Python "
+        if not version_output.startswith(prefix):
+            raise RuntimeError("remote Python probe returned an invalid version")
+        platform = self.transport.run(Command(("uname", "-s"))).stdout.strip()
+        machine = self.transport.run(Command(("uname", "-m"))).stdout.strip()
+        if not platform or not machine:
+            raise RuntimeError("remote system probe returned incomplete information")
+        return {
+            "python": python,
+            "python_version": version_output[len(prefix) :],
+            "machine": machine,
+            "platform": platform,
+        }
 
     def install(self, package_root: Path | None = None) -> dict[str, object]:
         local_root = (package_root or _default_package_root()).resolve()

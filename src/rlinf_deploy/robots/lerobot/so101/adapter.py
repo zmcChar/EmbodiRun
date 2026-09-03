@@ -7,8 +7,7 @@ import time
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from ...action import RobotAction
-from ...observation import RobotObservation
+from ...adapter import RobotAction, RobotAdapter, RobotObservation
 from .config import SO101Config
 
 SO101_ACTION_SPACE = "lerobot.so101.position.v1"
@@ -47,7 +46,12 @@ def _numbers(value: object, name: str, length: int) -> tuple[float, ...]:
     return tuple(_number(item, f"{name}[{index}]") for index, item in enumerate(value))
 
 
-class SO101Adapter:
+def _clip_step(target: float, present: float, limit: float) -> float:
+    delta = target - present
+    return present + max(-limit, min(limit, delta))
+
+
+class SO101Adapter(RobotAdapter):
     """Synchronous adapter for one calibrated SO-101 follower arm."""
 
     def __init__(
@@ -72,7 +76,7 @@ class SO101Adapter:
                 "id": config.calibration_id or config.robot_id,
                 "disable_torque_on_disconnect": config.disable_torque_on_disconnect,
                 "use_degrees": True,
-                # This adapter rejects oversized steps instead of allowing the SDK to clip them.
+                # RLinf validates or clips steps before reaching the SDK.
                 "max_relative_target": None,
                 "cameras": {},
             }
@@ -80,6 +84,10 @@ class SO101Adapter:
                 options["calibration_dir"] = config.calibration_dir
             lerobot_robot = SO101Follower(SO101FollowerConfig(**options))
         self.robot = lerobot_robot
+
+    def connect(self) -> None:
+        if self.robot.is_connected:
+            return
         try:
             self.robot.connect(calibrate=False)
         except BaseException:
@@ -90,10 +98,12 @@ class SO101Adapter:
             self.robot.disconnect()
             raise SO101AdapterError(
                 "SO-101 is not calibrated; run lerobot-calibrate with --robot.id "
-                f"{config.calibration_id or config.robot_id!r}"
+                f"{self.config.calibration_id or self.config.robot_id!r}"
             )
 
     def _read_positions(self) -> tuple[float, ...]:
+        if not self.robot.is_connected:
+            raise SO101AdapterError("SO-101 is not connected")
         raw = self.robot.get_observation()
         if not isinstance(raw, Mapping):
             raise SO101AdapterError("SO-101 observation must be an object")
@@ -156,16 +166,27 @@ class SO101Adapter:
             abs(target - present)
             for target, present in zip(target_joints, current[:-1])
         )
-        if maximum_joint_step > self.config.max_joint_step_deg:
-            raise SO101AdapterError(
-                f"joint step {maximum_joint_step:.6f} exceeds "
-                f"{self.config.max_joint_step_deg:.6f} degrees"
-            )
         gripper_step = abs(target_gripper - current[-1])
-        if gripper_step > self.config.max_gripper_step:
-            raise SO101AdapterError(
-                f"gripper step {gripper_step:.6f} exceeds "
-                f"{self.config.max_gripper_step:.6f}"
+        if self.config.step_limit_mode == "reject":
+            if maximum_joint_step > self.config.max_joint_step_deg:
+                raise SO101AdapterError(
+                    f"joint step {maximum_joint_step:.6f} exceeds "
+                    f"{self.config.max_joint_step_deg:.6f} degrees"
+                )
+            if gripper_step > self.config.max_gripper_step:
+                raise SO101AdapterError(
+                    f"gripper step {gripper_step:.6f} exceeds "
+                    f"{self.config.max_gripper_step:.6f}"
+                )
+        else:
+            target_joints = tuple(
+                _clip_step(target, present, self.config.max_joint_step_deg)
+                for target, present in zip(target_joints, current[:-1])
+            )
+            target_gripper = _clip_step(
+                target_gripper,
+                current[-1],
+                self.config.max_gripper_step,
             )
         command = {
             feature: value
@@ -182,7 +203,8 @@ class SO101Adapter:
         self.robot.send_action(dict(zip(SO101_POSITION_FEATURES, positions)))
 
     def close(self) -> None:
-        self.robot.disconnect()
+        if self.robot.is_connected:
+            self.robot.disconnect()
 
 
 __all__ = [

@@ -8,8 +8,7 @@ from dataclasses import dataclass, field
 from numbers import Real
 from typing import Any, Protocol, TypeAlias, runtime_checkable
 
-from rlinf_deploy.robots.action import RobotAction
-from rlinf_deploy.robots.observation import RobotObservation
+from rlinf_deploy.robots.adapter import RobotAction, RobotObservation
 from rlinf_deploy.types import Metadata
 
 ObservationMapper: TypeAlias = Callable[[Any], RobotObservation]

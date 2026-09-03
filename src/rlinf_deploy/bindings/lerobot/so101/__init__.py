@@ -1,1 +1,1 @@
-"""Policy bindings targeting the SO-101 follower."""
+"""Policy bindings targeting the LeRobot SO-101 follower."""

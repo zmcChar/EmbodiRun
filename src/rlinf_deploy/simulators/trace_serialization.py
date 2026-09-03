@@ -7,8 +7,7 @@ import math
 from collections.abc import Mapping
 from typing import Any, Protocol
 
-from rlinf_deploy.robots.action import RobotAction
-from rlinf_deploy.robots.observation import RobotObservation
+from rlinf_deploy.robots.adapter import RobotAction, RobotObservation
 
 from .trace_values import (
     DisturbanceTraceEvent,

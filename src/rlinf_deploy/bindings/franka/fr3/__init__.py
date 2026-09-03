@@ -1,1 +1,1 @@
-"""Bindings targeting the Franka Research 3."""
+"""Policy bindings targeting the Franka Research 3."""

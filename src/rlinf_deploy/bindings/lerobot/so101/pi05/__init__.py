@@ -1,25 +1,39 @@
-"""Pi0.5 inference-output binding for the SO-101 follower."""
+"""Pi0.5 value mapping for the SO-101 follower."""
 
-from .action import (
-    Pi05SO101ActionMapper,
-    Pi05SO101ActionMapperError,
-)
-from .contract import (
-    ACTION_SPACE,
+from rlinf_deploy.robots.lerobot.so101 import SO101_POSITION_FEATURES
+
+from .... import BindingDefinition
+from .mapper import (
     POLICY_ACTION_SPACE,
-    POLICY_FAMILY,
-    ROBOT_ACTION_SPACE,
-    ROBOT_MODEL,
+    Pi05SO101Mapper,
+    Pi05SO101MapperError,
 )
-from .runtime import Pi05SO101Runtime
+
+
+MAXIMUM_CHUNK_STEPS = 50
+ADAPTER_CONFIG = {
+    "state_fields": ("joint_positions_deg", "gripper_position"),
+    "image_fields": (
+        "observation.images.front",
+        "observation.images.wrist",
+    ),
+    "action_feature_names": SO101_POSITION_FEATURES,
+}
+
+
+BINDING_DEFINITION = BindingDefinition(
+    kind="lerobot.so101.pi05",
+    robot_kind="lerobot.so101",
+    model_kind="pi05",
+    mapper_factory=Pi05SO101Mapper,
+    maximum_chunk_steps=MAXIMUM_CHUNK_STEPS,
+    adapter_config=ADAPTER_CONFIG,
+)
 
 __all__ = [
-    "ACTION_SPACE",
+    "BINDING_DEFINITION",
+    "MAXIMUM_CHUNK_STEPS",
     "POLICY_ACTION_SPACE",
-    "POLICY_FAMILY",
-    "ROBOT_ACTION_SPACE",
-    "ROBOT_MODEL",
-    "Pi05SO101ActionMapper",
-    "Pi05SO101ActionMapperError",
-    "Pi05SO101Runtime",
+    "Pi05SO101Mapper",
+    "Pi05SO101MapperError",
 ]

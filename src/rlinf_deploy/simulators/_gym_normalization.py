@@ -6,8 +6,7 @@ from collections.abc import Mapping
 from numbers import Real
 from typing import Any
 
-from rlinf_deploy.robots.action import RobotAction
-from rlinf_deploy.robots.observation import RobotObservation
+from rlinf_deploy.robots.adapter import RobotAction, RobotObservation
 
 
 def identity_observation(value: Any) -> RobotObservation:
