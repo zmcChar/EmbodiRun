@@ -82,6 +82,10 @@ Initialize the nodes, then start their persistent services:
 uv run rlinf-deploy \
   --config configs/muti-nodes.example.yaml init
 
+# During Deploy-side development, synchronize source without restarting pi0.5.
+uv run rlinf-deploy \
+  --config configs/muti-nodes.example.yaml sync --target deploy
+
 uv run rlinf-deploy \
   --config configs/muti-nodes.example.yaml up
 
@@ -98,6 +102,18 @@ dependencies. Successful initialization is recorded locally below
 `~/.local/state/rlinf-deploy`. Different nodes initialize concurrently; work on
 one node remains ordered, and each Deploy or Inference environment appears as a
 separate synchronization stage in that node's progress row.
+
+`sync --target deploy` packages the current local `src/rlinf_deploy` tree and
+uploads it once per Deploy node into a content-addressed development overlay.
+It atomically activates that overlay for subsequent `run` commands and never
+restarts the Inference service. If `pyproject.toml` and `uv.lock` are unchanged,
+the existing robot environment is reused; otherwise only the affected Deploy
+environment groups are synchronized. The command refuses to switch code while
+a robot binding worker is running. Use `--source PATH` when invoking it outside
+the RLinf Deploy repository root. `sync` may still run after unrelated YAML
+changes, but it does not apply them to persistent services. Changes to model
+service configuration or either pinned revision still require the normal
+`down` → `init` → `up` lifecycle.
 
 `up` refuses to run without state from a successful `init`, or if the YAML has
 changed since initialization. It starts PID-supervised model services and is

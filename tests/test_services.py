@@ -1,6 +1,8 @@
 import json
 import socket
 import sys
+import tarfile
+from io import BytesIO
 from dataclasses import replace
 from pathlib import Path
 from threading import Barrier, Thread
@@ -174,6 +176,54 @@ class RuntimeExecutor:
         ):
             return self.result
         raise AssertionError(f"unexpected command: {command.argv!r}")
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class SyncExecutor:
+    def __init__(self, *, worker_running=False, dependencies_changed=False) -> None:
+        self.worker_running = worker_running
+        self.dependencies_changed = dependencies_changed
+        self.commands = []
+        self.files = {}
+        self.symlinks = {}
+        self.closed = False
+
+    def run(self, command, *, check=True):
+        self.commands.append((command, check))
+        argv = command.argv
+        if argv[:2] == ("pgrep", "-f"):
+            if self.worker_running:
+                return CommandResult(0, "8675\n")
+            return CommandResult(1)
+        if argv[:2] == ("test", "-f"):
+            path = argv[2]
+            if path.endswith(("/pyproject.toml", "/uv.lock")) and "/sources/deploy/" in path:
+                return CommandResult(0)
+            return CommandResult(1)
+        if argv[:2] == ("test", "-x"):
+            return CommandResult(0)
+        if argv[0] in {"mkdir", "tar"}:
+            return CommandResult(0)
+        if "sync" in argv and "--group" in argv:
+            return CommandResult(0)
+        raise AssertionError(f"unexpected command: {argv!r}")
+
+    def read_bytes(self, path):
+        name = Path(path).name
+        if self.dependencies_changed and name == "pyproject.toml":
+            return b"different\n"
+        return (ROOT / name).read_bytes()
+
+    def write_bytes(self, path, content, *, mode=0o600):
+        self.files[path] = (content, mode)
+
+    def replace_symlink(self, path, target):
+        self.symlinks[path] = target
+
+    def write_text(self, path, content, *, mode=0o600):
+        self.files[path] = (content.encode(), mode)
 
     def close(self) -> None:
         self.closed = True
@@ -425,6 +475,29 @@ def test_local_executor_atomically_writes_private_text(tmp_path) -> None:
 
     assert target.read_text(encoding="utf-8") == '{"return_steps":50}\n'
     assert target.stat().st_mode & 0o777 == 0o600
+
+
+def test_local_executor_atomically_reads_and_writes_private_bytes(tmp_path) -> None:
+    target = tmp_path / "generated" / "source.tar.gz"
+    executor = LocalExecutor()
+
+    executor.write_bytes(str(target), b"\x1f\x8barchive", mode=0o600)
+
+    assert executor.read_bytes(str(target)) == b"\x1f\x8barchive"
+    assert target.stat().st_mode & 0o777 == 0o600
+
+
+def test_local_executor_atomically_replaces_symlink(tmp_path) -> None:
+    executor = LocalExecutor()
+    current = tmp_path / "overlays" / "deploy" / "current"
+    first = tmp_path / "releases" / "first"
+    second = tmp_path / "releases" / "second"
+
+    executor.replace_symlink(str(current), str(first))
+    executor.replace_symlink(str(current), str(second))
+
+    assert current.is_symlink()
+    assert current.readlink() == second
 
 
 def test_ssh_executor_reads_health_without_remote_script() -> None:
@@ -698,7 +771,251 @@ def test_cli_routes_prompt_to_selected_runtime(tmp_path, capsys) -> None:
         "wrist-camera",
     }
     assert {item["type"] for item in payload["inputs"]} == {"v4l2"}
+    assert command.environment == {
+        "PYTHONPATH": (
+            "/home/user/.local/share/rlinf-deploy/thor-so101-pi05/"
+            "overlays/deploy/current/src"
+        )
+    }
     assert executor.closed is True
+
+
+def test_cli_sync_uploads_deploy_overlay_without_touching_inference(
+    tmp_path, capsys
+) -> None:
+    state_dir = tmp_path / "state"
+    base_args = (
+        "--config",
+        str(EXAMPLE),
+        "--state-dir",
+        str(state_dir),
+    )
+    assert (
+        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
+        == 0
+    )
+    capsys.readouterr()
+    executor = SyncExecutor()
+
+    exit_code = main(
+        (*base_args, "sync", "--target", "deploy", "--source", str(ROOT)),
+        executor_factory=lambda _node: executor,
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.err == ""
+    assert "inference" in captured.out
+    assert "services were not restarted" in captured.out
+    commands = [command for command, _check in executor.commands]
+    assert all(command.argv[:2] != ("sh", "-c") for command in commands)
+    assert not any("inference" in argument for command in commands for argument in command.argv)
+    assert not any("sync" in command.argv for command in commands)
+    assert any(command.argv[0] == "tar" for command in commands)
+    assert len(executor.symlinks) == 1
+    current, release = next(iter(executor.symlinks.items()))
+    assert current.endswith("/overlays/deploy/current")
+    assert "/overlays/deploy/releases/" in release
+    uploaded = next(
+        content
+        for path, (content, _mode) in executor.files.items()
+        if path.endswith(".tar.gz")
+    )
+    with tarfile.open(fileobj=BytesIO(uploaded), mode="r:gz") as archive:
+        names = set(archive.getnames())
+    assert "src/rlinf_deploy/bindings/worker.py" in names
+    assert {"pyproject.toml", "uv.lock", "README.md"} <= names
+    assert executor.closed is True
+
+
+def test_cli_sync_updates_only_deploy_dependencies_when_lock_changes(
+    tmp_path, capsys
+) -> None:
+    state_dir = tmp_path / "state"
+    base_args = (
+        "--config",
+        str(EXAMPLE),
+        "--state-dir",
+        str(state_dir),
+    )
+    assert (
+        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
+        == 0
+    )
+    capsys.readouterr()
+    executor = SyncExecutor(dependencies_changed=True)
+
+    exit_code = main(
+        (*base_args, "sync", "--source", str(ROOT)),
+        executor_factory=lambda _node: executor,
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    uv_commands = [
+        command
+        for command, _check in executor.commands
+        if "sync" in command.argv and "--group" in command.argv
+    ]
+    assert len(uv_commands) == 1
+    assert uv_commands[0].argv[-2:] == ("--group", "robot-so101")
+    assert uv_commands[0].environment == {
+        "UV_PROJECT_ENVIRONMENT": (
+            "/home/user/.local/share/rlinf-deploy/thor-so101-pi05/"
+            "sources/deploy/.venv-robot-so101"
+        )
+    }
+    assert "dependencies updated" in captured.out
+
+
+def test_cli_sync_refuses_while_robot_worker_is_running(tmp_path, capsys) -> None:
+    state_dir = tmp_path / "state"
+    base_args = (
+        "--config",
+        str(EXAMPLE),
+        "--state-dir",
+        str(state_dir),
+    )
+    assert (
+        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
+        == 0
+    )
+    capsys.readouterr()
+    executor = SyncExecutor(worker_running=True)
+
+    exit_code = main(
+        (*base_args, "sync", "--source", str(ROOT)),
+        executor_factory=lambda _node: executor,
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "robot binding worker is running (8675)" in captured.err
+    assert not executor.files
+    assert executor.closed is True
+
+
+def test_cli_sync_allows_unrelated_config_change_after_init(tmp_path, capsys) -> None:
+    config_path = tmp_path / "deployment.yaml"
+    config_path.write_text(EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
+    state_dir = tmp_path / "state"
+    base_args = (
+        "--config",
+        str(config_path),
+        "--state-dir",
+        str(state_dir),
+    )
+    assert (
+        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
+        == 0
+    )
+    capsys.readouterr()
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8") + "\n# local runtime edit\n",
+        encoding="utf-8",
+    )
+    executor = SyncExecutor()
+
+    exit_code = main(
+        (*base_args, "sync", "--source", str(ROOT)),
+        executor_factory=lambda _node: executor,
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.err == ""
+    assert executor.symlinks
+
+
+def test_cli_run_allows_unrelated_config_change_after_init(tmp_path, capsys) -> None:
+    config_path = tmp_path / "deployment.yaml"
+    config_path.write_text(EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
+    state_dir = tmp_path / "state"
+    base_args = (
+        "--config",
+        str(config_path),
+        "--state-dir",
+        str(state_dir),
+    )
+    assert (
+        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
+        == 0
+    )
+    capsys.readouterr()
+    assert (
+        main(
+            (*base_args, "up"),
+            executor_factory=lambda _node: ServiceReadinessExecutor(),
+        )
+        == 0
+    )
+    capsys.readouterr()
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8") + "\n# local runtime edit\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        (
+            *base_args,
+            "run",
+            "--runtime",
+            "so101-1-runtime",
+            "--prompt",
+            "move",
+        ),
+        executor_factory=lambda _node: RuntimeExecutor(),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.err == ""
+
+
+def test_cli_run_rejects_changed_model_endpoint(tmp_path, capsys) -> None:
+    config_path = tmp_path / "deployment.yaml"
+    config_path.write_text(EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
+    state_dir = tmp_path / "state"
+    base_args = (
+        "--config",
+        str(config_path),
+        "--state-dir",
+        str(state_dir),
+    )
+    assert (
+        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
+        == 0
+    )
+    capsys.readouterr()
+    assert (
+        main(
+            (*base_args, "up"),
+            executor_factory=lambda _node: ServiceReadinessExecutor(),
+        )
+        == 0
+    )
+    capsys.readouterr()
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace("port: 8000", "port: 8001"),
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        (
+            *base_args,
+            "run",
+            "--runtime",
+            "so101-1-runtime",
+            "--prompt",
+            "move",
+        ),
+        executor_factory=lambda _node: pytest.fail("must not contact the node"),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "running at 'http://127.0.0.1:8000'" in captured.err
+    assert "requires 'http://127.0.0.1:8001'" in captured.err
 
 
 def test_cli_rejects_chunk_steps_above_binding_maximum(capsys) -> None:

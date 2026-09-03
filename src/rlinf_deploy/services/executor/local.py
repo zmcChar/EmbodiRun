@@ -7,6 +7,7 @@ import os
 import subprocess
 import tempfile
 import urllib.request
+import uuid
 from pathlib import Path
 
 from .command import Command, CommandError, CommandResult
@@ -57,6 +58,32 @@ class LocalExecutor:
     def write_text(self, path: str, content: str, *, mode: int = 0o600) -> None:
         """Atomically write a UTF-8 text file for a local deployment node."""
 
+        self.write_bytes(path, content.encode("utf-8"), mode=mode)
+
+    def read_bytes(self, path: str) -> bytes:
+        return Path(path).read_bytes()
+
+    def replace_symlink(self, path: str, target: str) -> None:
+        """Atomically point one local symlink at a new target."""
+
+        link = Path(path)
+        link.parent.mkdir(parents=True, exist_ok=True)
+        temporary = link.with_name(f".{link.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            temporary.symlink_to(target)
+            os.replace(temporary, link)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def write_bytes(
+        self,
+        path: str,
+        content: bytes,
+        *,
+        mode: int = 0o600,
+    ) -> None:
+        """Atomically write bytes for a local deployment node."""
+
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         descriptor, temporary = tempfile.mkstemp(
@@ -64,7 +91,7 @@ class LocalExecutor:
             prefix=f".{target.name}.",
         )
         try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            with os.fdopen(descriptor, "wb") as stream:
                 stream.write(content)
                 stream.flush()
                 os.fsync(stream.fileno())

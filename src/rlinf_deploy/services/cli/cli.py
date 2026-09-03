@@ -11,7 +11,7 @@ from ..config import ConfigError, NodeConfig, load_config
 from ..environment import EnvironmentError
 from ..executor import Executor, executor_for
 from ..service import ServiceError, build_plan
-from .command import down, init, probe, run, up, validate
+from .command import down, init, probe, run, sync, up, validate
 from .context import CommandContext, state_path
 from .progress import ConsoleProgressReporter
 
@@ -28,6 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     validate.register(commands)
     probe.register(commands)
     init.register(commands)
+    sync.register(commands)
     up.register(commands)
     down.register(commands)
     run.register(commands)

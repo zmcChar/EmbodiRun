@@ -144,8 +144,58 @@ class SshExecutor:
     def write_text(self, path: str, content: str, *, mode: int = 0o600) -> None:
         """Atomically upload a UTF-8 text file through SFTP."""
 
-        if not path.startswith("/") or "\x00" in path:
-            raise ValueError("remote file path must be an absolute POSIX path")
+        self.write_bytes(path, content.encode("utf-8"), mode=mode)
+
+    def read_bytes(self, path: str) -> bytes:
+        """Download one file through SFTP."""
+
+        _validate_remote_path(path)
+        sftp = None
+        try:
+            sftp = self._connect().open_sftp()
+            with sftp.open(path, "rb") as stream:
+                return stream.read()
+        except Exception as error:
+            detail = _redact(str(error), self._password)
+            raise RuntimeError(f"SFTP file download failed: {detail}") from None
+        finally:
+            if sftp is not None:
+                sftp.close()
+
+    def replace_symlink(self, path: str, target: str) -> None:
+        """Atomically point one remote symlink at a new target through SFTP."""
+
+        _validate_remote_path(path)
+        _validate_remote_path(target)
+        parent = posixpath.dirname(path)
+        self.run(Command(("mkdir", "-p", parent)))
+        temporary = f"{path}.{uuid.uuid4().hex}.tmp"
+        sftp = None
+        try:
+            sftp = self._connect().open_sftp()
+            sftp.symlink(target, temporary)
+            sftp.posix_rename(temporary, path)
+        except Exception as error:
+            detail = _redact(str(error), self._password)
+            raise RuntimeError(f"SFTP symlink replacement failed: {detail}") from None
+        finally:
+            if sftp is not None:
+                try:
+                    sftp.remove(temporary)
+                except OSError:
+                    pass
+                sftp.close()
+
+    def write_bytes(
+        self,
+        path: str,
+        content: bytes,
+        *,
+        mode: int = 0o600,
+    ) -> None:
+        """Atomically upload bytes through SFTP."""
+
+        _validate_remote_path(path)
         parent = posixpath.dirname(path)
         self.run(Command(("mkdir", "-p", parent)))
         temporary = f"{path}.{uuid.uuid4().hex}.tmp"
@@ -153,7 +203,7 @@ class SshExecutor:
         try:
             sftp = self._connect().open_sftp()
             with sftp.open(temporary, "wb") as stream:
-                stream.write(content.encode("utf-8"))
+                stream.write(content)
                 stream.flush()
             sftp.chmod(temporary, mode)
             sftp.posix_rename(temporary, path)
@@ -204,6 +254,11 @@ def _redact(value: str, secret: str | None) -> str:
     if secret:
         return value.replace(secret, "<redacted>")
     return value
+
+
+def _validate_remote_path(path: str) -> None:
+    if not path.startswith("/") or "\x00" in path:
+        raise ValueError("remote file path must be an absolute POSIX path")
 
 
 __all__ = ["SshExecutor", "render_posix"]

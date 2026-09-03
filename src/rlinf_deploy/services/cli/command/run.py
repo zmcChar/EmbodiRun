@@ -12,7 +12,6 @@ from rlinf_deploy.bindings import binding_definition
 from rlinf_deploy.bindings.request import BindingWorkerRequest
 from rlinf_deploy.robots.sensors import SensorInput
 
-from ...config import config_digest
 from ...executor import Command, CommandResult
 from ...state import StateStore
 from ..context import CommandContext
@@ -118,8 +117,10 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
         state = StateStore(context.state_path).load()
         if state is None:
             raise RunError("deployment is not initialized; run `rlinf-deploy ... init`")
-        if state.config_digest != config_digest(context.config):
-            raise RunError("configuration changed since init; run init again")
+        if state.deploy_commit != context.deployment.deploy_commit:
+            raise RunError("Deploy revision changed since init; run init again")
+        if state.inference_commit != context.deployment.inference_commit:
+            raise RunError("Inference revision changed since init; run init again")
         environment = state.environments.get(runtime.environment_id)
         if environment is None or environment.status != "ready":
             raise RunError(
@@ -130,6 +131,18 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
             raise RunError(
                 f"model service {runtime.model!r} is not running; "
                 "run `rlinf-deploy ... up`"
+            )
+        model = context.config.models[runtime.model]
+        if service.node != model.node:
+            raise RunError(
+                f"model service {runtime.model!r} is recorded on {service.node!r}, "
+                f"but the runtime requires {model.node!r}; run init again"
+            )
+        if service.endpoint != runtime.model_endpoint:
+            raise RunError(
+                f"model service {runtime.model!r} is running at "
+                f"{service.endpoint!r}, but the runtime requires "
+                f"{runtime.model_endpoint!r}; restart the deployment"
             )
         node = state.nodes.get(runtime.node)
         if node is None:
@@ -168,6 +181,13 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
         progress.advance(runtime.node)
 
         python = posixpath.join(environment.path, "bin", "python")
+        deploy_overlay = posixpath.join(
+            node.root,
+            "overlays",
+            "deploy",
+            "current",
+            "src",
+        )
         command_timeout_s = max(
             60.0,
             args.max_steps * args.request_timeout
@@ -202,6 +222,7 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
                         worker_request_json,
                     ),
                     cwd=node.deploy_project,
+                    environment={"PYTHONPATH": deploy_overlay},
                     timeout_s=command_timeout_s,
                 ),
                 check=False,
