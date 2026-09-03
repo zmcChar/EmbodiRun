@@ -1,4 +1,4 @@
-"""Model-independent wire values exchanged with a VVLA HTTP server."""
+"""Model-independent values exchanged with a VVLA policy server."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
-
 
 IDENTIFIER = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
@@ -78,11 +77,14 @@ class PolicyAction:
         object.__setattr__(self, "values", _mapping(self.values, "action.values"))
 
     @classmethod
-    def from_payload(cls, payload: object) -> "PolicyAction":
+    def from_payload(cls, payload: object) -> PolicyAction:
         value = _mapping(payload, "action")
         kind = value.get("type")
         parameters = value.get("values", {})
-        return cls(kind=_identifier(kind, "action.type"), values=_mapping(parameters, "action.values"))
+        return cls(
+            kind=_identifier(kind, "action.type"),
+            values=_mapping(parameters, "action.values"),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,7 +107,9 @@ class PolicyResult:
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
         actions = tuple(self.actions)
-        if not actions or any(not isinstance(action, PolicyAction) for action in actions):
+        if not actions or any(
+            not isinstance(action, PolicyAction) for action in actions
+        ):
             raise ValueError("actions must contain at least one PolicyAction")
         object.__setattr__(self, "actions", actions)
         timing: dict[str, float] = {}
@@ -117,7 +121,7 @@ class PolicyResult:
         object.__setattr__(self, "timing", timing)
 
     @classmethod
-    def from_payload(cls, payload: object) -> "PolicyResult":
+    def from_payload(cls, payload: object) -> PolicyResult:
         value = _mapping(payload, "step response")
         actions = value.get("actions")
         if isinstance(actions, (str, bytes)) or not isinstance(actions, Sequence):

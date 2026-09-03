@@ -8,7 +8,7 @@ or execute neural networks.
 camera / robot state
         |
         v
-RLinf Deploy -- HTTP --> RLinf Inference (VVLA)
+RLinf Deploy -- HTTP / WirelessComm --> RLinf Inference (VVLA)
         |
         v
 robot-specific safety and motion execution
@@ -19,15 +19,16 @@ robot-specific safety and motion execution
 | RLinf Deploy owns | RLinf Inference owns |
 |---|---|
 | Robot and simulator observations | Checkpoints and processors |
-| HTTP client, retries, deadlines | Prompt and model forward |
+| Policy clients, retries, deadlines | Prompt and model forward |
 | Session and step identifiers | Session memory and batching |
 | Robot action validation | Model-output parsing |
 | Go2 and FR3 control | DP, TP, CUDA Graph, compilation |
 | SSH deployment and service routing | Canonical policy actions |
 
 `third_party/vvla` pins the server implementation for integration and deployment
-reproducibility. Runtime communication still crosses the versioned HTTP API; the
-deploy package never imports VVLA Python modules.
+reproducibility. Runtime communication crosses the versioned policy API over HTTP
+or the optional WirelessComm data plane; the deploy package never imports VVLA
+Python modules.
 
 ## Environments
 
@@ -36,11 +37,15 @@ group it needs:
 
 ```bash
 uv sync --frozen                                      # core + development tools
+uv sync --frozen --extra wireless                     # WirelessComm policy client
 uv sync --frozen --no-dev --group host                # SSH orchestration
 uv sync --python 3.12 --frozen --no-dev \
   --group robot-so101                                 # SO-101 control agent
 uv sync --frozen --no-dev --group robot-fr3           # FR3 control agent
 ```
+
+The `wireless` extra resolves `wireless-comm` from the sibling
+`../WirelessComm` checkout used by this workspace.
 
 `robot-so101` requires Python 3.12 or newer. The repository does not set a global
 Python version because the other environments continue to support Python 3.10.
@@ -65,6 +70,38 @@ DELETE /v1/sessions/{session_id}
 Step requests use `multipart/form-data`: one JSON metadata part followed by
 binary image parts. Images are never base64 encoded. `request_id`, `step_id`,
 and `session_revision` provide idempotency and ordering.
+
+## WirelessComm contract
+
+Install the optional client and give both processes complementary WirelessComm
+YAML files whose peer directories contain each other. Start the inference process
+with `vvla-wireless-serve`, then create the Deploy client from its local config:
+
+```python
+from rlinf_deploy import VvlaWirelessClient
+
+client = VvlaWirelessClient.from_config(
+    "configs/wireless.example.yaml",
+    server_node_id="inference-1",
+    token="shared-token",
+    timeout_s=5.0,
+)
+try:
+    capabilities = client.capabilities()
+finally:
+    client.shutdown()
+```
+
+Wireless steps carry the same versioned session/step fields as HTTP, while image
+bytes remain separate WirelessComm payload segments instead of being assembled as
+multipart data. One client instance may own multiple policy sessions and should
+live for the process lifetime so its connection, response dispatcher, queues and
+pacing state are reused. A timeout does not cancel inference; retry an uncertain
+step only against the same server/session with the same `request_id`.
+
+WirelessComm peer IDs and the optional token do not encrypt or authenticate the
+link. Use this transport only on a trusted isolated network until the data plane
+provides TLS or an equivalent authenticated transport.
 
 ## FR3
 

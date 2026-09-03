@@ -11,6 +11,14 @@ requires-python = ">=3.10"
 license = "Apache-2.0"
 dependencies = []
 
+[project.optional-dependencies]
+wireless = [
+    "wireless-comm>=0.1,<0.2",
+]
+
+[tool.uv.sources]
+wireless-comm = { path = "../WirelessComm", editable = true }
+
 [dependency-groups]
 dev = ["pytest>=8,<9"]
 host = ["paramiko>=3.4,<5"]

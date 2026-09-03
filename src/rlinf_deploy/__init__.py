@@ -3,16 +3,19 @@
 from .inference import (
     ImagePayload,
     PolicyAction,
+    PolicyClient,
     PolicyObservation,
     PolicyResult,
     Session,
     VvlaHttpClient,
+    VvlaWirelessClient,
 )
 from .robots import RobotAction, RobotAdapter, RobotObservation, RobotProfile
 
 __all__ = [
     "ImagePayload",
     "PolicyAction",
+    "PolicyClient",
     "PolicyObservation",
     "PolicyResult",
     "RobotAction",
@@ -21,4 +24,5 @@ __all__ = [
     "RobotProfile",
     "Session",
     "VvlaHttpClient",
+    "VvlaWirelessClient",
 ]
