@@ -2,9 +2,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from rlinf_deploy.bindings.runtime import BindingRuntime
+from rlinf_deploy.services.control.runtime import ControlRuntime
 from rlinf_deploy.bindings.lerobot.so101.pi05 import Pi05SO101Mapper
-from rlinf_deploy.inference import (
+from rlinf_deploy.services.inference import (
     ImagePayload,
     PolicyAction,
     PolicyResult,
@@ -73,7 +73,7 @@ class FakeClock:
 def test_so101_binding_converts_camera_frames_to_inference_images() -> None:
     robot = FakeRobot()
     client = FakeClient()
-    runtime = BindingRuntime(
+    runtime = ControlRuntime(
         robot,
         client,
         instruction="pick up the block",
@@ -130,11 +130,11 @@ def test_so101_mapper_preserves_all_action_chunk_rows() -> None:
     assert {action.metadata["chunk_size"] for action in actions} == {2}
 
 
-def test_binding_runtime_plays_action_chunk_at_control_rate() -> None:
+def test_control_runtime_plays_action_chunk_at_control_rate() -> None:
     robot = FakeRobot()
     client = FakeClient()
     clock = FakeClock()
-    runtime = BindingRuntime(
+    runtime = ControlRuntime(
         robot,
         client,
         instruction="pick up the block",
@@ -151,10 +151,10 @@ def test_binding_runtime_plays_action_chunk_at_control_rate() -> None:
     assert clock.sleeps == [0.05, 0.05]
 
 
-def test_binding_runtime_executes_only_requested_chunk_steps() -> None:
+def test_control_runtime_executes_only_requested_chunk_steps() -> None:
     robot = FakeRobot()
     client = FakeClient()
-    runtime = BindingRuntime(
+    runtime = ControlRuntime(
         robot,
         client,
         instruction="pick up the block",
@@ -167,10 +167,10 @@ def test_binding_runtime_executes_only_requested_chunk_steps() -> None:
     assert [action.values["index"] for action in robot.actions] == [0, 1]
 
 
-def test_binding_runtime_rejects_short_chunk_before_execution() -> None:
+def test_control_runtime_rejects_short_chunk_before_execution() -> None:
     robot = FakeRobot()
     client = FakeClient()
-    runtime = BindingRuntime(
+    runtime = ControlRuntime(
         robot,
         client,
         instruction="pick up the block",

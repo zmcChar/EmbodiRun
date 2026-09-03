@@ -5,13 +5,14 @@ simulator. It does not load checkpoints, import model frameworks, build prompts,
 or execute neural networks.
 
 ```text
-camera / robot state
-        |
-        v
-RLinf Deploy -- HTTP / WirelessComm --> RLinf Inference (VVLA)
-        |
-        v
-robot-specific safety and motion execution
+                         management plane
+Host ---------------- SSH ----------------> Compute / Control nodes
+  |
+  +-------- HTTP through SSH -------------> Control service
+                                                |
+                         inference plane        +--> sensors / robot adapter
+                     HTTP or WirelessComm       |
+Control service ------------------------------> Inference service
 ```
 
 ## Repository boundary
@@ -29,6 +30,34 @@ robot-specific safety and motion execution
 reproducibility. Runtime communication crosses the versioned policy API over HTTP
 or the optional WirelessComm data plane; the deploy package never imports VVLA
 Python modules.
+
+The service directories follow those process boundaries:
+
+```text
+services/
+├── host/                       # runs only on the operator machine
+│   ├── cli/                    # user commands and progress reporting
+│   ├── config/                 # typed YAML sections and reference checks
+│   ├── executor/               # local/SSH command and tunneled HTTP execution
+│   ├── control.py              # Host -> Control task client
+│   ├── plan.py                 # resolves config into services and runtimes
+│   ├── state.py                # local initialized/running state
+│   ├── probe.py                # node capability discovery
+│   ├── source.py               # pinned checkouts and development overlays
+│   ├── environment.py          # uv environment resolution
+│   └── supervisor.py           # identity-checked process lifecycle
+├── control/                    # runs beside the robot and sensors
+│   ├── contracts.py            # versioned Host <-> Control task messages
+│   ├── runtime.py              # observation/inference/action loop
+│   └── server.py               # loopback task API and hardware ownership
+└── inference/                  # Control <-> Inference boundary
+    ├── contracts.py            # versioned policy sessions, steps, and actions
+    ├── client/                 # HTTP and WirelessComm clients
+    └── server/                 # external VVLA launch descriptors
+```
+
+`bindings/` contains only policy-to-robot mappings and safety horizons; it does
+not own a process, network listener, or deployment protocol.
 
 ## Environments
 
@@ -82,10 +111,11 @@ Initialize the nodes, then start their persistent services:
 uv run rlinf-deploy \
   --config configs/muti-nodes.example.yaml init
 
-# During Deploy-side development, synchronize source without restarting pi0.5.
+# During Deploy-side development, reload Control without restarting pi0.5.
+uv run rlinf-deploy \
+  --config configs/muti-nodes.example.yaml down --target control
 uv run rlinf-deploy \
   --config configs/muti-nodes.example.yaml sync --target deploy
-
 uv run rlinf-deploy \
   --config configs/muti-nodes.example.yaml up
 
@@ -105,27 +135,29 @@ separate synchronization stage in that node's progress row.
 
 `sync --target deploy` packages the current local `src/rlinf_deploy` tree and
 uploads it once per Deploy node into a content-addressed development overlay.
-It atomically activates that overlay for subsequent `run` commands and never
-restarts the Inference service. If `pyproject.toml` and `uv.lock` are unchanged,
-the existing robot environment is reused; otherwise only the affected Deploy
-environment groups are synchronized. The command refuses to switch code while
-a robot binding worker is running. Use `--source PATH` when invoking it outside
-the RLinf Deploy repository root. `sync` may still run after unrelated YAML
-changes, but it does not apply them to persistent services. Changes to model
+It atomically activates that overlay without restarting Inference. A running
+Control process has already imported its Python modules, so `sync` requires
+Control services to be stopped first. `down --target control` stops only those
+services; the following `up` reuses the already-running, healthy model process
+and starts Control from the new overlay. If `pyproject.toml` and `uv.lock` are
+unchanged, the existing robot environment is reused; otherwise only the affected
+Deploy environment groups are synchronized. Use `--source PATH` when invoking
+the command outside the repository root. `sync` may still run after unrelated
+YAML changes, but it does not apply them to persistent services. Changes to model
 service configuration or either pinned revision still require the normal
 `down` → `init` → `up` lifecycle.
 
 `up` refuses to run without state from a successful `init`, or if the YAML has
-changed since initialization. It starts PID-supervised model services and is
-idempotent for services that are already running. The SO101 binding runtime
-remains independent; `up` does not connect to or move the arm. `down` stops only
-identity-checked model service processes and is also available when the YAML has
-changed, allowing a safe `down` → `init` → `up` reconfiguration sequence.
-Both commands operate on different nodes concurrently and display the model or
-service currently being started, health-checked, or stopped.
+changed since initialization. It starts PID-supervised inference and control
+services and waits for both health checks. It is idempotent for processes that
+are already running. Starting Control loads static robot, sensor, binding, and
+inference routing configuration, but does not connect to or move the arm.
+`down` stops identity-checked processes and remains available when the YAML has
+changed; `--target control` or `--target model` limits it to one service kind.
+Both commands operate on different nodes concurrently.
 
-After `up` reports the model service as healthy, route one prompt through a
-configured runtime:
+After `up` reports both services healthy, submit one prompt to a configured
+control runtime:
 
 ```bash
 rlinf-deploy \
@@ -135,14 +167,20 @@ rlinf-deploy \
   --chunk-steps 10
 ```
 
+The Host sends this task as versioned HTTP through the existing authenticated SSH
+connection to the Control service's loopback socket; it does not expose a task
+port to the Wi-Fi network. The request contains only the prompt and bounded
+execution parameters. Static robot, sensor, binding, and inference configuration
+stays on Control.
+
 `run` can move the selected physical robot. The default is one inference/action
 chunk. `--chunk-steps N` selects how many ordered actions to execute from each
 chunk (default 10), `--max-steps N` bounds the number of inference chunks, and
 `--control-hz HZ` selects the action playback rate. The SO101/Pi0.5 binding
 declares its five arm joints, gripper, image fields, and maximum model horizon;
 `up` materializes that declaration as an internal VVLA adapter file. No
-user-maintained model adapter JSON is required. Before connecting the arm, the
-binding checks model health and opens, warms up, and validates every camera.
+user-maintained model adapter JSON is required. Before connecting the arm,
+Control checks model health and opens, warms up, and validates every camera.
 V4L2 capture is implemented in the robot sensor camera layer and returns
 model-independent camera frames; the SO101/Pi0.5 binding converts those frames
 into inference image payloads.
@@ -224,9 +262,9 @@ The adapter follows the official Franky API:
 Physical execution is intentionally fail-closed. Joint and Cartesian step
 limits are checked before Franky receives a command.
 
-FR3 and SO-101 share the generic `bindings/request.py`, `bindings/runtime.py`,
-and `bindings/worker.py` execution path. Their `pi05` packages contain only the
-policy-specific mapper and binding definition.
+FR3 and SO-101 share `services/control/runtime.py` and the versioned task service.
+Their `pi05` binding packages contain only the policy-specific mapper and binding
+definition.
 
 ## Go2
 

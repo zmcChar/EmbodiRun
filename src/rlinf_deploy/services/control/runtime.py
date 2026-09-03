@@ -7,14 +7,14 @@ import time
 import uuid
 from collections.abc import Callable, Sequence
 
-from rlinf_deploy.inference import InferenceClient, PolicyResult
+from rlinf_deploy.bindings import BindingMapper
 from rlinf_deploy.robots import RobotAction, RobotAdapter
 from rlinf_deploy.robots.sensors.cameras import CameraFrame
 
-from . import BindingMapper
+from ..inference import InferenceClient, PolicyResult
 
 
-class BindingRuntime:
+class ControlRuntime:
     """Own one policy session and execute mapped actions on one robot."""
 
     def __init__(
@@ -114,4 +114,4 @@ class BindingRuntime:
             self.client.close(self.session.session_id)
 
 
-__all__ = ["BindingRuntime"]
+__all__ = ["ControlRuntime"]

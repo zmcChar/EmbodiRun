@@ -9,9 +9,9 @@ from functools import cache
 from importlib import import_module
 from typing import Any, Protocol
 
-from rlinf_deploy.inference import PolicyObservation, PolicyResult
 from rlinf_deploy.robots import RobotAction, RobotObservation
 from rlinf_deploy.robots.sensors.cameras import CameraFrame
+from rlinf_deploy.services.inference import PolicyObservation, PolicyResult
 
 
 class BindingMapper(Protocol):

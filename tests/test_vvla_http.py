@@ -1,6 +1,6 @@
 import json
 
-from rlinf_deploy.inference import (
+from rlinf_deploy.services.inference import (
     HttpResponse,
     ImagePayload,
     PolicyObservation,

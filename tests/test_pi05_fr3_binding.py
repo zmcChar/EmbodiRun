@@ -7,8 +7,8 @@ from rlinf_deploy.bindings.franka.fr3.pi05 import (
     Pi05FR3MapperConfig,
     Pi05FR3MapperError,
 )
-from rlinf_deploy.bindings.runtime import BindingRuntime
-from rlinf_deploy.inference import (
+from rlinf_deploy.services.control.runtime import ControlRuntime
+from rlinf_deploy.services.inference import (
     PolicyAction,
     PolicyObservation,
     PolicyResult,
@@ -145,7 +145,7 @@ def test_pi05_mapper_extracts_joint_position_chunk() -> None:
 def test_pi05_runtime_steps_and_reset_flow() -> None:
     robot = FakeRobot()
     client = FakeVvlaClient()
-    runtime = BindingRuntime(
+    runtime = ControlRuntime(
         robot,
         client,
         instruction="pick",

@@ -1,6 +1,7 @@
 """Robot and simulator deployment clients for RLinf inference services."""
 
-from .inference import (
+from .robots import RobotAction, RobotAdapter, RobotObservation, RobotProfile
+from .services.inference import (
     ImagePayload,
     PolicyAction,
     PolicyClient,
@@ -10,7 +11,6 @@ from .inference import (
     VvlaHttpClient,
     VvlaWirelessClient,
 )
-from .robots import RobotAction, RobotAdapter, RobotObservation, RobotProfile
 
 __all__ = [
     "ImagePayload",

@@ -28,12 +28,18 @@ class NodeDownResult:
 def register(commands: Any) -> None:
     parser = commands.add_parser(
         "down",
-        help="stop initialized model services",
+        help="stop initialized services",
+    )
+    parser.add_argument(
+        "--target",
+        choices=("all", "control", "model"),
+        default="all",
+        help="service kind to stop (default: all)",
     )
     parser.set_defaults(command_handler=run)
 
 
-def run(_args: argparse.Namespace, context: CommandContext) -> int:
+def run(args: argparse.Namespace, context: CommandContext) -> int:
     store = StateStore(context.state_path)
     state = store.load()
     if state is None:
@@ -45,9 +51,19 @@ def run(_args: argparse.Namespace, context: CommandContext) -> int:
                 f"initialized service {service_id!r} references unavailable "
                 f"node {service.node!r}"
             )
+    selected_ids = {
+        service.service_id
+        for service in context.deployment.services
+        if args.target == "all" or service.kind == args.target
+    }
+    selected_services = tuple(
+        service
+        for service in state.services.values()
+        if service.service_id in selected_ids
+    )
     services_by_node = {
         node_id: tuple(
-            service for service in state.services.values() if service.node == node_id
+            service for service in selected_services if service.node == node_id
         )
         for node_id in state.nodes
     }
@@ -84,8 +100,12 @@ def run(_args: argparse.Namespace, context: CommandContext) -> int:
         progress.finish(success=False)
         raise
     progress.finish(success=True)
-    stopped = sum(service.status == "stopped" for service in state.services.values())
-    progress.message(f"{stopped}/{len(state.services)} services stopped")
+    stopped = sum(
+        state.services[service.service_id].status == "stopped"
+        for service in selected_services
+    )
+    label = "services" if args.target == "all" else f"{args.target} services"
+    progress.message(f"{stopped}/{len(selected_services)} {label} stopped")
     return 0
 
 

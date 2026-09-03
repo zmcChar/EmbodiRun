@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from collections.abc import Mapping
+from typing import Any, Protocol
 
 from ..config import NodeConfig
 from .command import Command, CommandResult
@@ -15,6 +16,15 @@ class Executor(Protocol):
     def run(self, command: Command, *, check: bool = True) -> CommandResult: ...
 
     def get_json(self, url: str, *, timeout_s: float) -> JsonHttpResponse: ...
+
+    def request_json(
+        self,
+        method: str,
+        url: str,
+        payload: Mapping[str, Any] | None,
+        *,
+        timeout_s: float,
+    ) -> JsonHttpResponse: ...
 
     def read_bytes(self, path: str) -> bytes: ...
 

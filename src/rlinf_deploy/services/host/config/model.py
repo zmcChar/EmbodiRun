@@ -5,20 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from .server import ServerConfig, parse_server
 from .validation import (
     ConfigError,
-    integer,
-    mapping,
     optional_string,
-    reject_unknown,
     string,
 )
-
-
-@dataclass(frozen=True, slots=True)
-class ServerConfig:
-    bind: str
-    port: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,14 +36,7 @@ def parse_model(model_id: str, value: dict[str, Any]) -> ModelConfig:
         raise ConfigError(
             f"{context}.environment_index requires environment_packages"
         )
-    server_value = mapping(value.get("server"), f"{context}.server")
-    reject_unknown(server_value, {"bind", "port"}, f"{context}.server")
-    server = ServerConfig(
-        bind=string(server_value, "bind", f"{context}.server"),
-        port=integer(server_value.get("port"), f"{context}.server.port"),
-    )
-    if not 1 <= server.port <= 65535:
-        raise ConfigError(f"{context}.server.port must be between 1 and 65535")
+    server = parse_server(value.get("server"), f"{context}.server")
     return ModelConfig(
         model_id=model_id,
         backend=string(value, "backend", context),
@@ -93,4 +78,4 @@ def _environment_packages(
     return tuple(result)
 
 
-__all__ = ["ModelConfig", "ServerConfig"]
+__all__ = ["ModelConfig"]

@@ -60,6 +60,9 @@ runtimes:
     robot: so101-1
     model: pi05-01
     binding: lerobot.so101.pi05
+    server:
+      bind: 127.0.0.1
+      port: 8100
     inputs:
       observation.images.front: front-camera
       observation.images.wrist: wrist-camera

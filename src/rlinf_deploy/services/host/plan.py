@@ -7,8 +7,14 @@ from dataclasses import dataclass
 from typing import Literal
 
 from rlinf_deploy.bindings import BindingDefinition, binding_definition
+from rlinf_deploy.robots.sensors import SensorInput
+from rlinf_deploy.services.control.contracts import ControlServiceConfig
+from rlinf_deploy.services.inference.server import (
+    http_server_command,
+    wireless_server_command,
+)
 
-from .config import DeploymentConfig, ModelConfig
+from .config import DeploymentConfig, ModelConfig, RuntimeConfig
 from .environment import (
     EnvironmentProfile,
     environment_profiles,
@@ -30,9 +36,10 @@ class ServiceSpec:
     node: str
     environment_id: str
     endpoint: str
-    health_endpoint: str
+    health_endpoint: str | None
     command: Command
     adapter_config_json: str | None = None
+    control_config_json: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +53,8 @@ class RuntimeSpec:
     binding: str
     environment_id: str
     model_endpoint: str
+    control_service_id: str
+    control_endpoint: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +78,7 @@ def build_plan(config: DeploymentConfig) -> DeploymentPlan:
         for model in sorted(config.models.values(), key=lambda item: item.model_id)
     )
     runtimes: list[RuntimeSpec] = []
+    controls: list[ServiceSpec] = []
     for runtime in sorted(config.runtimes.values(), key=lambda item: item.runtime_id):
         robot = config.robots[runtime.robot]
         model = config.models[runtime.model]
@@ -81,23 +91,20 @@ def build_plan(config: DeploymentConfig) -> DeploymentPlan:
             project="deploy",
             group=robot_environment_profile(robot.kind)[0],
         )
-        runtimes.append(
-            RuntimeSpec(
-                runtime_id=runtime.runtime_id,
-                node=robot.node,
-                robot=runtime.robot,
-                model=runtime.model,
-                binding=runtime.binding,
-                environment_id=robot_environment.environment_id,
-                model_endpoint=model_endpoint,
-            )
+        runtime_spec, control = _control_service(
+            config,
+            runtime,
+            environment=robot_environment,
+            model_endpoint=model_endpoint,
         )
+        runtimes.append(runtime_spec)
+        controls.append(control)
     return DeploymentPlan(
         name=config.metadata.name,
         deploy_commit=config.metadata.deploy_commit,
         inference_commit=config.metadata.inference_commit,
         environments=environments,
-        services=models,
+        services=(*models, *controls),
         runtimes=tuple(runtimes),
     )
 
@@ -107,7 +114,7 @@ def _model_service(
     model: ModelConfig,
     environments: tuple[EnvironmentProfile, ...],
 ) -> ServiceSpec:
-    if model.backend != "vvla" or model.transport != "http":
+    if model.backend != "vvla" or model.transport not in {"http", "wireless"}:
         raise ServiceError(
             f"model {model.model_id!r} requires an unsupported "
             f"{model.backend}/{model.transport} service"
@@ -119,9 +126,7 @@ def _model_service(
         group=model.kind,
         path=model.environment or f".venv-vvla-{model.kind}",
     )
-    argv = ["vvla-http-serve", "--policy", model.kind]
     source = _option_string(model, "source", required=True)
-    argv.extend(("--checkpoint", source))
     adapter_config_json = _binding_adapter_config(config, model)
     configured_adapter = _option_string(model, "adapter_config")
     if adapter_config_json is not None and configured_adapter is not None:
@@ -129,12 +134,25 @@ def _model_service(
             f"models.{model.model_id}.adapter_config conflicts with adapter "
             "configuration owned by its binding"
         )
-    if configured_adapter is not None:
-        argv.extend(("--adapter-config", configured_adapter))
     gpu = _option_string(model, "gpu")
-    if gpu is not None:
-        argv.extend(("--device", gpu))
-    argv.extend(("--host", model.server.bind, "--port", str(model.server.port)))
+    adapter_path = configured_adapter
+    if model.transport == "http":
+        argv = http_server_command(
+            policy=model.kind,
+            checkpoint=source,
+            bind=model.server.bind,
+            port=model.server.port,
+            device=gpu,
+            adapter_config=adapter_path,
+        )
+    else:
+        argv = wireless_server_command(
+            policy=model.kind,
+            checkpoint=source,
+            comm_config=_option_string(model, "comm_config", required=True),
+            device=gpu,
+            adapter_config=adapter_path,
+        )
     endpoint = _endpoint(config, model, consumer_node=model.node)
     return ServiceSpec(
         service_id=model.model_id,
@@ -142,10 +160,84 @@ def _model_service(
         node=model.node,
         environment_id=environment.environment_id,
         endpoint=endpoint,
-        health_endpoint=f"{endpoint}/healthz",
-        command=Command(tuple(argv)),
+        health_endpoint=f"{endpoint}/healthz" if model.transport == "http" else None,
+        command=Command(argv),
         adapter_config_json=adapter_config_json,
     )
+
+
+def _control_service(
+    config: DeploymentConfig,
+    runtime: RuntimeConfig,
+    *,
+    environment: EnvironmentProfile,
+    model_endpoint: str,
+) -> tuple[RuntimeSpec, ServiceSpec]:
+    robot = config.robots[runtime.robot]
+    model = config.models[runtime.model]
+    service_id = f"control-{runtime.runtime_id}"
+    endpoint = f"http://{_url_host(runtime.server.bind)}:{runtime.server.port}"
+    inference_options: dict[str, str] = {}
+    if model.transport == "wireless":
+        inference_options = {
+            "comm_config": _option_string(
+                model, "client_comm_config", required=True
+            ),
+            "server_node_id": _option_string(
+                model, "server_node_id", required=True
+            ),
+        }
+    try:
+        control_config = ControlServiceConfig(
+            runtime_id=runtime.runtime_id,
+            binding_kind=runtime.binding,
+            bind=runtime.server.bind,
+            port=runtime.server.port,
+            inference_transport=model.transport,
+            inference_endpoint=model_endpoint,
+            inference_options=inference_options,
+            robot_id=robot.robot_id,
+            robot_kind=robot.kind,
+            robot_options=robot.options,
+            inputs=tuple(
+                SensorInput(
+                    sensor_id=sensor_id,
+                    name=input_name,
+                    kind=config.sensors[sensor_id].kind,
+                    options=config.sensors[sensor_id].options,
+                )
+                for input_name, sensor_id in runtime.inputs.items()
+            ),
+            runtime_options=runtime.options,
+        )
+        control_config_json = control_config.to_json()
+    except (TypeError, ValueError) as error:
+        raise ServiceError(
+            f"runtime {runtime.runtime_id!r} control configuration is invalid: "
+            f"{error}"
+        ) from error
+    runtime_spec = RuntimeSpec(
+        runtime_id=runtime.runtime_id,
+        node=robot.node,
+        robot=runtime.robot,
+        model=runtime.model,
+        binding=runtime.binding,
+        environment_id=environment.environment_id,
+        model_endpoint=model_endpoint,
+        control_service_id=service_id,
+        control_endpoint=endpoint,
+    )
+    service = ServiceSpec(
+        service_id=service_id,
+        kind="control",
+        node=robot.node,
+        environment_id=environment.environment_id,
+        endpoint=endpoint,
+        health_endpoint=f"{endpoint}/healthz",
+        command=Command(("rlinf-control-serve",)),
+        control_config_json=control_config_json,
+    )
+    return runtime_spec, service
 
 
 def _binding_adapter_config(
@@ -199,6 +291,9 @@ def _endpoint(
     *,
     consumer_node: str,
 ) -> str:
+    if model.transport == "wireless":
+        server_node_id = _option_string(model, "server_node_id", required=True)
+        return f"wireless://{server_node_id}"
     bind = model.server.bind
     if consumer_node == model.node:
         host = "127.0.0.1" if bind in {"0.0.0.0", "::"} else bind

@@ -6,17 +6,17 @@ import math
 import time
 from collections.abc import Sequence
 
-from rlinf_deploy.inference import (
-    ImagePayload,
-    PolicyObservation,
-    PolicyResult,
-)
 from rlinf_deploy.robots import RobotAction, RobotObservation
 from rlinf_deploy.robots.lerobot.so101 import (
     SO101_ACTION_SPACE,
     SO101_POSITION_FEATURES,
 )
 from rlinf_deploy.robots.sensors.cameras import CameraFrame
+from rlinf_deploy.services.inference import (
+    ImagePayload,
+    PolicyObservation,
+    PolicyResult,
+)
 
 
 POLICY_ACTION_SPACE = "pi05.action_chunk.v1"

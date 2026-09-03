@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from .contracts import PolicyObservation, PolicyResult, Session
+from ..contracts import PolicyObservation, PolicyResult, Session
 
 
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024

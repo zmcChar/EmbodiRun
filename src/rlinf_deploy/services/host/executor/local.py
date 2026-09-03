@@ -6,9 +6,12 @@ import json
 import os
 import subprocess
 import tempfile
+import urllib.error
 import urllib.request
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 from .command import Command, CommandError, CommandResult
 from .response import JsonHttpResponse
@@ -49,12 +52,40 @@ class LocalExecutor:
     def get_json(self, url: str, *, timeout_s: float) -> JsonHttpResponse:
         """Read JSON from an HTTP endpoint reachable by the local node."""
 
-        with urllib.request.urlopen(url, timeout=timeout_s) as response:
-            body = response.read(_MAX_JSON_RESPONSE_BYTES + 1)
+        return self.request_json("GET", url, None, timeout_s=timeout_s)
+
+    def request_json(
+        self,
+        method: str,
+        url: str,
+        payload: Mapping[str, Any] | None,
+        *,
+        timeout_s: float,
+    ) -> JsonHttpResponse:
+        """Exchange bounded JSON with a service reachable by the local node."""
+
+        body = _request_body(payload)
+        headers = {"Accept": "application/json"}
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+        request = urllib.request.Request(
+            url,
+            data=body,
+            headers=headers,
+            method=method,
+        )
+        try:
+            response = urllib.request.urlopen(request, timeout=timeout_s)
+        except urllib.error.HTTPError as error:
+            response = error
+        try:
+            response_body = response.read(_MAX_JSON_RESPONSE_BYTES + 1)
             status = int(response.status)
-        if len(body) > _MAX_JSON_RESPONSE_BYTES:
+        finally:
+            response.close()
+        if len(response_body) > _MAX_JSON_RESPONSE_BYTES:
             raise ValueError("HTTP JSON response is too large")
-        return JsonHttpResponse(status, json.loads(body))
+        return JsonHttpResponse(status, json.loads(response_body))
 
     def write_text(self, path: str, content: str, *, mode: int = 0o600) -> None:
         """Atomically write a UTF-8 text file for a local deployment node."""
@@ -109,3 +140,17 @@ class LocalExecutor:
 
 
 __all__ = ["LocalExecutor"]
+
+
+def _request_body(payload: Mapping[str, Any] | None) -> bytes | None:
+    if payload is None:
+        return None
+    try:
+        return json.dumps(
+            dict(payload),
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError) as error:
+        raise ValueError("HTTP request payload is not valid JSON") from error

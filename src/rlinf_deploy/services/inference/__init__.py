@@ -1,6 +1,16 @@
-"""Versioned transport boundaries to RLinf Inference/VVLA."""
+"""Control-to-inference contracts and transport-specific service adapters."""
 
-from .client import InferenceClient, PolicyClient
+from .client import (
+    HttpResponse,
+    HttpTransport,
+    InferenceClient,
+    PolicyClient,
+    UrllibHttpTransport,
+    VvlaHttpClient,
+    VvlaWirelessClient,
+    VvlaWirelessError,
+    WirelessRpcTransport,
+)
 from .contracts import (
     ImagePayload,
     PolicyAction,
@@ -8,8 +18,6 @@ from .contracts import (
     PolicyResult,
     Session,
 )
-from .http import HttpResponse, HttpTransport, UrllibHttpTransport, VvlaHttpClient
-from .wireless import VvlaWirelessClient, VvlaWirelessError, WirelessRpcTransport
 
 __all__ = [
     "HttpResponse",

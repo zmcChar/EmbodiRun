@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-from .contracts import PolicyObservation, PolicyResult, Session
+from ..contracts import PolicyObservation, PolicyResult, Session
 
 if TYPE_CHECKING:
     from wireless_comm import Comm, Peer, RuntimeConfig

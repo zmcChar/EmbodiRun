@@ -9,6 +9,7 @@ import posixpath
 import shlex
 import uuid
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -98,6 +99,18 @@ class SshExecutor:
     def get_json(self, url: str, *, timeout_s: float) -> JsonHttpResponse:
         """Read remote-node HTTP JSON through an SSH direct TCP channel."""
 
+        return self.request_json("GET", url, None, timeout_s=timeout_s)
+
+    def request_json(
+        self,
+        method: str,
+        url: str,
+        payload: Mapping[str, Any] | None,
+        *,
+        timeout_s: float,
+    ) -> JsonHttpResponse:
+        """Exchange bounded JSON through an SSH direct TCP channel."""
+
         parsed = urlsplit(url)
         if (
             parsed.scheme != "http"
@@ -106,11 +119,11 @@ class SshExecutor:
             or parsed.password is not None
             or parsed.fragment
         ):
-            raise ValueError("remote health URL must be an HTTP URL without credentials")
+            raise ValueError("remote service URL must be HTTP without credentials")
         try:
             port = parsed.port or 80
         except ValueError as error:
-            raise ValueError("remote health URL has an invalid port") from error
+            raise ValueError("remote service URL has an invalid port") from error
         target = parsed.path or "/"
         if parsed.query:
             target = f"{target}?{parsed.query}"
@@ -134,11 +147,16 @@ class SshExecutor:
             timeout=timeout_s,
         )
         connection.sock = channel
+        body = _request_body(payload)
+        headers = {"Accept": "application/json", "Connection": "close"}
+        if body is not None:
+            headers["Content-Type"] = "application/json"
         try:
             connection.request(
-                "GET",
+                method,
                 target,
-                headers={"Accept": "application/json", "Connection": "close"},
+                body=body,
+                headers=headers,
             )
             response = connection.getresponse()
             body = response.read(_MAX_JSON_RESPONSE_BYTES + 1)
@@ -267,6 +285,20 @@ def _redact(value: str, secret: str | None) -> str:
 def _validate_remote_path(path: str) -> None:
     if not path.startswith("/") or "\x00" in path:
         raise ValueError("remote file path must be an absolute POSIX path")
+
+
+def _request_body(payload: Mapping[str, Any] | None) -> bytes | None:
+    if payload is None:
+        return None
+    try:
+        return json.dumps(
+            dict(payload),
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError) as error:
+        raise ValueError("HTTP request payload is not valid JSON") from error
 
 
 __all__ = ["SshExecutor", "render_posix"]

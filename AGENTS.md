@@ -11,18 +11,19 @@ deployment routing. It does not own model checkpoints, model inference, prompt
 construction, model frameworks, or model-output parsing.
 
 Do not import runtime code from `third_party/vvla` into `src/rlinf_deploy`.
-Communication with VVLA must go through the versioned HTTP API.
+Communication with VVLA must go through the versioned HTTP or WirelessComm API.
 
 ## Project structure
 
-- `src/rlinf_deploy/inference`: inference contracts and HTTP clients
+- `src/rlinf_deploy/services/host`: host CLI, configuration, state, and SSH lifecycle
+- `src/rlinf_deploy/services/control`: Host task contracts and control-node runtime
+- `src/rlinf_deploy/services/inference`: Control-to-Inference contracts and clients
 - `src/rlinf_deploy/robots`: robot interfaces and adapters
 - `src/rlinf_deploy/bindings`: policy-to-robot bindings
 - `src/rlinf_deploy/simulators`: simulator adapters
 - `tests`: unit, boundary, and integration tests
 - `third_party/vvla`: pinned upstream server implementation
 - `configs`: example deployment configurations
-- `examples`: executable usage examples
 
 ## Development commands
 

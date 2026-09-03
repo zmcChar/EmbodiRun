@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from rlinf_deploy.services.control.contracts import TaskResult, error_payload
 from rlinf_deploy.services.host.cli import main
 from rlinf_deploy.services.host.cli.command.init import (
     DEPLOY_REPOSITORY,
@@ -162,24 +163,25 @@ class ServiceReadinessExecutor:
 
 class RuntimeExecutor:
     def __init__(self, result=None) -> None:
-        self.commands = []
+        self.requests = []
         self.closed = False
-        self.result = result or CommandResult(
-            0,
-            '{"event":"step","step":1}\n{"event":"complete","steps":1}\n',
-        )
+        self.result = result
 
     def run(self, command, *, check=True):
-        self.commands.append((command, check))
-        if command.argv[:2] == ("test", "-x"):
-            return CommandResult(0)
-        if command.argv[1:4] == (
-            "-m",
-            "rlinf_deploy.bindings.worker",
-            "--request-json",
-        ):
-            return self.result
         raise AssertionError(f"unexpected command: {command.argv!r}")
+
+    def request_json(self, method, url, payload, *, timeout_s):
+        self.requests.append((method, url, payload, timeout_s))
+        if self.result is not None:
+            return self.result
+        return JsonHttpResponse(
+            200,
+            TaskResult(
+                payload["request_id"],
+                payload["runtime_id"],
+                payload["max_steps"],
+            ).to_payload(),
+        )
 
     def close(self) -> None:
         self.closed = True
@@ -267,9 +269,11 @@ class ConcurrentUpExecutor(ServiceReadinessExecutor):
     def __init__(self, barrier: Barrier) -> None:
         super().__init__()
         self.barrier = barrier
+        self.waited = False
 
     def run(self, command, *, check=True):
-        if command.argv[:2] == ("test", "-x"):
+        if command.argv[:2] == ("test", "-x") and not self.waited:
+            self.waited = True
             self.barrier.wait(timeout=1.0)
         return super().run(command, check=check)
 
@@ -278,9 +282,15 @@ class ConcurrentDownExecutor(DownExecutor):
     def __init__(self, barrier: Barrier) -> None:
         super().__init__()
         self.barrier = barrier
+        self.waited = False
 
     def run(self, command, *, check=True):
-        if len(command.argv) > 2 and command.argv[1].endswith("/supervisor.py"):
+        if (
+            len(command.argv) > 2
+            and command.argv[1].endswith("/supervisor.py")
+            and not self.waited
+        ):
+            self.waited = True
             self.barrier.wait(timeout=1.0)
         return super().run(command, check=check)
 
@@ -326,9 +336,10 @@ def test_example_resolves_real_thor_environment_and_runtime() -> None:
         ("deploy", "robot-so101"),
         ("inference", "pi05"),
     }
-    assert len(plan.services) == 1
-    assert plan.services[0].health_endpoint == "http://127.0.0.1:8000/healthz"
-    assert plan.services[0].command.argv == (
+    assert len(plan.services) == 2
+    model_service, control_service = plan.services
+    assert model_service.health_endpoint == "http://127.0.0.1:8000/healthz"
+    assert model_service.command.argv == (
         "vvla-http-serve",
         "--policy",
         "pi05",
@@ -341,7 +352,7 @@ def test_example_resolves_real_thor_environment_and_runtime() -> None:
         "--port",
         "8000",
     )
-    adapter_config = json.loads(plan.services[0].adapter_config_json)
+    adapter_config = json.loads(model_service.adapter_config_json)
     assert adapter_config == {
         "action_feature_names": [
             "shoulder_pan.pos",
@@ -361,6 +372,56 @@ def test_example_resolves_real_thor_environment_and_runtime() -> None:
     assert {runtime.runtime_id for runtime in plan.runtimes} == {"so101-1-runtime"}
     assert {runtime.model_endpoint for runtime in plan.runtimes} == {
         "http://127.0.0.1:8000"
+    }
+    assert control_service.service_id == "control-so101-1-runtime"
+    assert control_service.command.argv == ("rlinf-control-serve",)
+    assert control_service.health_endpoint == "http://127.0.0.1:8100/healthz"
+    control_config = json.loads(control_service.control_config_json)
+    assert control_config["schema"] == "rlinf.control.config.v1"
+    assert control_config["binding"] == "lerobot.so101.pi05"
+    assert control_config["inference"] == {
+        "transport": "http",
+        "endpoint": "http://127.0.0.1:8000",
+        "options": {},
+    }
+    assert control_config["server"] == {"bind": "127.0.0.1", "port": 8100}
+    assert control_config["robot"]["options"]["step_limit_mode"] == "clip"
+
+
+def test_wireless_model_resolves_server_and_control_client_boundaries(
+    tmp_path,
+) -> None:
+    config_path = tmp_path / "wireless.yaml"
+    config_path.write_text(
+        EXAMPLE.read_text(encoding="utf-8")
+        .replace("transport: http", "transport: wireless")
+        .replace(
+            "    source: /home/user/models/pi05_so101\n",
+            "    source: /home/user/models/pi05_so101\n"
+            "    comm_config: /etc/rlinf/inference-wireless.yaml\n"
+            "    client_comm_config: /etc/rlinf/control-wireless.yaml\n"
+            "    server_node_id: inference-1\n",
+        ),
+        encoding="utf-8",
+    )
+
+    plan = build_plan(load_config(config_path))
+
+    model_service, control_service = plan.services
+    assert model_service.command.argv[-2:] == (
+        "--comm-config",
+        "/etc/rlinf/inference-wireless.yaml",
+    )
+    assert model_service.command.argv[0] == "vvla-wireless-serve"
+    assert model_service.health_endpoint is None
+    control_config = json.loads(control_service.control_config_json)
+    assert control_config["inference"] == {
+        "transport": "wireless",
+        "endpoint": "wireless://inference-1",
+        "options": {
+            "comm_config": "/etc/rlinf/control-wireless.yaml",
+            "server_node_id": "inference-1",
+        },
     }
 
 
@@ -547,6 +608,64 @@ def test_ssh_executor_reads_health_without_remote_script() -> None:
     assert opened == [
         ("direct-tcpip", ("127.0.0.1", 8000), ("127.0.0.1", 0), 2.0)
     ]
+    assert not thread.is_alive()
+
+
+def test_ssh_executor_posts_json_through_direct_tcp_channel() -> None:
+    client_socket, server_socket = socket.socketpair()
+    received = []
+
+    class Transport:
+        def is_active(self):
+            return True
+
+        def open_channel(self, kind, destination, source, timeout):
+            return client_socket
+
+    def respond() -> None:
+        try:
+            request = b""
+            while b"\r\n\r\n" not in request:
+                request += server_socket.recv(4096)
+            headers, body = request.split(b"\r\n\r\n", 1)
+            content_length = next(
+                int(line.split(b":", 1)[1])
+                for line in headers.split(b"\r\n")
+                if line.lower().startswith(b"content-length:")
+            )
+            while len(body) < content_length:
+                body += server_socket.recv(4096)
+            received.append((headers, json.loads(body)))
+            response = b'{"schema":"rlinf.control.result.v1","completed_steps":1}'
+            server_socket.sendall(
+                b"HTTP/1.1 200 OK\r\n"
+                + f"Content-Length: {len(response)}\r\n".encode()
+                + b"Content-Type: application/json\r\n"
+                + b"Connection: close\r\n\r\n"
+                + response
+            )
+        finally:
+            server_socket.close()
+
+    thread = Thread(target=respond)
+    thread.start()
+    executor = object.__new__(SshExecutor)
+    executor._client = SimpleNamespace(get_transport=lambda: Transport())
+    executor._password = None
+
+    response = executor.request_json(
+        "POST",
+        "http://127.0.0.1:8100/v1/tasks",
+        {"prompt": "抓取黄色格子"},
+        timeout_s=3.0,
+    )
+    thread.join(timeout=2.0)
+
+    assert response.status == 200
+    headers, payload = received[0]
+    assert headers.startswith(b"POST /v1/tasks HTTP/1.1\r\n")
+    assert b"Content-Type: application/json" in headers
+    assert payload == {"prompt": "抓取黄色格子"}
     assert not thread.is_alive()
 
 
@@ -748,6 +867,20 @@ def test_two_robots_cannot_claim_the_same_device_port(tmp_path) -> None:
         load_config(config_path)
 
 
+def test_control_and_model_ports_on_one_node_must_be_distinct(tmp_path) -> None:
+    config_path = tmp_path / "service-port-conflict.yaml"
+    config_path.write_text(
+        EXAMPLE.read_text(encoding="utf-8").replace(
+            "      port: 8100",
+            "      port: 8000",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="share port"):
+        load_config(config_path)
+
+
 def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> None:
     executors = []
 
@@ -785,8 +918,8 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
 
     assert up_exit_code == 0
     assert up_output.err == ""
-    assert "Starting model" in up_output.out
-    assert "1/1 services running" in up_output.out
+    assert "Starting service" in up_output.out
+    assert "2/2 services running" in up_output.out
     started = StateStore(tmp_path / "thor-so101-pi05.json").load()
     assert started is not None
     assert started.services["pi05-01"] == ServiceState(
@@ -796,32 +929,63 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
         pid=321,
         endpoint="http://127.0.0.1:8000",
     )
+    assert started.services["control-so101-1-runtime"] == ServiceState(
+        service_id="control-so101-1-runtime",
+        node="jetson-agx-thor-232",
+        status="running",
+        pid=321,
+        endpoint="http://127.0.0.1:8100",
+    )
     up_commands = [command for command, _check in executors[1].commands]
-    start_command = next(
+    start_commands = [
         command
         for command in up_commands
         if len(command.argv) > 2
         and command.argv[1].endswith("/supervisor.py")
         and command.argv[2] == "start"
+    ]
+    assert len(start_commands) == 2
+    start_requests = [json.loads(command.stdin) for command in start_commands]
+    model_request = next(
+        request for request in start_requests if request["argv"][0].endswith("vvla-http-serve")
     )
-    start_request = json.loads(start_command.stdin)
     assert (
-        start_request["argv"][0]
+        model_request["argv"][0]
         == "/home/user/.local/share/rlinf-deploy/thor-so101-pi05/"
         "sources/inference/.venv-vvla/bin/vvla-http-serve"
     )
     assert any(
         value.endswith("/thor-so101-pi05/generated/pi05-01.adapter.json")
-        for value in start_request["argv"]
+        for value in model_request["argv"]
+    )
+    control_request = next(
+        request
+        for request in start_requests
+        if request["argv"][0].endswith("rlinf-control-serve")
+    )
+    assert control_request["cwd"].endswith("/sources/deploy")
+    assert control_request["environment"]["PYTHONPATH"].endswith(
+        "/overlays/deploy/current/src"
     )
     adapter_path, (adapter_content, adapter_mode) = next(
-        iter(executors[1].files.items())
+        item
+        for item in executors[1].files.items()
+        if item[0].endswith(".adapter.json")
     )
     assert adapter_path.endswith("/generated/pi05-01.adapter.json")
     assert json.loads(adapter_content)["return_steps"] == 50
     assert adapter_mode == 0o600
+    control_path, (control_content, control_mode) = next(
+        item
+        for item in executors[1].files.items()
+        if item[0].endswith(".control.json")
+    )
+    assert control_path.endswith("/generated/control-so101-1-runtime.control.json")
+    assert json.loads(control_content)["runtime_id"] == "so101-1-runtime"
+    assert control_mode == 0o600
     assert executors[1].health_requests == [
-        ("http://127.0.0.1:8000/healthz", 2.0)
+        ("http://127.0.0.1:8000/healthz", 2.0),
+        ("http://127.0.0.1:8100/healthz", 2.0),
     ]
     assert "123456" not in up_output.out
 
@@ -865,40 +1029,21 @@ def test_cli_routes_prompt_to_selected_runtime(tmp_path, capsys) -> None:
     assert exit_code == 0
     assert captured.err == ""
     assert "Run deployment thor-so101-pi05" in captured.out
-    assert "Executing robot-policy loop" in captured.out
+    assert "Executing control task" in captured.out
     assert "Completed 1 chunk(s), 10 action(s) each" in captured.out
-    command = executor.commands[-1][0]
-    assert command.argv[1:4] == (
-        "-m",
-        "rlinf_deploy.bindings.worker",
-        "--request-json",
-    )
-    payload = json.loads(command.argv[4])
-    assert payload["schema"] == "rlinf.binding-worker.v2"
+    method, url, payload, timeout_s = executor.requests[-1]
+    assert method == "POST"
+    assert url == "http://127.0.0.1:8100/v1/tasks"
+    assert payload["schema"] == "rlinf.control.task.v1"
     assert payload["prompt"] == "把红色积木放进盒子"
-    assert payload["model_endpoint"] == "http://127.0.0.1:8000"
     assert payload["max_steps"] == 1
     assert payload["chunk_steps"] == 10
-    assert payload["robot"]["id"] == "so101-1"
-    assert payload["robot"]["type"] == "lerobot.so101"
-    assert payload["robot"]["options"]["max_joint_step_deg"] == 5.0
-    assert payload["robot"]["options"]["max_gripper_step"] == 10.0
-    assert payload["robot"]["options"]["step_limit_mode"] == "clip"
-    assert {item["name"] for item in payload["inputs"]} == {
-        "observation.images.front",
-        "observation.images.wrist",
-    }
-    assert {item["sensor_id"] for item in payload["inputs"]} == {
-        "front-camera",
-        "wrist-camera",
-    }
-    assert {item["type"] for item in payload["inputs"]} == {"v4l2"}
-    assert command.environment == {
-        "PYTHONPATH": (
-            "/home/user/.local/share/rlinf-deploy/thor-so101-pi05/"
-            "overlays/deploy/current/src"
-        )
-    }
+    assert payload["control_hz"] == 5.0
+    assert payload["inference_timeout_s"] == 60.0
+    assert "robot" not in payload
+    assert "inputs" not in payload
+    assert "model_endpoint" not in payload
+    assert timeout_s == pytest.approx(91.8)
     assert executor.closed is True
 
 
@@ -929,9 +1074,14 @@ def test_cli_sync_uploads_deploy_overlay_without_touching_inference(
     assert captured.err == ""
     assert "inference" in captured.out
     assert "services were not restarted" in captured.out
+    assert "restart control services" in captured.out
     commands = [command for command, _check in executor.commands]
     assert all(command.argv[:2] != ("sh", "-c") for command in commands)
-    assert not any("inference" in argument for command in commands for argument in command.argv)
+    assert not any(
+        "inference" in argument
+        for command in commands
+        for argument in command.argv
+    )
     assert not any("sync" in command.argv for command in commands)
     assert any(command.argv[0] == "tar" for command in commands)
     assert len(executor.symlinks) == 1
@@ -945,7 +1095,7 @@ def test_cli_sync_uploads_deploy_overlay_without_touching_inference(
     )
     with tarfile.open(fileobj=BytesIO(uploaded), mode="r:gz") as archive:
         names = set(archive.getnames())
-    assert "src/rlinf_deploy/bindings/worker.py" in names
+    assert "src/rlinf_deploy/services/control/server.py" in names
     assert {"pyproject.toml", "uv.lock", "README.md"} <= names
     assert executor.closed is True
 
@@ -990,7 +1140,7 @@ def test_cli_sync_updates_only_deploy_dependencies_when_lock_changes(
     assert "dependencies updated" in captured.out
 
 
-def test_cli_sync_refuses_while_robot_worker_is_running(tmp_path, capsys) -> None:
+def test_cli_sync_has_no_obsolete_binding_worker_probe(tmp_path, capsys) -> None:
     state_dir = tmp_path / "state"
     base_args = (
         "--config",
@@ -1011,10 +1161,85 @@ def test_cli_sync_refuses_while_robot_worker_is_running(tmp_path, capsys) -> Non
     )
 
     captured = capsys.readouterr()
-    assert exit_code == 1
-    assert "robot binding worker is running (8675)" in captured.err
-    assert not executor.files
+    assert exit_code == 0
+    assert captured.err == ""
+    assert not any(
+        command.argv[:2] == ("pgrep", "-f")
+        for command, _check in executor.commands
+    )
     assert executor.closed is True
+
+
+def test_cli_down_can_stop_control_without_stopping_inference(
+    tmp_path, capsys
+) -> None:
+    state_dir = tmp_path / "state"
+    base_args = (
+        "--config",
+        str(EXAMPLE),
+        "--state-dir",
+        str(state_dir),
+    )
+    assert (
+        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
+        == 0
+    )
+    capsys.readouterr()
+    assert (
+        main(
+            (*base_args, "up"),
+            executor_factory=lambda _node: ServiceReadinessExecutor(),
+        )
+        == 0
+    )
+    capsys.readouterr()
+    executor = DownExecutor()
+
+    exit_code = main(
+        (*base_args, "down", "--target", "control"),
+        executor_factory=lambda _node: executor,
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "1/1 control services stopped" in captured.out
+    state = StateStore(state_dir / "thor-so101-pi05.json").load()
+    assert state is not None
+    assert state.services["control-so101-1-runtime"].status == "stopped"
+    assert state.services["pi05-01"].status == "running"
+    assert len(executor.commands) == 1
+
+
+def test_cli_sync_requires_control_services_to_be_stopped(tmp_path, capsys) -> None:
+    state_dir = tmp_path / "state"
+    base_args = (
+        "--config",
+        str(EXAMPLE),
+        "--state-dir",
+        str(state_dir),
+    )
+    assert (
+        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
+        == 0
+    )
+    capsys.readouterr()
+    assert (
+        main(
+            (*base_args, "up"),
+            executor_factory=lambda _node: ServiceReadinessExecutor(),
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    exit_code = main(
+        (*base_args, "sync", "--source", str(ROOT)),
+        executor_factory=lambda _node: pytest.fail("must not contact the node"),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "down --target control" in captured.err
 
 
 def test_cli_sync_allows_unrelated_config_change_after_init(tmp_path, capsys) -> None:
@@ -1049,7 +1274,9 @@ def test_cli_sync_allows_unrelated_config_change_after_init(tmp_path, capsys) ->
     assert executor.symlinks
 
 
-def test_cli_run_allows_unrelated_config_change_after_init(tmp_path, capsys) -> None:
+def test_cli_run_rejects_any_config_change_after_control_started(
+    tmp_path, capsys
+) -> None:
     config_path = tmp_path / "deployment.yaml"
     config_path.write_text(EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
     state_dir = tmp_path / "state"
@@ -1090,8 +1317,8 @@ def test_cli_run_allows_unrelated_config_change_after_init(tmp_path, capsys) -> 
     )
 
     captured = capsys.readouterr()
-    assert exit_code == 0
-    assert captured.err == ""
+    assert exit_code == 1
+    assert "configuration changed since init" in captured.err
 
 
 def test_cli_run_rejects_changed_model_endpoint(tmp_path, capsys) -> None:
@@ -1136,8 +1363,7 @@ def test_cli_run_rejects_changed_model_endpoint(tmp_path, capsys) -> None:
 
     captured = capsys.readouterr()
     assert exit_code == 1
-    assert "running at 'http://127.0.0.1:8000'" in captured.err
-    assert "requires 'http://127.0.0.1:8001'" in captured.err
+    assert "configuration changed since init" in captured.err
 
 
 def test_cli_rejects_chunk_steps_above_binding_maximum(capsys) -> None:
@@ -1198,10 +1424,9 @@ def test_cli_runtime_surfaces_remote_binding_error(tmp_path, capsys) -> None:
     )
     capsys.readouterr()
     executor = RuntimeExecutor(
-        CommandResult(
-            1,
-            '{"event":"error","error":"joint step exceeds 12 degrees"}\n',
-            "remote warning",
+        JsonHttpResponse(
+            500,
+            error_payload("joint step exceeds 12 degrees"),
         )
     )
 
@@ -1220,12 +1445,10 @@ def test_cli_runtime_surfaces_remote_binding_error(tmp_path, capsys) -> None:
     captured = capsys.readouterr()
     assert exit_code == 1
     assert "joint step exceeds 12 degrees" in captured.err
-    runtime_command, check = executor.commands[-1]
-    assert runtime_command.argv[1:3] == (
-        "-m",
-        "rlinf_deploy.bindings.worker",
+    assert executor.requests[-1][0:2] == (
+        "POST",
+        "http://127.0.0.1:8100/v1/tasks",
     )
-    assert check is False
 
 
 @pytest.mark.parametrize(
@@ -1369,7 +1592,7 @@ def test_cli_lifecycle_runs_different_nodes_concurrently(tmp_path, capsys) -> No
     )
     up_output = capsys.readouterr()
     assert "2/2 nodes ready" in up_output.out
-    assert "2/2 services running" in up_output.out
+    assert "3/3 services running" in up_output.out
 
     down_barrier = Barrier(2)
     assert (
@@ -1381,7 +1604,7 @@ def test_cli_lifecycle_runs_different_nodes_concurrently(tmp_path, capsys) -> No
     )
     down_output = capsys.readouterr()
     assert "2/2 nodes ready" in down_output.out
-    assert "2/2 services stopped" in down_output.out
+    assert "3/3 services stopped" in down_output.out
 
 
 def test_cli_probe_runs_different_nodes_concurrently(tmp_path, capsys) -> None:
@@ -1446,10 +1669,11 @@ def test_cli_down_stops_services_after_configuration_changes(tmp_path, capsys) -
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert "1/1 services stopped" in captured.out
+    assert "2/2 services stopped" in captured.out
     stopped = StateStore(state_dir / "thor-so101-pi05.json").load()
     assert stopped is not None
     assert stopped.services["pi05-01"].status == "stopped"
+    assert stopped.services["control-so101-1-runtime"].status == "stopped"
     stop_command = executor.commands[0][0]
     assert stop_command.argv[2] == "stop"
     assert stop_command.stdin is None

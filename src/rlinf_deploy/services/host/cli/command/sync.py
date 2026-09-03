@@ -15,9 +15,6 @@ from ...state import DeploymentState, NodeState, StateStore
 from ..context import CommandContext
 from ..parallel import run_on_nodes
 
-_WORKER_PATTERN = "[r]linf_deploy.bindings.worker"
-
-
 class SyncError(RuntimeError):
     """Local Deploy code cannot be synchronized safely."""
 
@@ -51,12 +48,13 @@ def register(commands: Any) -> None:
 def run(args: argparse.Namespace, context: CommandContext) -> int:
     archive = build_source_archive(args.source)
     state = _initialized_state(context)
+    _require_control_services_stopped(context, state)
     profiles = _deploy_profiles_by_node(context, state)
 
     progress = context.progress
     progress.begin("sync", context.deployment.name)
     for node_id in profiles:
-        progress.add_node(node_id, total=4)
+        progress.add_node(node_id, total=3)
 
     def synchronize(node_id: str) -> NodeSync:
         try:
@@ -88,7 +86,8 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
     uploads = sum(result.uploaded for result in results.values.values())
     progress.message(
         f"Deploy overlay {archive.digest[:12]} active on {len(results.values)} "
-        f"node(s) ({uploads} upload(s)); inference services were not restarted"
+        f"node(s) ({uploads} upload(s)); inference services were not restarted; "
+        "restart control services to load the new source"
     )
     return 0
 
@@ -98,6 +97,29 @@ def _initialized_state(context: CommandContext) -> DeploymentState:
     if state is None:
         raise SyncError("deployment is not initialized; run `rlinf-deploy ... init`")
     return state
+
+
+def _require_control_services_stopped(
+    context: CommandContext,
+    state: DeploymentState,
+) -> None:
+    control_ids = {
+        service.service_id
+        for service in context.deployment.services
+        if service.kind == "control"
+    }
+    running = sorted(
+        service_id
+        for service_id in control_ids
+        if service_id in state.services
+        and state.services[service_id].status == "running"
+    )
+    if running:
+        raise SyncError(
+            "control services are running: "
+            f"{', '.join(running)}; run `rlinf-deploy ... down --target control` "
+            "before sync"
+        )
 
 
 def _deploy_profiles_by_node(
@@ -140,10 +162,6 @@ def _sync_node(
     current = posixpath.join(overlay_root, "current")
 
     with context.executor(node_id) as executor:
-        progress.update(node_id, "Checking for active robot workers")
-        _require_idle_worker(executor)
-        progress.advance(node_id)
-
         progress.update(node_id, "Uploading Deploy source", detail=archive.digest[:12])
         installed = install_source_release(
             executor,
@@ -167,22 +185,6 @@ def _sync_node(
         executor.replace_symlink(current, installed.path)
         progress.advance(node_id)
     return NodeSync(installed.uploaded, dependencies_updated)
-
-
-def _require_idle_worker(executor: Executor) -> None:
-    result = executor.run(
-        Command(("pgrep", "-f", _WORKER_PATTERN)),
-        check=False,
-    )
-    if result.exit_code == 0:
-        processes = ", ".join(result.stdout.split()) or "unknown PID"
-        raise SyncError(
-            "a robot binding worker is running "
-            f"({processes}); wait for `run` to finish before syncing"
-        )
-    if result.exit_code != 1:
-        detail = result.stderr.strip() or f"exit code {result.exit_code}"
-        raise SyncError(f"could not check robot binding workers: {detail}")
 
 
 def _synchronize_dependencies(

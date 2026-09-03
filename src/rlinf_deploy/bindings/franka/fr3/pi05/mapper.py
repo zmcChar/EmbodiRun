@@ -7,10 +7,14 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from rlinf_deploy.inference import ImagePayload, PolicyObservation, PolicyResult
 from rlinf_deploy.robots import RobotAction, RobotObservation
 from rlinf_deploy.robots.franka.fr3 import FR3_ACTION_SPACE
 from rlinf_deploy.robots.sensors.cameras import CameraFrame
+from rlinf_deploy.services.inference import (
+    ImagePayload,
+    PolicyObservation,
+    PolicyResult,
+)
 
 POLICY_ACTION_SPACE = "pi05.action_chunk.v1"
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Protocol
 
-from .contracts import PolicyObservation, PolicyResult, Session
+from ..contracts import PolicyObservation, PolicyResult, Session
 
 
 class InferenceClient(Protocol):

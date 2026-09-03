@@ -49,7 +49,7 @@ def load_config(path: str | Path) -> DeploymentConfig:
 
     _validate_references(nodes, robots, sensors, models, runtimes)
     _validate_unique_robot_ports(robots)
-    _validate_unique_model_ports(models)
+    _validate_unique_service_ports(models, runtimes, robots)
     return DeploymentConfig(
         path=source,
         metadata=metadata,
@@ -170,7 +170,11 @@ def _validate_unique_robot_ports(robots: dict[str, RobotConfig]) -> None:
         owners[key] = robot.robot_id
 
 
-def _validate_unique_model_ports(models: dict[str, ModelConfig]) -> None:
+def _validate_unique_service_ports(
+    models: dict[str, ModelConfig],
+    runtimes: dict[str, RuntimeConfig],
+    robots: dict[str, RobotConfig],
+) -> None:
     owners: dict[tuple[str, int], str] = {}
     for model in models.values():
         key = (model.node, model.server.port)
@@ -181,6 +185,16 @@ def _validate_unique_model_ports(models: dict[str, ModelConfig]) -> None:
                 f"{model.server.port} on node {model.node!r}"
             )
         owners[key] = model.model_id
+    for runtime in runtimes.values():
+        node = robots[runtime.robot].node
+        key = (node, runtime.server.port)
+        owner = owners.get(key)
+        if owner is not None:
+            raise ConfigError(
+                f"services {owner!r} and {runtime.runtime_id!r} share port "
+                f"{runtime.server.port} on node {node!r}"
+            )
+        owners[key] = runtime.runtime_id
 
 
 __all__ = ["DeploymentConfig", "config_digest", "load_config"]

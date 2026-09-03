@@ -1,47 +1,41 @@
-"""Route a prompt to one configured robot-policy runtime."""
+"""Submit one prompt task to a configured control-node service."""
 
 from __future__ import annotations
 
 import argparse
-import json
 import math
-import posixpath
+import uuid
 from typing import Any
 
 from rlinf_deploy.bindings import binding_definition
-from rlinf_deploy.bindings.request import BindingWorkerRequest
-from rlinf_deploy.robots.sensors import SensorInput
+from rlinf_deploy.services.control.contracts import TaskRequest
 
-from ...executor import Command, CommandResult
+from ...config import config_digest
+from ...control import ControlClient
 from ...state import StateStore
 from ..context import CommandContext
 
 
 class RunError(RuntimeError):
-    """A configured runtime cannot be started safely."""
+    """A configured runtime cannot accept or safely execute the requested task."""
 
 
 DEFAULT_MAX_STEPS = 1
 DEFAULT_CHUNK_STEPS = 10
 DEFAULT_CONTROL_HZ = 5.0
 DEFAULT_REQUEST_TIMEOUT_S = 60.0
-WORKER_MODULE = "rlinf_deploy.bindings.worker"
 
 
 def register(commands: Any) -> None:
     parser = commands.add_parser(
         "run",
-        help="execute one configured robot-policy runtime",
+        help="submit one task to a configured control runtime",
     )
-    parser.add_argument(
-        "--runtime",
-        required=True,
-        help="configured runtime ID to execute",
-    )
+    parser.add_argument("--runtime", required=True, help="configured runtime ID")
     parser.add_argument(
         "--prompt",
         required=True,
-        help="instruction sent unchanged to the configured inference runtime",
+        help="instruction sent unchanged through Control to Inference",
     )
     parser.add_argument(
         "--chunk-steps",
@@ -86,7 +80,6 @@ def register(commands: Any) -> None:
 def run(args: argparse.Namespace, context: CommandContext) -> int:
     if not args.prompt.strip():
         raise RunError("--prompt must not be empty")
-
     runtime = next(
         (
             item
@@ -107,16 +100,19 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
             f"--chunk-steps {args.chunk_steps} exceeds binding "
             f"{runtime.binding!r} maximum {definition.maximum_chunk_steps}"
         )
+
     progress = context.progress
     progress.begin("run", context.deployment.name)
-    progress.add_node(runtime.node, total=3)
+    progress.add_node(runtime.node, total=2)
     try:
         progress.update(
-            runtime.node, "Validating runtime state", detail=runtime.runtime_id
+            runtime.node, "Validating control service", detail=runtime.runtime_id
         )
         state = StateStore(context.state_path).load()
         if state is None:
             raise RunError("deployment is not initialized; run `rlinf-deploy ... init`")
+        if state.config_digest != config_digest(context.config):
+            raise RunError("configuration changed since init; run init again")
         if state.deploy_commit != context.deployment.deploy_commit:
             raise RunError("Deploy revision changed since init; run init again")
         if state.inference_commit != context.deployment.inference_commit:
@@ -126,116 +122,51 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
             raise RunError(
                 f"environment {runtime.environment_id!r} is not ready; run init again"
             )
-        service = state.services.get(runtime.model)
+        service = state.services.get(runtime.control_service_id)
         if service is None or service.status != "running":
             raise RunError(
-                f"model service {runtime.model!r} is not running; "
+                f"control service {runtime.control_service_id!r} is not running; "
                 "run `rlinf-deploy ... up`"
             )
-        model = context.config.models[runtime.model]
-        if service.node != model.node:
+        if service.node != runtime.node or service.endpoint != runtime.control_endpoint:
             raise RunError(
-                f"model service {runtime.model!r} is recorded on {service.node!r}, "
-                f"but the runtime requires {model.node!r}; run init again"
+                f"control service {runtime.control_service_id!r} does not match "
+                "the configured runtime; restart the deployment"
             )
-        if service.endpoint != runtime.model_endpoint:
-            raise RunError(
-                f"model service {runtime.model!r} is running at "
-                f"{service.endpoint!r}, but the runtime requires "
-                f"{runtime.model_endpoint!r}; restart the deployment"
-            )
-        node = state.nodes.get(runtime.node)
-        if node is None:
+        if runtime.node not in state.nodes:
             raise RunError(f"initialized state is missing node {runtime.node!r}")
-
-        robot = context.config.robots[runtime.robot]
-        runtime_config = context.config.runtimes[runtime.runtime_id]
-        inputs = tuple(
-            SensorInput(
-                sensor_id=sensor_id,
-                name=input_name,
-                kind=context.config.sensors[sensor_id].kind,
-                options=context.config.sensors[sensor_id].options,
-            )
-            for input_name, sensor_id in runtime_config.inputs.items()
+        request = TaskRequest(
+            request_id=f"task-{uuid.uuid4().hex}",
+            runtime_id=runtime.runtime_id,
+            prompt=args.prompt,
+            chunk_steps=args.chunk_steps,
+            max_steps=args.max_steps,
+            control_hz=args.control_hz,
+            inference_timeout_s=args.request_timeout,
         )
-        try:
-            worker_request = BindingWorkerRequest(
-                runtime_id=runtime.runtime_id,
-                binding_kind=runtime.binding,
-                prompt=args.prompt,
-                model_endpoint=runtime.model_endpoint,
-                robot_id=robot.robot_id,
-                robot_kind=robot.kind,
-                robot_options=robot.options,
-                inputs=inputs,
-                runtime_options=runtime_config.options,
-                chunk_steps=args.chunk_steps,
-                max_steps=args.max_steps,
-                control_hz=args.control_hz,
-                request_timeout_s=args.request_timeout,
-            )
-            worker_request_json = worker_request.to_json()
-        except (TypeError, ValueError, RuntimeError) as error:
-            raise RunError(str(error)) from error
         progress.advance(runtime.node)
 
-        python = posixpath.join(environment.path, "bin", "python")
-        deploy_overlay = posixpath.join(
-            node.root,
-            "overlays",
-            "deploy",
-            "current",
-            "src",
-        )
-        command_timeout_s = max(
+        task_timeout_s = max(
             60.0,
             args.max_steps * args.request_timeout
             + args.max_steps * max(0, args.chunk_steps - 1) / args.control_hz
             + 30.0,
         )
+        progress.update(
+            runtime.node,
+            "Executing control task",
+            detail=f"{args.max_steps} chunk(s), {args.chunk_steps} action(s) each",
+        )
         with context.executor(runtime.node) as executor:
-            progress.update(runtime.node, "Checking runtime executable")
-            available = executor.run(Command(("test", "-x", python)), check=False)
-            if available.exit_code != 0:
-                raise RunError(
-                    f"runtime Python is missing or not executable: {python}; "
-                    "run init again"
-                )
-            progress.advance(runtime.node)
-
-            progress.update(
-                runtime.node,
-                "Executing robot-policy loop",
-                detail=(
-                    f"{args.max_steps} chunk(s), "
-                    f"{args.chunk_steps} action(s) each"
-                ),
+            result = ControlClient(executor, runtime.control_endpoint).run(
+                request,
+                timeout_s=task_timeout_s,
             )
-            result = executor.run(
-                Command(
-                    (
-                        python,
-                        "-m",
-                        WORKER_MODULE,
-                        "--request-json",
-                        worker_request_json,
-                    ),
-                    cwd=node.deploy_project,
-                    environment={"PYTHONPATH": deploy_overlay},
-                    timeout_s=command_timeout_s,
-                ),
-                check=False,
-            )
-            if result.exit_code != 0:
-                raise RunError(
-                    f"runtime {runtime.runtime_id!r} failed: {_failure_detail(result)}"
-                )
-            progress.advance(runtime.node)
+        progress.advance(runtime.node)
         progress.succeed(
             runtime.node,
             detail=(
-                f"Completed {args.max_steps} chunk(s), "
+                f"Completed {result.completed_steps} chunk(s), "
                 f"{args.chunk_steps} action(s) each"
             ),
         )
@@ -265,25 +196,6 @@ def _positive_number(value: str) -> float:
     if not math.isfinite(result) or result <= 0:
         raise argparse.ArgumentTypeError("must be a finite positive number")
     return result
-
-
-def _failure_detail(result: CommandResult) -> str:
-    for line in reversed(result.stdout.splitlines()):
-        try:
-            payload = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if (
-            isinstance(payload, dict)
-            and payload.get("event") == "error"
-            and isinstance(payload.get("error"), str)
-            and payload["error"].strip()
-        ):
-            return payload["error"].strip()
-    lines = (result.stderr or result.stdout).strip().splitlines()
-    if lines:
-        return lines[-1]
-    return f"remote process exited with code {result.exit_code}"
 
 
 __all__ = ["RunError", "register", "run"]

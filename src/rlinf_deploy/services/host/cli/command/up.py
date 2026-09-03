@@ -164,7 +164,7 @@ def _up_node(
                 executable = materialized.command.argv[0]
                 progress.update(
                     node_id,
-                    "Checking model executable",
+                    "Checking service executable",
                     detail=service.service_id,
                 )
                 available = executor.run(
@@ -177,7 +177,7 @@ def _up_node(
                     )
                 progress.advance(node_id)
 
-                _write_adapter_config(
+                _write_generated_configs(
                     service,
                     materialized,
                     executor,
@@ -192,13 +192,17 @@ def _up_node(
                     run_root=posixpath.join(node.root, "run"),
                     log_root=posixpath.join(node.root, "logs"),
                 )
-                progress.update(node_id, "Starting model", detail=service.service_id)
+                progress.update(
+                    node_id,
+                    "Starting service",
+                    detail=service.service_id,
+                )
                 process = supervisor.start(materialized)
                 progress.advance(node_id)
 
                 progress.update(
                     node_id,
-                    "Waiting for model health",
+                    "Waiting for service health",
                     detail=service.service_id,
                 )
                 _wait_until_ready(
@@ -270,6 +274,8 @@ def _wait_until_ready(
             max(0.01, remaining_s),
         )
         try:
+            if service.health_endpoint is None:
+                return
             health = executor.get_json(
                 service.health_endpoint,
                 timeout_s=request_timeout_s,
@@ -311,35 +317,65 @@ def _materialize_service(
                 ),
             )
         )
+    if service.control_config_json is not None:
+        argv.extend(
+            (
+                "--config",
+                posixpath.join(
+                    node.root,
+                    "generated",
+                    f"{service.service_id}.control.json",
+                ),
+            )
+        )
     try:
         adapter_index = argv.index("--adapter-config") + 1
     except ValueError:
         pass
     else:
         argv[adapter_index] = _configured_path(argv[adapter_index], node.deploy_project)
+    project = node.inference_project if service.kind == "model" else node.deploy_project
+    if "--comm-config" in argv:
+        config_index = argv.index("--comm-config") + 1
+        argv[config_index] = _configured_path(argv[config_index], project)
+    environment_variables = dict(service.command.environment)
+    if service.kind == "control":
+        environment_variables["PYTHONPATH"] = posixpath.join(
+            node.root,
+            "overlays",
+            "deploy",
+            "current",
+            "src",
+        )
     return replace(
         service,
         command=Command(
             tuple(argv),
-            cwd=node.inference_project,
-            environment=service.command.environment,
+            cwd=project,
+            environment=environment_variables,
         ),
     )
 
 
-def _write_adapter_config(
+def _write_generated_configs(
     service: ServiceSpec,
     materialized: ServiceSpec,
     executor: Executor,
 ) -> None:
-    if service.adapter_config_json is None:
-        return
-    adapter_index = materialized.command.argv.index("--adapter-config") + 1
-    executor.write_text(
-        materialized.command.argv[adapter_index],
-        f"{service.adapter_config_json}\n",
-        mode=0o600,
-    )
+    if service.adapter_config_json is not None:
+        adapter_index = materialized.command.argv.index("--adapter-config") + 1
+        executor.write_text(
+            materialized.command.argv[adapter_index],
+            f"{service.adapter_config_json}\n",
+            mode=0o600,
+        )
+    if service.control_config_json is not None:
+        config_index = materialized.command.argv.index("--config") + 1
+        executor.write_text(
+            materialized.command.argv[config_index],
+            f"{service.control_config_json}\n",
+            mode=0o600,
+        )
 
 
 def _configured_path(path: str, project_dir: str) -> str:
