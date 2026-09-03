@@ -11,6 +11,11 @@ requires-python = ">=3.10"
 license = "Apache-2.0"
 dependencies = []
 
+[project.optional-dependencies]
+wireless = [
+    "wireless-comm @ git+ssh://git@github.com/BUAA-CI-LAB/WirelessComm.git@da66e99d391d6e2ef76583aa973b03f9dc8b12d5",
+]
+
 [dependency-groups]
 dev = ["pytest>=8,<9"]
 host = ["paramiko>=3.4,<5"]

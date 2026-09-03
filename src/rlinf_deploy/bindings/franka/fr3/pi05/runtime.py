@@ -5,9 +5,14 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 
-from rlinf_deploy.inference import ImagePayload, PolicyObservation, PolicyResult, VvlaHttpClient
-
+from rlinf_deploy.inference import (
+    ImagePayload,
+    PolicyClient,
+    PolicyObservation,
+    PolicyResult,
+)
 from rlinf_deploy.robots.franka.fr3.adapter import FR3Adapter, FR3AdapterError
+
 from .action import Pi05ActionMapper, Pi05ActionMapperError
 from .contract import POLICY_ACTION_SPACE
 
@@ -16,7 +21,7 @@ class Pi05FR3Runtime:
     def __init__(
         self,
         robot: FR3Adapter,
-        client: VvlaHttpClient,
+        client: PolicyClient,
         *,
         instruction: str,
         mapper: Pi05ActionMapper | None = None,
@@ -33,7 +38,9 @@ class Pi05FR3Runtime:
         )
         self.step_id = 0
 
-    def step(self, images: Sequence[ImagePayload], *, reset: bool = False) -> PolicyResult:
+    def step(
+        self, images: Sequence[ImagePayload], *, reset: bool = False
+    ) -> PolicyResult:
         if reset:
             self.reset()
         observation = self.robot.observe()

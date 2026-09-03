@@ -1,6 +1,7 @@
-# VVLA HTTP API v1
+# VVLA policy API v1
 
-RLinf Deploy treats VVLA as a remote policy service. The API is model-neutral:
+RLinf Deploy treats VVLA as a remote policy service. The API is model-neutral
+and may be carried by HTTP or WirelessComm:
 no checkpoint, tokenizer, prompt, or raw token fields cross the boundary.
 
 ## Session ordering
@@ -9,7 +10,7 @@ Each step carries a stable `session_id`, monotonic `step_id`, and unique
 `request_id`. The server must make repeated request IDs idempotent and commit
 session state only once.
 
-## Step request
+## HTTP step request
 
 `POST /v1/sessions/{session_id}/steps` uses multipart form data.
 
@@ -54,3 +55,15 @@ session state only once.
 The VVLA HTTP layer is only responsible for model-native action chunks. Deploy
 maps `pi05.action_chunk.v1` to FR3 `joint_position` through
 `bindings.fr3.pi05`.
+
+## WirelessComm mapping
+
+WirelessComm uses the same `vvla.policy.session.v1`, `vvla.policy.step.v1` and
+result schemas. RPC metadata uses schema `vvla.policy.rpc.v1`, a per-attempt
+`rpc_id`, and one of the methods `health`, `capabilities`, `open_session`,
+`step`, `reset` or `close`.
+
+For step calls, metadata fields and each encoded image are sent as one structured
+payload. Image bytes are native WirelessComm byte segments; they are not encoded
+as base64 or assembled into HTTP multipart data. The policy `request_id` remains
+the semantic idempotency key and is distinct from the per-attempt `rpc_id`.

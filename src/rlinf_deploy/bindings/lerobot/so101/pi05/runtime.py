@@ -7,9 +7,9 @@ from collections.abc import Sequence
 
 from rlinf_deploy.inference import (
     ImagePayload,
+    PolicyClient,
     PolicyObservation,
     PolicyResult,
-    VvlaHttpClient,
 )
 from rlinf_deploy.robots.lerobot.so101 import SO101Adapter
 
@@ -23,7 +23,7 @@ class Pi05SO101Runtime:
     def __init__(
         self,
         robot: SO101Adapter,
-        client: VvlaHttpClient,
+        client: PolicyClient,
         *,
         instruction: str,
         mapper: Pi05SO101ActionMapper | None = None,
