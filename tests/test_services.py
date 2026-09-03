@@ -10,26 +10,26 @@ from types import SimpleNamespace
 
 import pytest
 
-from rlinf_deploy.services.cli import main
-from rlinf_deploy.services.cli.command.init import (
+from rlinf_deploy.services.host.cli import main
+from rlinf_deploy.services.host.cli.command.init import (
     DEPLOY_REPOSITORY,
     INFERENCE_REPOSITORY,
 )
-from rlinf_deploy.services.config import ConfigError, load_config
-from rlinf_deploy.services.environment import (
-    ProjectManager,
+from rlinf_deploy.services.host.config import ConfigError, load_config
+from rlinf_deploy.services.host.environment import (
     UvEnvironmentManager,
     environment_profiles,
 )
-from rlinf_deploy.services.executor import (
+from rlinf_deploy.services.host.executor import (
     Command,
     CommandResult,
     JsonHttpResponse,
     LocalExecutor,
     SshExecutor,
 )
-from rlinf_deploy.services.service import ServiceError, ServiceSupervisor, build_plan
-from rlinf_deploy.services.state import (
+from rlinf_deploy.services.host.plan import ServiceError, ServiceSpec, build_plan
+from rlinf_deploy.services.host.source import ProjectManager
+from rlinf_deploy.services.host.state import (
     DeploymentState,
     EnvironmentState,
     NodeState,
@@ -37,6 +37,7 @@ from rlinf_deploy.services.state import (
     StateError,
     StateStore,
 )
+from rlinf_deploy.services.host.supervisor import ServiceSupervisor, SupervisorError
 
 ROOT = Path(__file__).parents[1]
 EXAMPLE = ROOT / "configs" / "muti-nodes.example.yaml"
@@ -77,13 +78,16 @@ class FakeNodeExecutor:
     def run(self, command, *, check=True):
         self.commands.append((command, check))
         argv = command.argv
-        if argv[:2] == ("sh", "-c") and "uname -s" in argv[2]:
-            return CommandResult(
-                0,
-                "/home/user\tLinux\taarch64\t/usr/bin/python3\t3.10.12\t"
-                "/usr/bin/git\t/home/user/.local/bin/uv\n",
-                "",
-            )
+        if argv == ("printenv", "HOME"):
+            return CommandResult(0, "/home/user\n")
+        if argv == ("printenv", "PATH"):
+            return CommandResult(0, "/usr/bin:/home/user/.local/bin\n")
+        if argv == ("uname", "-s"):
+            return CommandResult(0, "Linux\n")
+        if argv == ("uname", "-m"):
+            return CommandResult(0, "aarch64\n")
+        if argv == ("/usr/bin/python3", "--version"):
+            return CommandResult(0, "Python 3.10.12\n")
         if "remote" in argv and "get-url" in argv:
             repository = (
                 DEPLOY_REPOSITORY
@@ -93,7 +97,7 @@ class FakeNodeExecutor:
             return CommandResult(0, f"{repository}\n", "")
         if "rev-parse" in argv and "HEAD" in argv:
             return CommandResult(0, "resolved\nresolved\n", "")
-        if argv[:2] == ("sh", "-c"):
+        if len(argv) > 2 and argv[1].endswith("/supervisor.py"):
             return CommandResult(0, "running\t321\n", "")
         return CommandResult(0, "", "")
 
@@ -137,8 +141,8 @@ class ServiceReadinessExecutor:
         self.commands.append((command, check))
         if command.argv[:2] == ("test", "-x"):
             return CommandResult(0)
-        if command.argv[:2] == ("sh", "-c"):
-            if "nohup" in command.argv[2]:
+        if len(command.argv) > 2 and command.argv[1].endswith("/supervisor.py"):
+            if command.argv[2] == "start":
                 return CommandResult(0, "running\t321\n")
             return CommandResult(0, f"{self.process_state}\t321\n")
         raise AssertionError(f"unexpected command: {command.argv!r}")
@@ -236,7 +240,11 @@ class DownExecutor:
 
     def run(self, command, *, check=True):
         self.commands.append((command, check))
-        if command.argv[:2] == ("sh", "-c"):
+        if (
+            len(command.argv) > 2
+            and command.argv[1].endswith("/supervisor.py")
+            and command.argv[2] == "stop"
+        ):
             return CommandResult(0, "stopped\n")
         raise AssertionError(f"unexpected command: {command.argv!r}")
 
@@ -250,7 +258,7 @@ class ConcurrentInitExecutor(FakeNodeExecutor):
         self.barrier = barrier
 
     def run(self, command, *, check=True):
-        if command.argv[:2] == ("sh", "-c") and "uname -s" in command.argv[2]:
+        if command.argv == ("uname", "-s"):
             self.barrier.wait(timeout=1.0)
         return super().run(command, check=check)
 
@@ -272,7 +280,7 @@ class ConcurrentDownExecutor(DownExecutor):
         self.barrier = barrier
 
     def run(self, command, *, check=True):
-        if command.argv[:2] == ("sh", "-c"):
+        if len(command.argv) > 2 and command.argv[1].endswith("/supervisor.py"):
             self.barrier.wait(timeout=1.0)
         return super().run(command, check=check)
 
@@ -443,28 +451,23 @@ def test_project_manager_clones_and_fetches_only_when_missing() -> None:
     assert ("git", "-C", "/opt/project", "fetch", "origin", "abc1234") in argv
 
 
-def test_local_executor_preserves_argv_and_explicit_environment(tmp_path) -> None:
-    result = LocalExecutor().run(
+def test_local_executor_preserves_cwd_argv_environment_and_stdin(tmp_path) -> None:
+    executor = LocalExecutor()
+
+    cwd = executor.run(Command(("/bin/pwd",), cwd=str(tmp_path)))
+    argument = executor.run(Command(("/usr/bin/printf", "%s\n", "argument with spaces")))
+    environment = executor.run(
         Command(
-            (
-                sys.executable,
-                "-c",
-                (
-                    "import os,sys; print(os.getcwd()); print(sys.argv[1]); "
-                    "print(os.environ['RLINF_TEST_VALUE'])"
-                ),
-                "argument with spaces",
-            ),
-            cwd=str(tmp_path),
+            ("/usr/bin/printenv", "RLINF_TEST_VALUE"),
             environment={"RLINF_TEST_VALUE": "value with spaces"},
         )
     )
+    stdin = executor.run(Command(("/bin/cat",), stdin="structured input\n"))
 
-    assert result.stdout.splitlines() == [
-        str(tmp_path),
-        "argument with spaces",
-        "value with spaces",
-    ]
+    assert cwd.stdout.strip() == str(tmp_path)
+    assert argument.stdout == "argument with spaces\n"
+    assert environment.stdout == "value with spaces\n"
+    assert stdin.stdout == "structured input\n"
 
 
 def test_local_executor_atomically_writes_private_text(tmp_path) -> None:
@@ -547,6 +550,54 @@ def test_ssh_executor_reads_health_without_remote_script() -> None:
     assert not thread.is_alive()
 
 
+def test_ssh_executor_sends_structured_command_stdin() -> None:
+    writes = []
+    invocations = []
+
+    class Channel:
+        def shutdown_write(self):
+            writes.append("closed")
+
+        def recv_exit_status(self):
+            return 0
+
+    class Input:
+        channel = Channel()
+
+        def write(self, value):
+            writes.append(value)
+
+        def flush(self):
+            writes.append("flushed")
+
+    class Output:
+        channel = Channel()
+
+        def __init__(self, value):
+            self.value = value
+
+        def read(self):
+            return self.value
+
+    class Client:
+        def exec_command(self, invocation, timeout):
+            invocations.append((invocation, timeout))
+            return Input(), Output(b"ready\n"), Output(b"")
+
+    executor = object.__new__(SshExecutor)
+    executor._client = Client()
+    executor._password = None
+    executor.connection = SimpleNamespace(command_timeout_s=30.0)
+
+    result = executor.run(
+        Command(("worker", "argument with spaces"), stdin='{"task":"start"}\n')
+    )
+
+    assert result == CommandResult(0, "ready\n", "")
+    assert invocations == [("worker 'argument with spaces'", 30.0)]
+    assert writes == ['{"task":"start"}\n', "flushed", "closed"]
+
+
 def test_ssh_executor_normalizes_health_channel_failure() -> None:
     class Transport:
         def is_active(self):
@@ -575,6 +626,8 @@ def test_service_supervisor_uses_identity_checked_pid_lifecycle() -> None:
     )
     supervisor = ServiceSupervisor(
         executor,
+        python="/usr/bin/python3",
+        agent_path="/opt/rlinf-deploy/src/rlinf_deploy/services/host/supervisor.py",
         run_root=".local/state/rlinf-deploy/run",
         log_root=".local/state/rlinf-deploy/logs",
     )
@@ -586,22 +639,62 @@ def test_service_supervisor_uses_identity_checked_pid_lifecycle() -> None:
     assert started.state == running.state == "running"
     assert started.pid == running.pid == 314
     assert stopped.state == "stopped"
-    assert all(command.argv[:2] == ("sh", "-c") for command in executor.commands)
-    start_script = executor.commands[0].argv[2]
-    assert "RLINF_DEPLOY_SERVICE_ID=pi05-01" in start_script
-    assert "PID belongs to another process" in start_script
+    assert all(
+        command.argv[:2]
+        == (
+            "/usr/bin/python3",
+            "/opt/rlinf-deploy/src/rlinf_deploy/services/host/supervisor.py",
+        )
+        for command in executor.commands
+    )
+    start_request = json.loads(executor.commands[0].stdin)
+    assert start_request["environment"]["RLINF_DEPLOY_SERVICE_ID"] == "pi05-01"
+    assert start_request["argv"][0] == "vvla-http-serve"
     assert executor.commands[-1].timeout_s == 10.0
 
 
 def test_service_supervisor_rejects_unsafe_service_id() -> None:
     supervisor = ServiceSupervisor(
         ResultExecutor(),
+        python="/usr/bin/python3",
+        agent_path="/opt/rlinf-deploy/src/rlinf_deploy/services/host/supervisor.py",
         run_root="run",
         log_root="logs",
     )
 
-    with pytest.raises(ServiceError, match="service IDs"):
+    with pytest.raises(SupervisorError, match="service IDs"):
         supervisor.status("../other-process")
+
+
+def test_local_service_supervisor_runs_without_embedded_shell(tmp_path) -> None:
+    supervisor = ServiceSupervisor(
+        LocalExecutor(),
+        python=sys.executable,
+        agent_path=str(
+            ROOT / "src/rlinf_deploy/services/host/supervisor.py"
+        ),
+        run_root=str(tmp_path / "run"),
+        log_root=str(tmp_path / "logs"),
+    )
+    service = ServiceSpec(
+        service_id="test-sleeper",
+        kind="model",
+        node="local",
+        environment_id="test",
+        endpoint="http://127.0.0.1:1",
+        health_endpoint="http://127.0.0.1:1/healthz",
+        command=Command(("/bin/sleep", "30")),
+    )
+
+    started = supervisor.start(service)
+    try:
+        running = supervisor.status(service.service_id)
+        assert started.state == running.state == "running"
+        assert started.pid == running.pid
+    finally:
+        stopped = supervisor.stop(service.service_id)
+
+    assert stopped.state == "stopped"
 
 
 def test_duplicate_yaml_keys_are_rejected(tmp_path) -> None:
@@ -704,12 +797,22 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
         endpoint="http://127.0.0.1:8000",
     )
     up_commands = [command for command, _check in executors[1].commands]
-    start_script = next(
-        command.argv[2] for command in up_commands if command.argv[:2] == ("sh", "-c")
+    start_command = next(
+        command
+        for command in up_commands
+        if len(command.argv) > 2
+        and command.argv[1].endswith("/supervisor.py")
+        and command.argv[2] == "start"
     )
-    assert "/sources/inference/.venv-vvla/bin/vvla-http-serve" in start_script
+    start_request = json.loads(start_command.stdin)
     assert (
-        "/thor-so101-pi05/generated/pi05-01.adapter.json" in start_script
+        start_request["argv"][0]
+        == "/home/user/.local/share/rlinf-deploy/thor-so101-pi05/"
+        "sources/inference/.venv-vvla/bin/vvla-http-serve"
+    )
+    assert any(
+        value.endswith("/thor-so101-pi05/generated/pi05-01.adapter.json")
+        for value in start_request["argv"]
     )
     adapter_path, (adapter_content, adapter_mode) = next(
         iter(executors[1].files.items())
@@ -1204,7 +1307,8 @@ def test_cli_probe_only_checks_connectivity_and_does_not_write_state(
     assert "Probe deployment thor-so101-pi05" in captured.out
     assert "jetson-agx-thor-232: Reachable" in captured.out
     assert "1/1 nodes ready" in captured.out
-    assert len(executors[0].commands) == 1
+    assert len(executors[0].commands) == 8
+    assert all(command.argv[:2] != ("sh", "-c") for command, _ in executors[0].commands)
     assert list(tmp_path.iterdir()) == []
 
 
@@ -1346,7 +1450,9 @@ def test_cli_down_stops_services_after_configuration_changes(tmp_path, capsys) -
     stopped = StateStore(state_dir / "thor-so101-pi05.json").load()
     assert stopped is not None
     assert stopped.services["pi05-01"].status == "stopped"
-    assert "kill -TERM" in executor.commands[0][0].argv[2]
+    stop_command = executor.commands[0][0]
+    assert stop_command.argv[2] == "stop"
+    assert stop_command.stdin is None
     assert executor.closed is True
 
 

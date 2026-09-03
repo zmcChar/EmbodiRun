@@ -3,18 +3,61 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
+from typing import Literal
 
 from rlinf_deploy.bindings import BindingDefinition, binding_definition
 
-from ..config import DeploymentConfig, ModelConfig
-from ..environment import (
+from .config import DeploymentConfig, ModelConfig
+from .environment import (
     EnvironmentProfile,
     environment_profiles,
     robot_environment_profile,
 )
-from ..executor import Command
-from .errors import ServiceError
-from .spec import DeploymentPlan, RuntimeSpec, ServiceSpec
+from .executor import Command
+
+
+class ServiceError(ValueError):
+    """A deployment configuration cannot be resolved into a valid plan."""
+
+
+@dataclass(frozen=True, slots=True)
+class ServiceSpec:
+    """A long-running process that can be started on a deployment node."""
+
+    service_id: str
+    kind: Literal["model", "control", "sensor"]
+    node: str
+    environment_id: str
+    endpoint: str
+    health_endpoint: str
+    command: Command
+    adapter_config_json: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeSpec:
+    """One robot-policy binding executed on the robot's node."""
+
+    runtime_id: str
+    node: str
+    robot: str
+    model: str
+    binding: str
+    environment_id: str
+    model_endpoint: str
+
+
+@dataclass(frozen=True, slots=True)
+class DeploymentPlan:
+    """Deterministic host-side plan derived from one deployment config."""
+
+    name: str
+    deploy_commit: str
+    inference_commit: str
+    environments: tuple[EnvironmentProfile, ...]
+    services: tuple[ServiceSpec, ...]
+    runtimes: tuple[RuntimeSpec, ...]
 
 
 def build_plan(config: DeploymentConfig) -> DeploymentPlan:
@@ -259,4 +302,10 @@ def _option_string(
     return value
 
 
-__all__ = ["build_plan"]
+__all__ = [
+    "DeploymentPlan",
+    "RuntimeSpec",
+    "ServiceError",
+    "ServiceSpec",
+    "build_plan",
+]

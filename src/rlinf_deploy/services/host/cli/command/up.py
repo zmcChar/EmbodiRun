@@ -11,7 +11,7 @@ from typing import Any
 
 from ...config import config_digest
 from ...executor import Command, Executor
-from ...service import ServiceSpec, ServiceSupervisor
+from ...plan import ServiceSpec
 from ...state import (
     DeploymentState,
     EnvironmentState,
@@ -19,6 +19,7 @@ from ...state import (
     ServiceState,
     StateStore,
 )
+from ...supervisor import ServiceSupervisor
 from ..context import CommandContext
 from ..parallel import run_on_nodes
 
@@ -183,6 +184,11 @@ def _up_node(
                 )
                 supervisor = ServiceSupervisor(
                     executor,
+                    python=node.python,
+                    agent_path=posixpath.join(
+                        node.deploy_project,
+                        "src/rlinf_deploy/services/host/supervisor.py",
+                    ),
                     run_root=posixpath.join(node.root, "run"),
                     log_root=posixpath.join(node.root, "logs"),
                 )

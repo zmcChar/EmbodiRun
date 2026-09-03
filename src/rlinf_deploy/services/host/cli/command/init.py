@@ -10,13 +10,12 @@ from typing import Any
 from ...config import config_digest
 from ...environment import (
     EnvironmentProfile,
-    ProjectManager,
     UvEnvironmentManager,
-    managed_root,
-    probe_node,
 )
 from ...executor import Command, Executor
-from ...service import DeploymentPlan
+from ...plan import DeploymentPlan
+from ...probe import probe_node
+from ...source import ProjectManager, managed_root
 from ...state import (
     DeploymentState,
     EnvironmentState,
@@ -216,14 +215,7 @@ def _prepare_projects(
     projects = {
         profile.project for profile in _profiles_on(context.deployment, node.node_id)
     }
-    relative_adapter = any(
-        model.node == node.node_id
-        and isinstance(model.options.get("adapter_config"), str)
-        and not str(model.options["adapter_config"]).startswith("/")
-        for model in context.config.models.values()
-    )
-    if relative_adapter:
-        projects.add("deploy")
+    projects.add("deploy")
     manager = ProjectManager(executor, git_executable=git)
     if "deploy" in projects:
         manager.prepare(

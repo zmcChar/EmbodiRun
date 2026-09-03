@@ -1,22 +1,20 @@
-"""Expose the host-side deployment management API."""
+"""Host-side configuration, provisioning, lifecycle, and command services."""
 
-from .host import (
-    ConfigError,
-    DeploymentConfig,
-    DeploymentPlan,
+from .config import ConfigError, DeploymentConfig, load_config
+from .environment import (
     EnvironmentError,
     EnvironmentProfile,
-    ProcessStatus,
+    UvEnvironmentManager,
+    environment_profiles,
+)
+from .plan import (
+    DeploymentPlan,
     RuntimeSpec,
     ServiceError,
     ServiceSpec,
-    ServiceSupervisor,
-    SupervisorError,
-    UvEnvironmentManager,
     build_plan,
-    environment_profiles,
-    load_config,
 )
+from .supervisor import ProcessStatus, ServiceSupervisor, SupervisorError
 
 __all__ = [
     "ConfigError",

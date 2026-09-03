@@ -69,13 +69,17 @@ class SshExecutor:
         return client
 
     def run(self, command: Command, *, check: bool = True) -> CommandResult:
-        script = render_posix(command)
+        invocation = render_posix(command)
         timeout = command.timeout_s or self.connection.command_timeout_s
         try:
-            _stdin, stdout, stderr = self._connect().exec_command(
-                script,
+            stdin, stdout, stderr = self._connect().exec_command(
+                invocation,
                 timeout=timeout,
             )
+            if command.stdin is not None:
+                stdin.write(command.stdin)
+                stdin.flush()
+            stdin.channel.shutdown_write()
             output = stdout.read().decode("utf-8", errors="replace")
             error = stderr.read().decode("utf-8", errors="replace")
             exit_code = int(stdout.channel.recv_exit_status())

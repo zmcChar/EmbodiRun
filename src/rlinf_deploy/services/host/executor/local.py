@@ -27,6 +27,7 @@ class LocalExecutor:
                 command.argv,
                 cwd=command.cwd,
                 env=environment,
+                input=command.stdin,
                 capture_output=True,
                 text=True,
                 timeout=command.timeout_s,

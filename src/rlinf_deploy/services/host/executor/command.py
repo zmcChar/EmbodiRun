@@ -16,6 +16,7 @@ class Command:
     argv: tuple[str, ...]
     cwd: str | None = None
     environment: Mapping[str, str] = field(default_factory=dict, repr=False)
+    stdin: str | None = field(default=None, repr=False)
     timeout_s: float | None = None
 
     def __post_init__(self) -> None:

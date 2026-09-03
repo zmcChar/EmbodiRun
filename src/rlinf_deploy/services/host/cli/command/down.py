@@ -7,8 +7,8 @@ import posixpath
 from dataclasses import dataclass, replace
 from typing import Any
 
-from ...service import ServiceSupervisor
-from ...state import ServiceState, StateStore
+from ...state import NodeState, ServiceState, StateStore
+from ...supervisor import ServiceSupervisor
 from ..context import CommandContext
 from ..parallel import run_on_nodes
 
@@ -60,7 +60,7 @@ def run(_args: argparse.Namespace, context: CommandContext) -> int:
         try:
             return _down_node(
                 context,
-                state.nodes[node_id].root,
+                state.nodes[node_id],
                 node_id,
                 services_by_node[node_id],
             )
@@ -91,7 +91,7 @@ def run(_args: argparse.Namespace, context: CommandContext) -> int:
 
 def _down_node(
     context: CommandContext,
-    root: str,
+    node: NodeState,
     node_id: str,
     services: tuple[ServiceState, ...],
 ) -> NodeDownResult:
@@ -106,8 +106,13 @@ def _down_node(
     with context.executor(node_id) as executor:
         supervisor = ServiceSupervisor(
             executor,
-            run_root=posixpath.join(root, "run"),
-            log_root=posixpath.join(root, "logs"),
+            python=node.python,
+            agent_path=posixpath.join(
+                node.deploy_project,
+                "src/rlinf_deploy/services/host/supervisor.py",
+            ),
+            run_root=posixpath.join(node.root, "run"),
+            log_root=posixpath.join(node.root, "logs"),
         )
         for service in sorted(services, key=lambda item: item.service_id):
             try:

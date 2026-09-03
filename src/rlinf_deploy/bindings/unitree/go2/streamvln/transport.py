@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import os
 import posixpath
+import shlex
 import stat
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
+
+from rlinf_deploy.services.host.executor import Command
 
 
 @dataclass(frozen=True)
@@ -60,8 +63,8 @@ class RemoteCommandError(RuntimeError):
 class RemoteTransport(Protocol):
     """Minimal transport surface; tests can provide an in-memory fake."""
 
-    def run(self, command: str, *, check: bool = True) -> CommandResult:
-        """Execute a POSIX shell command on the remote host."""
+    def run(self, command: Command, *, check: bool = True) -> CommandResult:
+        """Execute one argv-based command on the remote host."""
 
     def resolve_path(self, path: str) -> str:
         """Resolve a remote path against the SSH user's home directory."""
@@ -143,13 +146,26 @@ class ParamikoTransport:
             self._sftp = self._connect().open_sftp()
         return self._sftp
 
-    def run(self, command: str, *, check: bool = True) -> CommandResult:
+    def run(self, command: Command, *, check: bool = True) -> CommandResult:
         client = self._connect()
-        try:
-            _stdin, stdout, stderr = client.exec_command(
-                command,
-                timeout=self.connection.command_timeout_s,
+        invocation = shlex.join(command.argv)
+        if command.environment:
+            assignments = " ".join(
+                f"{name}={shlex.quote(value)}"
+                for name, value in sorted(command.environment.items())
             )
+            invocation = f"env {assignments} {invocation}"
+        if command.cwd is not None:
+            invocation = f"cd {shlex.quote(command.cwd)} && {invocation}"
+        try:
+            stdin, stdout, stderr = client.exec_command(
+                invocation,
+                timeout=command.timeout_s or self.connection.command_timeout_s,
+            )
+            if command.stdin is not None:
+                stdin.write(command.stdin)
+                stdin.flush()
+            stdin.channel.shutdown_write()
             output = stdout.read().decode("utf-8", errors="replace")
             error = stderr.read().decode("utf-8", errors="replace")
             exit_code = int(stdout.channel.recv_exit_status())

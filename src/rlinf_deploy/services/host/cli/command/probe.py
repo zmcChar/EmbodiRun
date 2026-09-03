@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ...config import NodeConfig
-from ...environment import probe_node
+from ...probe import probe_node
 from ..context import CommandContext
 from ..parallel import run_on_nodes
 

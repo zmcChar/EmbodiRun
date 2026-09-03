@@ -1,4 +1,4 @@
-"""Validate command registration and handler."""
+"""Report successful configuration and deployment-plan validation."""
 
 from __future__ import annotations
 

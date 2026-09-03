@@ -10,7 +10,7 @@ from pathlib import Path
 from ..config import ConfigError, NodeConfig, load_config
 from ..environment import EnvironmentError
 from ..executor import Executor, executor_for
-from ..service import ServiceError, build_plan
+from ..plan import ServiceError, build_plan
 from .command import down, init, probe, run, sync, up, validate
 from .context import CommandContext, state_path
 from .progress import ConsoleProgressReporter

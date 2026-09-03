@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ..config import DeploymentConfig, NodeConfig
 from ..executor import Executor
-from ..service import DeploymentPlan
+from ..plan import DeploymentPlan
 from .progress import ProgressReporter
 
 

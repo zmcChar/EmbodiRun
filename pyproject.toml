@@ -38,7 +38,7 @@ default-groups = ["dev"]
 robot-so101 = { requires-python = ">=3.12" }
 
 [project.scripts]
-rlinf-deploy = "rlinf_deploy.services.cli.cli:main"
+rlinf-deploy = "rlinf_deploy.services.host.cli.cli:main"
 rlinf-go2-streamvln = "rlinf_deploy.bindings.unitree.go2.streamvln.cli:main"
 
 [tool.setuptools.packages.find]
