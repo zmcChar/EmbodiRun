@@ -7,11 +7,16 @@ from typing import Protocol
 from ..config import NodeConfig
 from .command import Command, CommandResult
 from .local import LocalExecutor
+from .response import JsonHttpResponse
 from .ssh import SshExecutor
 
 
 class Executor(Protocol):
     def run(self, command: Command, *, check: bool = True) -> CommandResult: ...
+
+    def get_json(self, url: str, *, timeout_s: float) -> JsonHttpResponse: ...
+
+    def write_text(self, path: str, content: str, *, mode: int = 0o600) -> None: ...
 
     def close(self) -> None: ...
 

@@ -53,8 +53,10 @@ session state only once.
 ```
 
 The VVLA HTTP layer is only responsible for model-native action chunks. Deploy
-maps every row in `pi05.action_chunk.v1` to ordered robot commands through the
-selected binding and plays them at the runtime control rate.
+maps and validates the rows in `pi05.action_chunk.v1` through the selected
+binding, executes the `run --chunk-steps` prefix, and plays those robot commands
+at the runtime control rate. Robot state fields and action dimensions are owned
+by the binding rather than a user-maintained VVLA adapter file.
 
 ## WirelessComm mapping
 

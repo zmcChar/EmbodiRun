@@ -115,24 +115,30 @@ configured runtime:
 rlinf-deploy \
   --config configs/muti-nodes.example.yaml run \
   --runtime so101-1-runtime \
-  --prompt "Pick up the cube and put it into the bowl."
+  --prompt "Pick up the cube and put it into the bowl." \
+  --chunk-steps 10
 ```
 
 `run` can move the selected physical robot. The default is one inference/action
-chunk; the checked-in Pi0.5 adapter returns ten action rows per chunk. Use
-`--max-steps N` to keep the same policy session open for a bounded number of
-chunks, and `--control-hz HZ` to select the rate at which rows within each chunk
-are sent to the robot. Before connecting the arm, the binding checks model health
-and opens, warms up, and validates every camera. V4L2 capture is implemented in
-the robot sensor camera layer and returns model-independent camera frames; the
-SO101/Pi0.5 binding converts those frames into inference image payloads.
+chunk. `--chunk-steps N` selects how many ordered actions to execute from each
+chunk (default 10), `--max-steps N` bounds the number of inference chunks, and
+`--control-hz HZ` selects the action playback rate. The SO101/Pi0.5 binding
+declares its five arm joints, gripper, image fields, and maximum model horizon;
+`up` materializes that declaration as an internal VVLA adapter file. No
+user-maintained model adapter JSON is required. Before connecting the arm, the
+binding checks model health and opens, warms up, and validates every camera.
+V4L2 capture is implemented in the robot sensor camera layer and returns
+model-independent camera frames; the SO101/Pi0.5 binding converts those frames
+into inference image payloads.
 Each returned row is still subject to the SO101 joint and gripper step limits
 from the deployment YAML. `step_limit_mode: reject` rejects an oversized target
 without sending it. `step_limit_mode: clip` bounds every joint and the gripper
 independently before sending that row; the checked-in Thor configuration uses 5
 degrees and 10 gripper units for its initial tests. Clipping is a per-row rate
 limit, not collision avoidance. A Pi0.5 response has no task-complete signal, so
-the chunk bound is always the stopping condition.
+the chunk bound is always the stopping condition. A requested chunk length above
+the binding maximum is rejected before connecting to the robot; a short model
+response is rejected before any action from that response is executed.
 
 ## HTTP contract
 

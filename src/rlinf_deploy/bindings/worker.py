@@ -77,6 +77,7 @@ def execute(
             client,
             instruction=request.prompt,
             mapper=mapper,
+            chunk_steps=request.chunk_steps,
             control_hz=request.control_hz,
             monotonic=monotonic,
             sleep=sleep,

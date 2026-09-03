@@ -24,12 +24,19 @@ class BindingRuntime:
         *,
         instruction: str,
         mapper: BindingMapper,
+        chunk_steps: int,
         control_hz: float = 5.0,
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         if not instruction.strip():
             raise ValueError("instruction must not be empty")
+        if (
+            isinstance(chunk_steps, bool)
+            or not isinstance(chunk_steps, int)
+            or chunk_steps <= 0
+        ):
+            raise ValueError("chunk_steps must be a positive integer")
         if (
             isinstance(control_hz, bool)
             or not isinstance(control_hz, (int, float))
@@ -41,6 +48,7 @@ class BindingRuntime:
         self.client = client
         self.instruction = instruction
         self.mapper = mapper
+        self.chunk_steps = chunk_steps
         self.action_period_s = 1.0 / control_hz
         self.monotonic = monotonic
         self.sleep = sleep
@@ -73,6 +81,12 @@ class BindingRuntime:
             raise RuntimeError("binding returned an empty action chunk")
         if any(not isinstance(action, RobotAction) for action in actions):
             raise TypeError("binding action chunk must contain RobotAction values")
+        if len(actions) < self.chunk_steps:
+            raise RuntimeError(
+                f"binding returned {len(actions)} action(s), fewer than requested "
+                f"chunk_steps={self.chunk_steps}"
+            )
+        actions = actions[: self.chunk_steps]
         deadline_s = self.monotonic()
         for index, action in enumerate(actions):
             self.robot.execute(action)

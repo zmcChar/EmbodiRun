@@ -150,6 +150,7 @@ def test_pi05_runtime_steps_and_reset_flow() -> None:
         client,
         instruction="pick",
         mapper=Pi05FR3Mapper(),
+        chunk_steps=1,
     )
     frame = CameraFrame("camera-0", "image/jpeg", b"123")
     result = runtime.step((frame,))

@@ -3,6 +3,7 @@
 from .command import Command, CommandError, CommandResult
 from .executor import Executor, executor_for
 from .local import LocalExecutor
+from .response import JsonHttpResponse
 from .ssh import SshExecutor, render_posix
 
 __all__ = [
@@ -10,6 +11,7 @@ __all__ = [
     "CommandError",
     "CommandResult",
     "Executor",
+    "JsonHttpResponse",
     "LocalExecutor",
     "SshExecutor",
     "executor_for",

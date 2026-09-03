@@ -38,20 +38,6 @@ class NodeUpResult:
 DEFAULT_WAIT_TIMEOUT_S = 600.0
 _HEALTH_REQUEST_TIMEOUT_S = 2.0
 _READY_POLL_INTERVAL_S = 1.0
-_HEALTHCHECK_SCRIPT = """\
-import json
-import sys
-import urllib.request
-
-try:
-    with urllib.request.urlopen(sys.argv[1], timeout=float(sys.argv[2])) as response:
-        payload = json.load(response)
-        ready = response.status == 200 and isinstance(payload, dict) and payload.get("status") == "ok"
-except (OSError, ValueError):
-    ready = False
-
-raise SystemExit(0 if ready else 1)
-"""
 
 
 def register(commands: Any) -> None:
@@ -190,6 +176,11 @@ def _up_node(
                     )
                 progress.advance(node_id)
 
+                _write_adapter_config(
+                    service,
+                    materialized,
+                    executor,
+                )
                 supervisor = ServiceSupervisor(
                     executor,
                     run_root=posixpath.join(node.root, "run"),
@@ -206,7 +197,6 @@ def _up_node(
                 )
                 _wait_until_ready(
                     materialized,
-                    environment,
                     supervisor,
                     executor,
                     pid=process.pid,
@@ -251,7 +241,6 @@ def _services_by_node(
 
 def _wait_until_ready(
     service: ServiceSpec,
-    environment: EnvironmentState,
     supervisor: ServiceSupervisor,
     executor: Executor,
     *,
@@ -262,7 +251,6 @@ def _wait_until_ready(
     if pid is None:
         raise UpError(f"service {service.service_id!r} started without a PID")
     deadline = time.monotonic() + timeout_s
-    python = posixpath.join(environment.path, "bin", "python")
     while True:
         process = supervisor.status(service.service_id)
         if process.state != "running" or process.pid != pid:
@@ -275,20 +263,19 @@ def _wait_until_ready(
             _HEALTH_REQUEST_TIMEOUT_S,
             max(0.01, remaining_s),
         )
-        health = executor.run(
-            Command(
-                (
-                    python,
-                    "-c",
-                    _HEALTHCHECK_SCRIPT,
-                    service.health_endpoint,
-                    str(request_timeout_s),
-                ),
-                timeout_s=request_timeout_s + 1.0,
-            ),
-            check=False,
-        )
-        if health.exit_code == 0:
+        try:
+            health = executor.get_json(
+                service.health_endpoint,
+                timeout_s=request_timeout_s,
+            )
+            ready = (
+                health.status == 200
+                and isinstance(health.payload, dict)
+                and health.payload.get("status") == "ok"
+            )
+        except (OSError, RuntimeError, ValueError):
+            ready = False
+        if ready:
             return
         remaining_s = deadline - time.monotonic()
         if remaining_s <= 0:
@@ -307,6 +294,17 @@ def _materialize_service(
 ) -> ServiceSpec:
     argv = list(service.command.argv)
     argv[0] = posixpath.join(environment.path, "bin", posixpath.basename(argv[0]))
+    if service.adapter_config_json is not None:
+        argv.extend(
+            (
+                "--adapter-config",
+                posixpath.join(
+                    node.root,
+                    "generated",
+                    f"{service.service_id}.adapter.json",
+                ),
+            )
+        )
     try:
         adapter_index = argv.index("--adapter-config") + 1
     except ValueError:
@@ -320,6 +318,21 @@ def _materialize_service(
             cwd=node.inference_project,
             environment=service.command.environment,
         ),
+    )
+
+
+def _write_adapter_config(
+    service: ServiceSpec,
+    materialized: ServiceSpec,
+    executor: Executor,
+) -> None:
+    if service.adapter_config_json is None:
+        return
+    adapter_index = materialized.command.argv.index("--adapter-config") + 1
+    executor.write_text(
+        materialized.command.argv[adapter_index],
+        f"{service.adapter_config_json}\n",
+        mode=0o600,
     )
 
 

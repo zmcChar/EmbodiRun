@@ -20,6 +20,7 @@ class ServiceSpec:
     endpoint: str
     health_endpoint: str
     command: Command
+    adapter_config_json: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

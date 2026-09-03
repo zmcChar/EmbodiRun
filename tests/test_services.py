@@ -1,8 +1,10 @@
 import json
+import socket
 import sys
 from dataclasses import replace
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Thread
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,7 +19,13 @@ from rlinf_deploy.services.environment import (
     UvEnvironmentManager,
     environment_profiles,
 )
-from rlinf_deploy.services.executor import Command, CommandResult, LocalExecutor
+from rlinf_deploy.services.executor import (
+    Command,
+    CommandResult,
+    JsonHttpResponse,
+    LocalExecutor,
+    SshExecutor,
+)
 from rlinf_deploy.services.service import ServiceError, ServiceSupervisor, build_plan
 from rlinf_deploy.services.state import (
     DeploymentState,
@@ -60,6 +68,8 @@ class ResultExecutor:
 class FakeNodeExecutor:
     def __init__(self) -> None:
         self.commands = []
+        self.files = {}
+        self.health_requests = []
         self.closed = False
 
     def run(self, command, *, check=True):
@@ -84,6 +94,13 @@ class FakeNodeExecutor:
         if argv[:2] == ("sh", "-c"):
             return CommandResult(0, "running\t321\n", "")
         return CommandResult(0, "", "")
+
+    def write_text(self, path, content, *, mode=0o600):
+        self.files[path] = (content, mode)
+
+    def get_json(self, url, *, timeout_s):
+        self.health_requests.append((url, timeout_s))
+        return JsonHttpResponse(200, {"status": "ok"})
 
     def close(self) -> None:
         self.closed = True
@@ -110,6 +127,8 @@ class ServiceReadinessExecutor:
         self.process_state = process_state
         self.health_exit_code = health_exit_code
         self.commands = []
+        self.files = {}
+        self.health_requests = []
         self.closed = False
 
     def run(self, command, *, check=True):
@@ -120,9 +139,16 @@ class ServiceReadinessExecutor:
             if "nohup" in command.argv[2]:
                 return CommandResult(0, "running\t321\n")
             return CommandResult(0, f"{self.process_state}\t321\n")
-        if any(argument.endswith("/healthz") for argument in command.argv):
-            return CommandResult(self.health_exit_code)
         raise AssertionError(f"unexpected command: {command.argv!r}")
+
+    def write_text(self, path, content, *, mode=0o600):
+        self.files[path] = (content, mode)
+
+    def get_json(self, url, *, timeout_s):
+        self.health_requests.append((url, timeout_s))
+        if self.health_exit_code != 0:
+            raise OSError("not ready")
+        return JsonHttpResponse(200, {"status": "ok"})
 
     def close(self) -> None:
         self.closed = True
@@ -233,11 +259,6 @@ def two_node_model_config(tmp_path: Path) -> Path:
 
 def test_example_resolves_real_thor_environment_and_runtime() -> None:
     config = load_config(EXAMPLE)
-    adapter_config = json.loads(
-        (ROOT / "configs" / "pi05_so101_http_serve.json").read_text(
-            encoding="utf-8"
-        )
-    )
     profiles = environment_profiles(config)
     plan = build_plan(config)
 
@@ -255,8 +276,6 @@ def test_example_resolves_real_thor_environment_and_runtime() -> None:
         "pi05",
         "--checkpoint",
         "/home/user/models/pi05_so101",
-        "--adapter-config",
-        "configs/pi05_so101_http_serve.json",
         "--device",
         "cuda:0",
         "--host",
@@ -264,11 +283,27 @@ def test_example_resolves_real_thor_environment_and_runtime() -> None:
         "--port",
         "8000",
     )
+    adapter_config = json.loads(plan.services[0].adapter_config_json)
+    assert adapter_config == {
+        "action_feature_names": [
+            "shoulder_pan.pos",
+            "shoulder_lift.pos",
+            "elbow_flex.pos",
+            "wrist_flex.pos",
+            "wrist_roll.pos",
+            "gripper.pos",
+        ],
+        "image_fields": [
+            "observation.images.front",
+            "observation.images.wrist",
+        ],
+        "return_steps": 50,
+        "state_fields": ["joint_positions_deg", "gripper_position"],
+    }
     assert {runtime.runtime_id for runtime in plan.runtimes} == {"so101-1-runtime"}
     assert {runtime.model_endpoint for runtime in plan.runtimes} == {
         "http://127.0.0.1:8000"
     }
-    assert adapter_config["return_steps"] == 10
 
 
 def test_uv_environment_manager_uses_only_the_selected_group() -> None:
@@ -380,6 +415,63 @@ def test_local_executor_preserves_argv_and_explicit_environment(tmp_path) -> Non
         "argument with spaces",
         "value with spaces",
     ]
+
+
+def test_local_executor_atomically_writes_private_text(tmp_path) -> None:
+    target = tmp_path / "generated" / "adapter.json"
+    executor = LocalExecutor()
+
+    executor.write_text(str(target), '{"return_steps":50}\n', mode=0o600)
+
+    assert target.read_text(encoding="utf-8") == '{"return_steps":50}\n'
+    assert target.stat().st_mode & 0o777 == 0o600
+
+
+def test_ssh_executor_reads_health_without_remote_script() -> None:
+    client_socket, server_socket = socket.socketpair()
+    opened = []
+
+    class Transport:
+        def is_active(self):
+            return True
+
+        def open_channel(self, kind, destination, source, timeout):
+            opened.append((kind, destination, source, timeout))
+            return client_socket
+
+    def respond() -> None:
+        try:
+            request = b""
+            while b"\r\n\r\n" not in request:
+                request += server_socket.recv(4096)
+            body = b'{"status":"ok"}'
+            server_socket.sendall(
+                b"HTTP/1.1 200 OK\r\n"
+                + f"Content-Length: {len(body)}\r\n".encode()
+                + b"Content-Type: application/json\r\n"
+                + b"Connection: close\r\n\r\n"
+                + body
+            )
+        finally:
+            server_socket.close()
+
+    thread = Thread(target=respond)
+    thread.start()
+    executor = object.__new__(SshExecutor)
+    executor._client = SimpleNamespace(get_transport=lambda: Transport())
+    executor._password = None
+
+    response = executor.get_json(
+        "http://127.0.0.1:8000/healthz",
+        timeout_s=2.0,
+    )
+    thread.join(timeout=2.0)
+
+    assert response == JsonHttpResponse(200, {"status": "ok"})
+    assert opened == [
+        ("direct-tcpip", ("127.0.0.1", 8000), ("127.0.0.1", 0), 2.0)
+    ]
+    assert not thread.is_alive()
 
 
 def test_service_supervisor_uses_identity_checked_pid_lifecycle() -> None:
@@ -525,15 +617,17 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
     )
     assert "/sources/inference/.venv-vvla/bin/vvla-http-serve" in start_script
     assert (
-        "/sources/deploy/configs/pi05_so101_http_serve.json" in start_script
+        "/thor-so101-pi05/generated/pi05-01.adapter.json" in start_script
     )
-    health_command, health_check = next(
-        (command, check)
-        for command, check in executors[1].commands
-        if any(argument.endswith("/healthz") for argument in command.argv)
+    adapter_path, (adapter_content, adapter_mode) = next(
+        iter(executors[1].files.items())
     )
-    assert health_command.argv[-2] == "http://127.0.0.1:8000/healthz"
-    assert health_check is False
+    assert adapter_path.endswith("/generated/pi05-01.adapter.json")
+    assert json.loads(adapter_content)["return_steps"] == 50
+    assert adapter_mode == 0o600
+    assert executors[1].health_requests == [
+        ("http://127.0.0.1:8000/healthz", 2.0)
+    ]
     assert "123456" not in up_output.out
 
 
@@ -577,7 +671,7 @@ def test_cli_routes_prompt_to_selected_runtime(tmp_path, capsys) -> None:
     assert captured.err == ""
     assert "Run deployment thor-so101-pi05" in captured.out
     assert "Executing robot-policy loop" in captured.out
-    assert "Completed 1 step(s)" in captured.out
+    assert "Completed 1 chunk(s), 10 action(s) each" in captured.out
     command = executor.commands[-1][0]
     assert command.argv[1:4] == (
         "-m",
@@ -585,9 +679,11 @@ def test_cli_routes_prompt_to_selected_runtime(tmp_path, capsys) -> None:
         "--request-json",
     )
     payload = json.loads(command.argv[4])
+    assert payload["schema"] == "rlinf.binding-worker.v2"
     assert payload["prompt"] == "把红色积木放进盒子"
     assert payload["model_endpoint"] == "http://127.0.0.1:8000"
     assert payload["max_steps"] == 1
+    assert payload["chunk_steps"] == 10
     assert payload["robot"]["id"] == "so101-1"
     assert payload["robot"]["type"] == "lerobot.so101"
     assert payload["robot"]["options"]["max_joint_step_deg"] == 5.0
@@ -603,6 +699,42 @@ def test_cli_routes_prompt_to_selected_runtime(tmp_path, capsys) -> None:
     }
     assert {item["type"] for item in payload["inputs"]} == {"v4l2"}
     assert executor.closed is True
+
+
+def test_cli_rejects_chunk_steps_above_binding_maximum(capsys) -> None:
+    exit_code = main(
+        (
+            "--config",
+            str(EXAMPLE),
+            "run",
+            "--runtime",
+            "so101-1-runtime",
+            "--prompt",
+            "move",
+            "--chunk-steps",
+            "51",
+        ),
+        executor_factory=lambda _node: pytest.fail("must not contact the node"),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "--chunk-steps 51" in captured.err
+    assert "maximum 50" in captured.err
+
+
+def test_runtime_inputs_must_match_binding_image_fields(tmp_path) -> None:
+    config_path = tmp_path / "wrong-binding-input.yaml"
+    config_path.write_text(
+        EXAMPLE.read_text(encoding="utf-8").replace(
+            "      observation.images.front: front-camera",
+            "      observation.images.overhead: front-camera",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ServiceError, match="image fields"):
+        build_plan(load_config(config_path))
 
 
 def test_cli_runtime_surfaces_remote_binding_error(tmp_path, capsys) -> None:

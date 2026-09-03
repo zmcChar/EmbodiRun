@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from rlinf_deploy.bindings.runtime import BindingRuntime
 from rlinf_deploy.bindings.lerobot.so101.pi05 import Pi05SO101Mapper
 from rlinf_deploy.inference import (
@@ -76,6 +78,7 @@ def test_so101_binding_converts_camera_frames_to_inference_images() -> None:
         client,
         instruction="pick up the block",
         mapper=FakeMapper(),
+        chunk_steps=1,
     )
 
     runtime.step((CameraFrame("observation.images.front", "image/jpeg", b"jpeg"),))
@@ -136,6 +139,7 @@ def test_binding_runtime_plays_action_chunk_at_control_rate() -> None:
         client,
         instruction="pick up the block",
         mapper=ThreeActionMapper(),
+        chunk_steps=3,
         control_hz=20.0,
         monotonic=clock.monotonic,
         sleep=clock.sleep,
@@ -145,3 +149,38 @@ def test_binding_runtime_plays_action_chunk_at_control_rate() -> None:
 
     assert [action.values["index"] for action in robot.actions] == [0, 1, 2]
     assert clock.sleeps == [0.05, 0.05]
+
+
+def test_binding_runtime_executes_only_requested_chunk_steps() -> None:
+    robot = FakeRobot()
+    client = FakeClient()
+    runtime = BindingRuntime(
+        robot,
+        client,
+        instruction="pick up the block",
+        mapper=ThreeActionMapper(),
+        chunk_steps=2,
+    )
+
+    runtime.step((CameraFrame("observation.images.front", "image/jpeg", b"jpeg"),))
+
+    assert [action.values["index"] for action in robot.actions] == [0, 1]
+
+
+def test_binding_runtime_rejects_short_chunk_before_execution() -> None:
+    robot = FakeRobot()
+    client = FakeClient()
+    runtime = BindingRuntime(
+        robot,
+        client,
+        instruction="pick up the block",
+        mapper=FakeMapper(),
+        chunk_steps=2,
+    )
+
+    with pytest.raises(RuntimeError, match="fewer than requested"):
+        runtime.step(
+            (CameraFrame("observation.images.front", "image/jpeg", b"jpeg"),)
+        )
+
+    assert robot.actions == []

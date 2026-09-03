@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from rlinf_deploy.bindings import binding_definition
+import json
+
+from rlinf_deploy.bindings import BindingDefinition, binding_definition
 
 from ..config import DeploymentConfig, ModelConfig
 from ..environment import (
@@ -77,9 +79,15 @@ def _model_service(
     argv = ["vvla-http-serve", "--policy", model.kind]
     source = _option_string(model, "source", required=True)
     argv.extend(("--checkpoint", source))
-    adapter_config = _option_string(model, "adapter_config")
-    if adapter_config is not None:
-        argv.extend(("--adapter-config", adapter_config))
+    adapter_config_json = _binding_adapter_config(config, model)
+    configured_adapter = _option_string(model, "adapter_config")
+    if adapter_config_json is not None and configured_adapter is not None:
+        raise ServiceError(
+            f"models.{model.model_id}.adapter_config conflicts with adapter "
+            "configuration owned by its binding"
+        )
+    if configured_adapter is not None:
+        argv.extend(("--adapter-config", configured_adapter))
     gpu = _option_string(model, "gpu")
     if gpu is not None:
         argv.extend(("--device", gpu))
@@ -93,7 +101,53 @@ def _model_service(
         endpoint=endpoint,
         health_endpoint=f"{endpoint}/healthz",
         command=Command(tuple(argv)),
+        adapter_config_json=adapter_config_json,
     )
+
+
+def _binding_adapter_config(
+    config: DeploymentConfig,
+    model: ModelConfig,
+) -> str | None:
+    definitions = {}
+    generated: set[str | None] = set()
+    for runtime in config.runtimes.values():
+        if runtime.model != model.model_id:
+            continue
+        definition = _load_binding(runtime.binding)
+        definitions[runtime.binding] = definition
+        if definition.adapter_config is None:
+            generated.add(None)
+            continue
+        expected_images = definition.adapter_config.get("image_fields")
+        if expected_images is not None and set(runtime.inputs) != set(expected_images):
+            raise ServiceError(
+                f"runtime {runtime.runtime_id!r} inputs do not match binding "
+                f"{runtime.binding!r} image fields"
+            )
+        try:
+            generated.add(
+                json.dumps(
+                    {
+                        **dict(definition.adapter_config),
+                        "return_steps": definition.maximum_chunk_steps,
+                    },
+                    allow_nan=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            )
+        except (TypeError, ValueError) as error:
+            raise ServiceError(
+                f"binding {runtime.binding!r} adapter configuration is not JSON"
+            ) from error
+    if len(generated) > 1:
+        names = ", ".join(sorted(definitions))
+        raise ServiceError(
+            f"model {model.model_id!r} is shared by bindings with incompatible "
+            f"adapter configurations: {names}"
+        )
+    return next(iter(generated), None)
 
 
 def _endpoint(
@@ -155,15 +209,20 @@ def _find_environment(
 
 
 def _validate_binding(binding: str, robot_kind: str, model_kind: str) -> None:
-    try:
-        definition = binding_definition(binding)
-    except (KeyError, TypeError):
-        raise ServiceError(f"binding {binding!r} is not available") from None
+    definition = _load_binding(binding)
     if definition.robot_kind != robot_kind or definition.model_kind != model_kind:
         raise ServiceError(
             f"binding {binding!r} does not match robot {robot_kind!r} and model "
             f"{model_kind!r}"
         )
+
+
+def _load_binding(binding: str) -> BindingDefinition:
+    try:
+        definition = binding_definition(binding)
+    except (KeyError, TypeError):
+        raise ServiceError(f"binding {binding!r} is not available") from None
+    return definition
 
 
 def _validate_sensor_nodes(

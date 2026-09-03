@@ -10,7 +10,7 @@ from typing import Any
 
 from rlinf_deploy.robots.sensors import SensorInput
 
-REQUEST_SCHEMA = "rlinf.binding-worker.v1"
+REQUEST_SCHEMA = "rlinf.binding-worker.v2"
 
 
 class BindingWorkerRequestError(ValueError):
@@ -30,6 +30,7 @@ class BindingWorkerRequest:
     robot_options: Mapping[str, Any]
     inputs: tuple[SensorInput, ...]
     runtime_options: Mapping[str, Any]
+    chunk_steps: int
     max_steps: int
     control_hz: float
     request_timeout_s: float
@@ -55,12 +56,10 @@ class BindingWorkerRequest:
         names = [item.name for item in self.inputs]
         if len(names) != len(set(names)):
             raise BindingWorkerRequestError("input names must be unique")
-        if (
-            isinstance(self.max_steps, bool)
-            or not isinstance(self.max_steps, int)
-            or self.max_steps <= 0
-        ):
-            raise BindingWorkerRequestError("max_steps must be a positive integer")
+        for name in ("chunk_steps", "max_steps"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise BindingWorkerRequestError(f"{name} must be a positive integer")
         for name in ("control_hz", "request_timeout_s"):
             value = getattr(self, name)
             if (
@@ -100,6 +99,7 @@ class BindingWorkerRequest:
                     for item in self.inputs
                 ],
                 "runtime_options": dict(self.runtime_options),
+                "chunk_steps": self.chunk_steps,
                 "max_steps": self.max_steps,
                 "control_hz": self.control_hz,
                 "request_timeout_s": self.request_timeout_s,
@@ -145,6 +145,7 @@ class BindingWorkerRequest:
                     root.get("runtime_options"),
                     "worker runtime options",
                 ),
+                chunk_steps=root.get("chunk_steps"),
                 max_steps=root.get("max_steps"),
                 control_hz=root.get("control_hz"),
                 request_timeout_s=root.get("request_timeout_s"),

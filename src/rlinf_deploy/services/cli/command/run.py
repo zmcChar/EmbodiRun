@@ -8,6 +8,7 @@ import math
 import posixpath
 from typing import Any
 
+from rlinf_deploy.bindings import binding_definition
 from rlinf_deploy.bindings.request import BindingWorkerRequest
 from rlinf_deploy.robots.sensors import SensorInput
 
@@ -22,6 +23,7 @@ class RunError(RuntimeError):
 
 
 DEFAULT_MAX_STEPS = 1
+DEFAULT_CHUNK_STEPS = 10
 DEFAULT_CONTROL_HZ = 5.0
 DEFAULT_REQUEST_TIMEOUT_S = 60.0
 WORKER_MODULE = "rlinf_deploy.bindings.worker"
@@ -41,6 +43,16 @@ def register(commands: Any) -> None:
         "--prompt",
         required=True,
         help="instruction sent unchanged to the configured inference runtime",
+    )
+    parser.add_argument(
+        "--chunk-steps",
+        type=_positive_integer,
+        default=DEFAULT_CHUNK_STEPS,
+        metavar="N",
+        help=(
+            "actions to execute from each inference chunk "
+            f"(default: {DEFAULT_CHUNK_STEPS})"
+        ),
     )
     parser.add_argument(
         "--max-steps",
@@ -89,6 +101,12 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
         raise RunError(
             f"unknown runtime {args.runtime!r}; available runtimes: "
             f"{available or 'none'}"
+        )
+    definition = binding_definition(runtime.binding)
+    if args.chunk_steps > definition.maximum_chunk_steps:
+        raise RunError(
+            f"--chunk-steps {args.chunk_steps} exceeds binding "
+            f"{runtime.binding!r} maximum {definition.maximum_chunk_steps}"
         )
     progress = context.progress
     progress.begin("run", context.deployment.name)
@@ -139,6 +157,7 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
                 robot_options=robot.options,
                 inputs=inputs,
                 runtime_options=runtime_config.options,
+                chunk_steps=args.chunk_steps,
                 max_steps=args.max_steps,
                 control_hz=args.control_hz,
                 request_timeout_s=args.request_timeout,
@@ -152,7 +171,7 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
         command_timeout_s = max(
             60.0,
             args.max_steps * args.request_timeout
-            + max(0, args.max_steps - 1) / args.control_hz
+            + args.max_steps * max(0, args.chunk_steps - 1) / args.control_hz
             + 30.0,
         )
         with context.executor(runtime.node) as executor:
@@ -168,7 +187,10 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
             progress.update(
                 runtime.node,
                 "Executing robot-policy loop",
-                detail=f"{args.max_steps} step(s)",
+                detail=(
+                    f"{args.max_steps} chunk(s), "
+                    f"{args.chunk_steps} action(s) each"
+                ),
             )
             result = executor.run(
                 Command(
@@ -191,7 +213,10 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
             progress.advance(runtime.node)
         progress.succeed(
             runtime.node,
-            detail=f"Completed {args.max_steps} step(s)",
+            detail=(
+                f"Completed {args.max_steps} chunk(s), "
+                f"{args.chunk_steps} action(s) each"
+            ),
         )
     except BaseException as error:
         progress.fail(runtime.node, error)

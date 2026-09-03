@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
 from importlib import import_module
-from typing import Protocol
+from typing import Any, Protocol
 
 from rlinf_deploy.inference import PolicyObservation, PolicyResult
 from rlinf_deploy.robots import RobotAction, RobotObservation
@@ -43,6 +43,8 @@ class BindingDefinition:
     robot_kind: str
     model_kind: str
     mapper_factory: Callable[[], BindingMapper]
+    maximum_chunk_steps: int
+    adapter_config: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if not self.kind.strip():
@@ -53,6 +55,18 @@ class BindingDefinition:
             raise ValueError("binding model kind must not be empty")
         if not callable(self.mapper_factory):
             raise TypeError("mapper_factory must be callable")
+        if (
+            isinstance(self.maximum_chunk_steps, bool)
+            or not isinstance(self.maximum_chunk_steps, int)
+            or self.maximum_chunk_steps <= 0
+        ):
+            raise ValueError("maximum_chunk_steps must be a positive integer")
+        if self.adapter_config is not None:
+            if not isinstance(self.adapter_config, Mapping) or any(
+                not isinstance(key, str) for key in self.adapter_config
+            ):
+                raise TypeError("adapter_config must be an object with string keys")
+            object.__setattr__(self, "adapter_config", dict(self.adapter_config))
 
 
 _BINDING_KIND = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\Z")

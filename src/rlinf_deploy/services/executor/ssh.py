@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+import http.client
+import json
 import os
+import posixpath
 import shlex
+import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..config import ConnectionConfig
 from .command import Command, CommandError, CommandResult
+from .response import JsonHttpResponse
+
+_MAX_JSON_RESPONSE_BYTES = 64 * 1024
 
 
 class SshExecutor:
@@ -82,6 +90,83 @@ class SshExecutor:
         if check and result.exit_code != 0:
             raise CommandError(result.exit_code, result.stderr)
         return result
+
+    def get_json(self, url: str, *, timeout_s: float) -> JsonHttpResponse:
+        """Read remote-node HTTP JSON through an SSH direct TCP channel."""
+
+        parsed = urlsplit(url)
+        if (
+            parsed.scheme != "http"
+            or parsed.hostname is None
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.fragment
+        ):
+            raise ValueError("remote health URL must be an HTTP URL without credentials")
+        try:
+            port = parsed.port or 80
+        except ValueError as error:
+            raise ValueError("remote health URL has an invalid port") from error
+        target = parsed.path or "/"
+        if parsed.query:
+            target = f"{target}?{parsed.query}"
+        transport = self._connect().get_transport()
+        if transport is None or not transport.is_active():
+            raise RuntimeError("SSH transport is not active")
+        channel = transport.open_channel(
+            "direct-tcpip",
+            (parsed.hostname, port),
+            ("127.0.0.1", 0),
+            timeout=timeout_s,
+        )
+        channel.settimeout(timeout_s)
+        connection = http.client.HTTPConnection(
+            parsed.hostname,
+            port,
+            timeout=timeout_s,
+        )
+        connection.sock = channel
+        try:
+            connection.request(
+                "GET",
+                target,
+                headers={"Accept": "application/json", "Connection": "close"},
+            )
+            response = connection.getresponse()
+            body = response.read(_MAX_JSON_RESPONSE_BYTES + 1)
+            status = response.status
+        finally:
+            connection.close()
+        if len(body) > _MAX_JSON_RESPONSE_BYTES:
+            raise ValueError("HTTP JSON response is too large")
+        return JsonHttpResponse(status, json.loads(body))
+
+    def write_text(self, path: str, content: str, *, mode: int = 0o600) -> None:
+        """Atomically upload a UTF-8 text file through SFTP."""
+
+        if not path.startswith("/") or "\x00" in path:
+            raise ValueError("remote file path must be an absolute POSIX path")
+        parent = posixpath.dirname(path)
+        self.run(Command(("mkdir", "-p", parent)))
+        temporary = f"{path}.{uuid.uuid4().hex}.tmp"
+        sftp = None
+        try:
+            sftp = self._connect().open_sftp()
+            with sftp.open(temporary, "wb") as stream:
+                stream.write(content.encode("utf-8"))
+                stream.flush()
+            sftp.chmod(temporary, mode)
+            sftp.posix_rename(temporary, path)
+        except Exception as error:
+            detail = _redact(str(error), self._password)
+            raise RuntimeError(f"SFTP file upload failed: {detail}") from None
+        finally:
+            if sftp is not None:
+                try:
+                    sftp.remove(temporary)
+                except OSError:
+                    pass
+                sftp.close()
 
     def close(self) -> None:
         if self._client is not None:

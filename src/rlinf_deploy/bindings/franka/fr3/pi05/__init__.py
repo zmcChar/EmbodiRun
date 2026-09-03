@@ -14,6 +14,7 @@ BINDING_DEFINITION = BindingDefinition(
     robot_kind="franka.fr3",
     model_kind="pi05",
     mapper_factory=Pi05FR3Mapper,
+    maximum_chunk_steps=50,
 )
 
 __all__ = [
