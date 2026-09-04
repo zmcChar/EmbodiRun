@@ -1440,8 +1440,8 @@ def test_cli_rejects_chunk_steps_above_binding_maximum(capsys) -> None:
     assert "maximum 50" in captured.err
 
 
-def test_runtime_inputs_must_match_binding_image_fields(tmp_path) -> None:
-    config_path = tmp_path / "wrong-binding-input.yaml"
+def test_runtime_inputs_define_model_image_fields(tmp_path) -> None:
+    config_path = tmp_path / "custom-runtime-input.yaml"
     config_path.write_text(
         EXAMPLE.read_text(encoding="utf-8").replace(
             "      observation.images.front: front-camera",
@@ -1450,8 +1450,13 @@ def test_runtime_inputs_must_match_binding_image_fields(tmp_path) -> None:
         encoding="utf-8",
     )
 
-    with pytest.raises(ServiceError, match="image fields"):
-        build_plan(load_config(config_path))
+    plan = build_plan(load_config(config_path))
+
+    adapter_config = json.loads(plan.services[0].adapter_config_json)
+    assert adapter_config["image_fields"] == [
+        "observation.images.overhead",
+        "observation.images.wrist",
+    ]
 
 
 def test_cli_runtime_surfaces_remote_binding_error(tmp_path, capsys) -> None:

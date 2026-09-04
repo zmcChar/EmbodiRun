@@ -339,31 +339,25 @@ def _binding_adapter_config(
     config: DeploymentConfig,
     model: ModelConfig,
 ) -> str | None:
-    definitions = {}
+    runtime_ids: list[str] = []
     generated: set[str | None] = set()
     for runtime in config.runtimes.values():
         if runtime.model != model.model_id:
             continue
+        runtime_ids.append(runtime.runtime_id)
         definition = _load_binding(runtime.binding)
-        definitions[runtime.binding] = definition
         if definition.adapter_config is None:
             generated.add(None)
             continue
-        expected_images = definition.adapter_config.get("image_fields")
-        if (
-            runtime.robot is not None
-            and expected_images is not None
-            and set(runtime.inputs) != set(expected_images)
-        ):
-            raise ServiceError(
-                f"runtime {runtime.runtime_id!r} inputs do not match binding "
-                f"{runtime.binding!r} image fields"
-            )
+        adapter_config = dict(definition.adapter_config)
+        image_fields = _runtime_image_fields(config, runtime)
+        if image_fields:
+            adapter_config["image_fields"] = image_fields
         try:
             generated.add(
                 json.dumps(
                     {
-                        **dict(definition.adapter_config),
+                        **adapter_config,
                         "return_steps": definition.maximum_chunk_steps,
                     },
                     allow_nan=False,
@@ -376,12 +370,22 @@ def _binding_adapter_config(
                 f"binding {runtime.binding!r} adapter configuration is not JSON"
             ) from error
     if len(generated) > 1:
-        names = ", ".join(sorted(definitions))
+        names = ", ".join(sorted(runtime_ids))
         raise ServiceError(
-            f"model {model.model_id!r} is shared by bindings with incompatible "
+            f"model {model.model_id!r} is shared by runtimes with incompatible "
             f"adapter configurations: {names}"
         )
     return next(iter(generated), None)
+
+
+def _runtime_image_fields(
+    config: DeploymentConfig,
+    runtime: RuntimeConfig,
+) -> tuple[str, ...]:
+    if runtime.robot is not None:
+        return tuple(runtime.inputs)
+    simulator = config.simulators[runtime.simulator]
+    return simulator_definition(simulator.kind).image_fields
 
 
 def _endpoint(

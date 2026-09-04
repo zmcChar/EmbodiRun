@@ -18,6 +18,7 @@ class SimulatorDefinition:
 
     kind: str
     embodiment_kind: str
+    image_fields: tuple[str, ...]
     config_factory: Callable[[str, Mapping[str, Any]], Any]
     adapter_type: type[SimulatorAdapter]
     environment_group: str
@@ -32,6 +33,13 @@ class SimulatorDefinition:
             raise TypeError("simulator config_factory must be callable")
         if not issubclass(self.adapter_type, SimulatorAdapter):
             raise TypeError("simulator adapter_type must inherit SimulatorAdapter")
+        if not self.image_fields or any(
+            not isinstance(field, str) or not field.strip()
+            for field in self.image_fields
+        ):
+            raise ValueError("simulator image_fields must contain non-empty strings")
+        if len(self.image_fields) != len(set(self.image_fields)):
+            raise ValueError("simulator image_fields must be unique")
 
 
 _SIMULATOR_KIND = re.compile(

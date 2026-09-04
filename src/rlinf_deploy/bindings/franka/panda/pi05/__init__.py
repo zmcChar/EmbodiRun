@@ -7,11 +7,6 @@ from .mapper import POLICY_ACTION_SPACE, Pi05FrankaPandaMapper
 MAXIMUM_CHUNK_STEPS = 50
 ADAPTER_CONFIG = {
     "state_fields": ("observation.state",),
-    "image_fields": (
-        "observation.images.image",
-        "observation.images.second_image",
-        "observation.images.wrist_image",
-    ),
 }
 
 
