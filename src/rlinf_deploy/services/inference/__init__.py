@@ -10,6 +10,7 @@ from .client import (
     VvlaWirelessClient,
     VvlaWirelessError,
     WirelessRpcTransport,
+    build_inference_client,
 )
 from .contracts import (
     ImagePayload,
@@ -34,4 +35,5 @@ __all__ = [
     "VvlaWirelessClient",
     "VvlaWirelessError",
     "WirelessRpcTransport",
+    "build_inference_client",
 ]

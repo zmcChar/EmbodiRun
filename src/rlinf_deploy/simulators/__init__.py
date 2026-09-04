@@ -1,97 +1,78 @@
-"""Simulator endpoints and deterministic evaluation traces."""
+"""Simulator adapters and definitions."""
 
-from .base import (
-    ActionMapper,
-    EpisodeStep,
-    ObservationMapper,
-    SimulatorCapabilities,
-    SimulatorEndpoint,
-    SubgoalMapper,
-    SuccessMapper,
+from __future__ import annotations
+
+import re
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from functools import cache
+from importlib import import_module
+from typing import Any
+
+from .adapter import SimulationStep, SimulatorAdapter, SimulatorObservation
+
+
+@dataclass(frozen=True, slots=True)
+class SimulatorDefinition:
+    """Static information needed to construct one simulator adapter."""
+
+    kind: str
+    embodiment_kind: str
+    config_factory: Callable[[str, Mapping[str, Any]], Any]
+    adapter_type: type[SimulatorAdapter]
+    environment_group: str
+    python: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("kind", "embodiment_kind", "environment_group"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"simulator {name} must not be empty")
+        if not callable(self.config_factory):
+            raise TypeError("simulator config_factory must be callable")
+        if not issubclass(self.adapter_type, SimulatorAdapter):
+            raise TypeError("simulator adapter_type must inherit SimulatorAdapter")
+
+
+_SIMULATOR_KIND = re.compile(
+    r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\Z"
 )
-from .gym_adapter import GymLikeSimulatorAdapter
-from .trace import EpisodeTrace
-from .trace_recorder import TraceRecorder
-from .trace_values import (
-    DisturbanceTraceEvent,
-    ResetTraceEvent,
-    StepTraceEvent,
-    TraceEvent,
-)
-from .vlabench import (
-    VLABENCH_ACTION_DIM,
-    VLABenchSimulatorEndpoint,
-    observation_fingerprint,
-)
-from .vlabench_camera import (
-    VLABENCH_DATASET_CAMERA_KEYS,
-    VLABenchCameraMappingError,
-    VLABenchSemanticCameraMixin,
-    compiled_camera_names,
-    make_semantic_vlabench_environment,
-    resolve_vlabench_camera_indices,
-)
-from .vlabench_privileged_oracle import (
-    SIMULATOR_ORACLE_UPPER_BOUND,
-    SIMULATOR_PRIVILEGED_PLAN_CONTROL,
-    SIMULATOR_PRIVILEGED_SKILL_EXECUTOR,
-    PrivilegedOracleReplay,
-    PrivilegedOracleTrajectory,
-    PrivilegedOracleWaypoint,
-    PrivilegedSkillReplay,
-    PrivilegedSkillTrajectory,
-    PrivilegedSkillWaypoint,
-    TexasHoldemDealIdentity,
-    convert_vlabench_expert_waypoint,
-    generate_texas_holdem_privileged_oracle_trajectory,
-    generate_texas_holdem_privileged_skill_trajectory,
-    inspect_texas_holdem_deal,
-    replay_privileged_oracle_trajectory,
-    replay_privileged_skill_trajectory,
-    run_texas_holdem_privileged_oracle_upper_bound,
-    run_texas_holdem_privileged_skill_executor,
-)
+
+
+@cache
+def simulator_definition(kind: str) -> SimulatorDefinition:
+    """Load ``simulators.<kind>.SIMULATOR_DEFINITION`` by package convention."""
+
+    if not isinstance(kind, str) or _SIMULATOR_KIND.fullmatch(kind) is None:
+        raise KeyError(kind)
+    module_name = f"{__name__}.{kind}"
+    try:
+        module = import_module(module_name)
+    except ModuleNotFoundError as error:
+        if error.name is not None and (
+            error.name == module_name or module_name.startswith(f"{error.name}.")
+        ):
+            raise KeyError(kind) from None
+        raise
+    try:
+        definition = module.SIMULATOR_DEFINITION
+    except AttributeError:
+        raise TypeError(
+            f"{module_name} does not declare SIMULATOR_DEFINITION"
+        ) from None
+    if not isinstance(definition, SimulatorDefinition):
+        raise TypeError(f"{module_name}.SIMULATOR_DEFINITION is invalid")
+    if definition.kind != kind:
+        raise TypeError(
+            f"{module_name}.SIMULATOR_DEFINITION declares kind {definition.kind!r}"
+        )
+    return definition
+
 
 __all__ = [
-    "SIMULATOR_ORACLE_UPPER_BOUND",
-    "SIMULATOR_PRIVILEGED_PLAN_CONTROL",
-    "SIMULATOR_PRIVILEGED_SKILL_EXECUTOR",
-    "VLABENCH_ACTION_DIM",
-    "VLABENCH_DATASET_CAMERA_KEYS",
-    "ActionMapper",
-    "DisturbanceTraceEvent",
-    "EpisodeStep",
-    "EpisodeTrace",
-    "GymLikeSimulatorAdapter",
-    "ObservationMapper",
-    "PrivilegedOracleReplay",
-    "PrivilegedOracleTrajectory",
-    "PrivilegedOracleWaypoint",
-    "PrivilegedSkillReplay",
-    "PrivilegedSkillTrajectory",
-    "PrivilegedSkillWaypoint",
-    "ResetTraceEvent",
-    "SimulatorCapabilities",
-    "SimulatorEndpoint",
-    "StepTraceEvent",
-    "SubgoalMapper",
-    "SuccessMapper",
-    "TexasHoldemDealIdentity",
-    "TraceEvent",
-    "TraceRecorder",
-    "VLABenchCameraMappingError",
-    "VLABenchSemanticCameraMixin",
-    "VLABenchSimulatorEndpoint",
-    "compiled_camera_names",
-    "convert_vlabench_expert_waypoint",
-    "generate_texas_holdem_privileged_oracle_trajectory",
-    "generate_texas_holdem_privileged_skill_trajectory",
-    "inspect_texas_holdem_deal",
-    "make_semantic_vlabench_environment",
-    "observation_fingerprint",
-    "replay_privileged_oracle_trajectory",
-    "replay_privileged_skill_trajectory",
-    "resolve_vlabench_camera_indices",
-    "run_texas_holdem_privileged_oracle_upper_bound",
-    "run_texas_holdem_privileged_skill_executor",
+    "SimulationStep",
+    "SimulatorAdapter",
+    "SimulatorDefinition",
+    "SimulatorObservation",
+    "simulator_definition",
 ]

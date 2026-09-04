@@ -331,6 +331,17 @@ def _materialize_service(
                 ),
             )
         )
+    if service.simulation_config_json is not None:
+        argv.extend(
+            (
+                "--config",
+                posixpath.join(
+                    node.root,
+                    "generated",
+                    f"{service.service_id}.simulation.json",
+                ),
+            )
+        )
     try:
         adapter_index = argv.index("--adapter-config") + 1
     except ValueError:
@@ -342,7 +353,7 @@ def _materialize_service(
         config_index = argv.index("--comm-config") + 1
         argv[config_index] = _configured_path(argv[config_index], project)
     environment_variables = dict(service.command.environment)
-    if service.kind == "control":
+    if service.kind in {"control", "simulation"}:
         environment_variables["PYTHONPATH"] = posixpath.join(deploy_project, "src")
     return replace(
         service,
@@ -371,6 +382,13 @@ def _write_generated_configs(
         executor.write_text(
             materialized.command.argv[config_index],
             f"{service.control_config_json}\n",
+            mode=0o600,
+        )
+    if service.simulation_config_json is not None:
+        config_index = materialized.command.argv.index("--config") + 1
+        executor.write_text(
+            materialized.command.argv[config_index],
+            f"{service.simulation_config_json}\n",
             mode=0o600,
         )
 

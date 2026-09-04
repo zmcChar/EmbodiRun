@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from typing import Literal
 
 from rlinf_deploy.robots import robot_definition
+from rlinf_deploy.simulators import simulator_definition
 
 from .config import DeploymentConfig
 from .executor import Command, CommandResult, Executor
@@ -61,6 +62,29 @@ def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, 
                 path=f".venv-{group}",
                 python=python,
                 extras=("wireless",) if robot.robot_id in wireless_robots else (),
+            )
+        )
+
+    for simulator in sorted(
+        config.simulators.values(), key=lambda item: item.simulator_id
+    ):
+        try:
+            definition = simulator_definition(simulator.kind)
+        except (KeyError, TypeError):
+            raise EnvironmentError(
+                f"simulator {simulator.simulator_id!r} has no environment profile "
+                f"for type {simulator.kind!r}"
+            ) from None
+        profiles.append(
+            EnvironmentProfile(
+                environment_id=(
+                    f"{simulator.node}:deploy:{definition.environment_group}"
+                ),
+                node=simulator.node,
+                project="deploy",
+                group=definition.environment_group,
+                path=f".venv-{definition.environment_group}",
+                python=definition.python,
             )
         )
 

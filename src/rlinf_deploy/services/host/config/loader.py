@@ -13,9 +13,18 @@ from .node import NodeConfig, parse_node
 from .robot import RobotConfig, parse_robot
 from .runtime import RuntimeConfig, parse_runtime
 from .sensor import SensorConfig, parse_sensor
+from .simulator import SimulatorConfig, parse_simulator
 from .validation import ConfigError, mapping, named_section
 
-_TOP_LEVEL_KEYS = {"metadata", "nodes", "robots", "sensors", "models", "runtimes"}
+_TOP_LEVEL_KEYS = {
+    "metadata",
+    "nodes",
+    "robots",
+    "simulators",
+    "sensors",
+    "models",
+    "runtimes",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +33,7 @@ class DeploymentConfig:
     metadata: MetadataConfig
     nodes: dict[str, NodeConfig]
     robots: dict[str, RobotConfig]
+    simulators: dict[str, SimulatorConfig]
     sensors: dict[str, SensorConfig]
     models: dict[str, ModelConfig]
     runtimes: dict[str, RuntimeConfig]
@@ -41,20 +51,24 @@ def load_config(path: str | Path) -> DeploymentConfig:
     metadata = parse_metadata(mapping(root.get("metadata"), "metadata"))
     nodes = named_section(root.get("nodes"), "nodes", parse_node)
     robots = named_section(root.get("robots", {}), "robots", parse_robot)
+    simulators = named_section(
+        root.get("simulators", {}), "simulators", parse_simulator
+    )
     sensors = named_section(root.get("sensors", {}), "sensors", parse_sensor)
     models = named_section(root.get("models", {}), "models", parse_model)
     runtimes = named_section(root.get("runtimes", {}), "runtimes", parse_runtime)
     if not nodes:
         raise ConfigError("nodes must contain at least one node")
 
-    _validate_references(nodes, robots, sensors, models, runtimes)
+    _validate_references(nodes, robots, simulators, sensors, models, runtimes)
     _validate_unique_robot_ports(robots)
-    _validate_unique_service_ports(models, runtimes, robots)
+    _validate_unique_service_ports(models, runtimes, robots, simulators)
     return DeploymentConfig(
         path=source,
         metadata=metadata,
         nodes=nodes,
         robots=robots,
+        simulators=simulators,
         sensors=sensors,
         models=models,
         runtimes=runtimes,
@@ -116,6 +130,7 @@ def _load_yaml(path: Path) -> Any:
 def _validate_references(
     nodes: dict[str, NodeConfig],
     robots: dict[str, RobotConfig],
+    simulators: dict[str, SimulatorConfig],
     sensors: dict[str, SensorConfig],
     models: dict[str, ModelConfig],
     runtimes: dict[str, RuntimeConfig],
@@ -124,6 +139,12 @@ def _validate_references(
         if robot.node not in nodes:
             raise ConfigError(
                 f"robot {robot.robot_id!r} references unknown node {robot.node!r}"
+            )
+    for simulator in simulators.values():
+        if simulator.node not in nodes:
+            raise ConfigError(
+                f"simulator {simulator.simulator_id!r} references unknown node "
+                f"{simulator.node!r}"
             )
     for model in models.values():
         if model.node not in nodes:
@@ -137,10 +158,15 @@ def _validate_references(
                 f"{sensor.node!r}"
             )
     for runtime in runtimes.values():
-        if runtime.robot not in robots:
+        if runtime.robot is not None and runtime.robot not in robots:
             raise ConfigError(
                 f"runtime {runtime.runtime_id!r} references unknown robot "
                 f"{runtime.robot!r}"
+            )
+        if runtime.simulator is not None and runtime.simulator not in simulators:
+            raise ConfigError(
+                f"runtime {runtime.runtime_id!r} references unknown simulator "
+                f"{runtime.simulator!r}"
             )
         if runtime.model not in models:
             raise ConfigError(
@@ -174,6 +200,7 @@ def _validate_unique_service_ports(
     models: dict[str, ModelConfig],
     runtimes: dict[str, RuntimeConfig],
     robots: dict[str, RobotConfig],
+    simulators: dict[str, SimulatorConfig],
 ) -> None:
     owners: dict[tuple[str, int], str] = {}
     for model in models.values():
@@ -186,7 +213,11 @@ def _validate_unique_service_ports(
             )
         owners[key] = model.model_id
     for runtime in runtimes.values():
-        node = robots[runtime.robot].node
+        node = (
+            robots[runtime.robot].node
+            if runtime.robot is not None
+            else simulators[runtime.simulator].node
+        )
         key = (node, runtime.server.port)
         owner = owners.get(key)
         if owner is not None:

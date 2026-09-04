@@ -1,4 +1,4 @@
-"""Dataset-aligned camera observations for the VLABench simulator.
+"""Dataset-aligned camera observations for VLABench.
 
 LeRobot 0.6 assigns the first three rendered VLABench cameras to ``image``,
 ``second_image``, and ``wrist_image`` by position.  The compiled VLABench model
@@ -68,7 +68,9 @@ def compiled_camera_names(model: Any) -> list[str | None]:
         ) from error
     id2name = getattr(model, "id2name", None)
     if not callable(id2name):
-        raise VLABenchCameraMappingError("compiled VLABench model does not expose id2name()")
+        raise VLABenchCameraMappingError(
+            "compiled VLABench model does not expose id2name()"
+        )
     try:
         return [id2name(index, "camera") for index in range(camera_count)]
     except (TypeError, ValueError) as error:
@@ -89,7 +91,9 @@ class VLABenchSemanticCameraMixin:
         """Render only the left, right, and Franka wrist cameras by name."""
 
         if self._env is None:
-            raise RuntimeError("VLABench environment must be initialized before observation")
+            raise RuntimeError(
+                "VLABench environment must be initialized before observation"
+            )
 
         import numpy as np
 
@@ -115,7 +119,11 @@ class VLABenchSemanticCameraMixin:
             dtype=np.float64,
         ).ravel()
         pos_world = raw[:3] if raw.size >= 3 else np.zeros(3, dtype=np.float64)
-        quat_wxyz = raw[3:7] if raw.size >= 7 else np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
+        quat_wxyz = (
+            raw[3:7]
+            if raw.size >= 7
+            else np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
+        )
         gripper = float(raw[7]) if raw.size >= 8 else 0.0
         base = (
             self._robot_base_xyz
@@ -139,7 +147,8 @@ def _semantic_vlabench_environment_type() -> type[Any]:
         from lerobot.envs.vlabench import VLABenchEnv
     except ImportError as error:
         raise RuntimeError(
-            "semantic VLABench observations require the isolated LeRobot 0.6 environment"
+            "semantic VLABench observations require the isolated LeRobot 0.6 "
+            "environment"
         ) from error
 
     class SemanticVLABenchEnv(VLABenchSemanticCameraMixin, VLABenchEnv):
@@ -167,10 +176,14 @@ def _quaternion_wxyz_to_euler_xyz(quaternion: Any) -> Any:
 
     values = np.asarray(quaternion, dtype=np.float64).reshape(-1)
     if values.shape != (4,) or not np.isfinite(values).all():
-        raise VLABenchCameraMappingError("VLABench end-effector quaternion must be finite wxyz")
+        raise VLABenchCameraMappingError(
+            "VLABench end-effector quaternion must be finite wxyz"
+        )
     norm = float(np.linalg.norm(values))
     if not math.isfinite(norm) or norm <= 0:
-        raise VLABenchCameraMappingError("VLABench end-effector quaternion must be non-zero")
+        raise VLABenchCameraMappingError(
+            "VLABench end-effector quaternion must be non-zero"
+        )
     w, x, y, z = (float(value) / norm for value in values)
     roll = math.atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y))
     pitch_sine = max(-1.0, min(1.0, 2.0 * (w * y - z * x)))
@@ -185,7 +198,11 @@ def _to_hwc3(frame: Any, *, height: int, width: int) -> Any:
     image = np.asarray(frame)
     while image.ndim > 3 and image.shape[0] == 1:
         image = image[0]
-    if image.ndim == 3 and image.shape[0] in (1, 3, 4) and image.shape[-1] not in (1, 3, 4):
+    if (
+        image.ndim == 3
+        and image.shape[0] in (1, 3, 4)
+        and image.shape[-1] not in (1, 3, 4)
+    ):
         image = np.transpose(image, (1, 2, 0))
     if image.ndim == 2:
         image = np.stack([image] * 3, axis=-1)

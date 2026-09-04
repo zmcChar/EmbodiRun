@@ -1,4 +1,4 @@
-"""Robot-to-model runtime binding configuration and parsing."""
+"""Embodiment-to-model runtime binding configuration and parsing."""
 
 from __future__ import annotations
 
@@ -12,7 +12,8 @@ from .validation import ConfigError, mapping, string
 @dataclass(frozen=True, slots=True)
 class RuntimeConfig:
     runtime_id: str
-    robot: str
+    robot: str | None
+    simulator: str | None
     model: str
     binding: str
     inputs: dict[str, str]
@@ -38,9 +39,18 @@ def parse_runtime(runtime_id: str, value: dict[str, Any]) -> RuntimeConfig:
                 f"{context}.inputs.{input_name} must reference a sensor ID"
             )
         inputs[input_name] = sensor_id
+    robot = value.get("robot")
+    simulator = value.get("simulator")
+    if (robot is None) == (simulator is None):
+        raise ConfigError(
+            f"{context} must define exactly one of robot or simulator"
+        )
+    target_name = "robot" if robot is not None else "simulator"
+    target = string(value, target_name, context)
     return RuntimeConfig(
         runtime_id=runtime_id,
-        robot=string(value, "robot", context),
+        robot=target if target_name == "robot" else None,
+        simulator=target if target_name == "simulator" else None,
         model=string(value, "model", context),
         binding=string(value, "binding", context),
         inputs=inputs,
@@ -48,7 +58,8 @@ def parse_runtime(runtime_id: str, value: dict[str, Any]) -> RuntimeConfig:
         options={
             name: option
             for name, option in value.items()
-            if name not in {"robot", "model", "binding", "inputs", "server"}
+            if name
+            not in {"robot", "simulator", "model", "binding", "inputs", "server"}
         },
     )
 

@@ -9,6 +9,7 @@ from .robot import RobotConfig
 from .runtime import RuntimeConfig
 from .server import ServerConfig
 from .sensor import SensorConfig
+from .simulator import SimulatorConfig
 from .validation import ConfigError
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "RobotConfig",
     "RuntimeConfig",
     "SensorConfig",
+    "SimulatorConfig",
     "ServerConfig",
     "config_digest",
     "load_config",

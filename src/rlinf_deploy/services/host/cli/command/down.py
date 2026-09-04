@@ -33,7 +33,7 @@ def register(commands: Any) -> None:
     )
     parser.add_argument(
         "--target",
-        choices=("all", "control", "model"),
+        choices=("all", "control", "simulation", "model"),
         default="all",
         help="service kind to stop (default: all)",
     )
