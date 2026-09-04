@@ -18,6 +18,7 @@ from rlinf_deploy.robots.sensors.cameras import CameraFrame
 from ..adapter import SimulationStep, SimulatorAdapter, SimulatorObservation
 from .camera import make_semantic_vlabench_environment
 from .config import VLABenchConfig
+from .viewer import VLABenchViewer
 
 VLABENCH_ACTION_DIM = 7
 
@@ -45,6 +46,9 @@ class VLABenchAdapter(SimulatorAdapter):
         )
         self._clock = clock
         self._environment: Any | None = None
+        self._viewer = (
+            VLABenchViewer(config.simulator_id) if config.viewer else None
+        )
         self._last_observation: SimulatorObservation | None = None
         self._instruction: str | None = None
         self._closed = False
@@ -141,12 +145,16 @@ class VLABenchAdapter(SimulatorAdapter):
     def close(self) -> None:
         if self._closed:
             return
-        if self._environment is not None:
-            close = getattr(self._environment, "close", None)
-            if callable(close):
-                close()
-        self._environment = None
-        self._closed = True
+        try:
+            if self._environment is not None:
+                close = getattr(self._environment, "close", None)
+                if callable(close):
+                    close()
+        finally:
+            if self._viewer is not None:
+                self._viewer.close()
+            self._environment = None
+            self._closed = True
 
     def _get_or_create_environment(self) -> Any:
         if self._environment is None:
@@ -188,6 +196,8 @@ class VLABenchAdapter(SimulatorAdapter):
         pixels = normalized.pop("pixels", None)
         if not isinstance(pixels, Mapping) or not pixels:
             raise TypeError("VLABench observation pixels must be a non-empty mapping")
+        if self._viewer is not None:
+            self._viewer.show(pixels)
         if "agent_pos" not in normalized:
             raise TypeError("VLABench observation must contain agent_pos")
         state = _json_values(normalized.pop("agent_pos"), name="agent_pos")

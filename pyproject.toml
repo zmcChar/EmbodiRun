@@ -31,6 +31,7 @@ robot-fr3 = ["franky-control>=1.1.4,<2"]
 robot-go2 = []
 sim-vlabench = [
     "lerobot>=0.6,<0.7",
+    "Pillow>=10,<13",
     "VLABench @ git+https://github.com/OpenMOSS/VLABench.git@cf588fe60c0c7282174fe979f5913170cfe69017",
 ]
 

@@ -2245,6 +2245,7 @@ robot-so101 = [
 ]
 sim-vlabench = [
     { name = "lerobot", marker = "python_full_version >= '3.12'" },
+    { name = "pillow", marker = "python_full_version >= '3.12'" },
     { name = "vlabench", marker = "python_full_version >= '3.12'" },
 ]
 
@@ -2269,6 +2270,7 @@ robot-go2 = []
 robot-so101 = [{ name = "feetech-servo-sdk", marker = "python_full_version >= '3.12'", specifier = ">=1,<2" }]
 sim-vlabench = [
     { name = "lerobot", marker = "python_full_version >= '3.12'", specifier = ">=0.6,<0.7" },
+    { name = "pillow", marker = "python_full_version >= '3.12'", specifier = ">=10,<13" },
     { name = "vlabench", marker = "python_full_version >= '3.12'", git = "https://github.com/OpenMOSS/VLABench.git?rev=cf588fe60c0c7282174fe979f5913170cfe69017" },
 ]
 
