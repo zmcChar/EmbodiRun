@@ -1630,6 +1630,28 @@ def test_runtime_inputs_define_model_image_fields(tmp_path) -> None:
     ]
 
 
+def test_vvla_model_image_keys_are_forwarded_to_the_policy_adapter(tmp_path) -> None:
+    config_path = tmp_path / "vvla-image-keys.yaml"
+    config_path.write_text(
+        EXAMPLE.read_text(encoding="utf-8").replace(
+            "    source: /home/user/models/pi05_so101\n",
+            "    source: /home/user/models/pi05_so101\n"
+            "    image_keys:\n"
+            "      observation.images.front: observation.images.base_0_rgb\n"
+            "      observation.images.wrist: observation.images.left_wrist_0_rgb\n",
+        ),
+        encoding="utf-8",
+    )
+
+    plan = build_plan(load_config(config_path))
+
+    adapter_config = json.loads(plan.services[0].adapter_config_json)
+    assert adapter_config["image_keys"] == {
+        "observation.images.front": "observation.images.base_0_rgb",
+        "observation.images.wrist": "observation.images.left_wrist_0_rgb",
+    }
+
+
 def test_cli_runtime_surfaces_remote_binding_error(tmp_path, capsys) -> None:
     state_dir = tmp_path / "state"
     base_args = (

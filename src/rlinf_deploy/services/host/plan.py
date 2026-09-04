@@ -387,21 +387,12 @@ def _inference_options(
 
     image_fields = _runtime_image_fields(config, runtime)
     image_keys = {field: field.rsplit(".", 1)[-1] for field in image_fields}
-    configured_image_keys = _option_mapping(model, "image_keys")
+    configured_image_keys = _configured_image_keys(
+        model,
+        image_fields,
+        runtime_id=runtime.runtime_id,
+    )
     if configured_image_keys is not None:
-        if any(
-            not isinstance(value, str) or not value.strip()
-            for value in configured_image_keys.values()
-        ):
-            raise ServiceError(
-                f"models.{model.model_id}.image_keys values must be non-empty strings"
-            )
-        unknown = sorted(set(configured_image_keys) - set(image_fields))
-        if unknown:
-            raise ServiceError(
-                f"models.{model.model_id}.image_keys contains fields not produced "
-                f"by runtime {runtime.runtime_id!r}: {', '.join(unknown)}"
-            )
         image_keys.update(configured_image_keys)
     if len(image_keys.values()) != len(set(image_keys.values())):
         raise ServiceError(f"models.{model.model_id}.image_keys values must be unique")
@@ -453,6 +444,23 @@ def _binding_adapter_config(
         image_fields = _runtime_image_fields(config, runtime)
         if image_fields:
             adapter_config["image_fields"] = image_fields
+        if model.backend == "vvla":
+            image_keys = _configured_image_keys(
+                model,
+                image_fields,
+                runtime_id=runtime.runtime_id,
+            )
+            if image_keys is not None:
+                resolved_image_keys = {
+                    field: image_keys.get(field, field) for field in image_fields
+                }
+                if len(resolved_image_keys.values()) != len(
+                    set(resolved_image_keys.values())
+                ):
+                    raise ServiceError(
+                        f"models.{model.model_id}.image_keys values must be unique"
+                    )
+                adapter_config["image_keys"] = image_keys
         try:
             generated.add(
                 json.dumps(
@@ -639,6 +647,32 @@ def _option_mapping(
     if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
         raise ServiceError(f"models.{model.model_id}.{name} must be an object")
     return dict(value)
+
+
+def _configured_image_keys(
+    model: ModelConfig,
+    image_fields: tuple[str, ...],
+    *,
+    runtime_id: str,
+) -> dict[str, str] | None:
+    value = _option_mapping(model, "image_keys")
+    if value is None:
+        return None
+    if any(
+        not isinstance(target, str) or not target.strip() for target in value.values()
+    ):
+        raise ServiceError(
+            f"models.{model.model_id}.image_keys values must be non-empty strings"
+        )
+    unknown = sorted(set(value) - set(image_fields))
+    if unknown:
+        raise ServiceError(
+            f"models.{model.model_id}.image_keys contains fields not produced "
+            f"by runtime {runtime_id!r}: {', '.join(unknown)}"
+        )
+    return {
+        source: target for source, target in value.items() if isinstance(target, str)
+    }
 
 
 def _sglang_environment(
