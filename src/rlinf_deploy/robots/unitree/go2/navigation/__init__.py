@@ -21,6 +21,7 @@ from .controllers import (
     relative_target_to_velocity,
     waypoint_to_velocity_pulse,
 )
+from .discrete import NavigationCommand, NavigationCommandKind
 from .events import (
     NavigationEndReason,
     NavigationSessionError,
@@ -66,6 +67,8 @@ __all__ = [
     "MobileBase",
     "MobileBaseError",
     "MobileBaseState",
+    "NavigationCommand",
+    "NavigationCommandKind",
     "NavigationContractError",
     "NavigationEndReason",
     "NavigationObservation",

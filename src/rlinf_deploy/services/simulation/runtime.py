@@ -94,12 +94,6 @@ class SimulationRuntime:
                 raise RuntimeError("binding returned an empty action chunk")
             if any(not isinstance(action, RobotAction) for action in actions):
                 raise TypeError("binding action chunk must contain RobotAction values")
-            if len(actions) < self.chunk_steps:
-                raise RuntimeError(
-                    f"binding returned {len(actions)} action(s), fewer than requested "
-                    f"chunk_steps={self.chunk_steps}"
-                )
-
             policy_steps += 1
             for action in actions[: self.chunk_steps]:
                 transition = self.simulator.step(action)

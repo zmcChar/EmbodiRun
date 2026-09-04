@@ -13,8 +13,8 @@ from rlinf_deploy.services.simulation.contracts import EpisodeRequest
 
 from ...config import config_digest
 from ...control import ControlClient
-from ...state import StateStore
 from ...simulation import SimulationClient
+from ...state import StateStore
 from ..context import CommandContext
 
 
@@ -43,11 +43,11 @@ def register(commands: Any) -> None:
     parser.add_argument(
         "--chunk-steps",
         type=_positive_integer,
-        default=DEFAULT_CHUNK_STEPS,
+        default=None,
         metavar="N",
         help=(
             "actions to execute from each inference chunk "
-            f"(default: {DEFAULT_CHUNK_STEPS})"
+            f"(default: up to {DEFAULT_CHUNK_STEPS}, capped by the binding)"
         ),
     )
     parser.add_argument(
@@ -104,9 +104,14 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
     ):
         raise RunError("--task and --seed are only valid for simulator runtimes")
     definition = binding_definition(runtime.binding)
-    if args.chunk_steps > definition.maximum_chunk_steps:
+    chunk_steps = (
+        min(DEFAULT_CHUNK_STEPS, definition.maximum_chunk_steps)
+        if args.chunk_steps is None
+        else args.chunk_steps
+    )
+    if chunk_steps > definition.maximum_chunk_steps:
         raise RunError(
-            f"--chunk-steps {args.chunk_steps} exceeds binding "
+            f"--chunk-steps {chunk_steps} exceeds binding "
             f"{runtime.binding!r} maximum {definition.maximum_chunk_steps}"
         )
 
@@ -148,7 +153,7 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
         progress.advance(runtime.node)
 
         playback_s = (
-            args.max_steps * max(0, args.chunk_steps - 1) / args.control_hz
+            args.max_steps * max(0, chunk_steps - 1) / args.control_hz
             if runtime.target_kind == "robot"
             else 0.0
         )
@@ -162,7 +167,7 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
                 if runtime.target_kind == "robot"
                 else "Executing simulation episode"
             ),
-            detail=f"{args.max_steps} chunk(s), {args.chunk_steps} action(s) each",
+            detail=f"{args.max_steps} chunk(s), {chunk_steps} action(s) each",
         )
         with context.executor(runtime.node) as executor:
             if runtime.target_kind == "robot":
@@ -170,7 +175,7 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
                     request_id=request_id,
                     runtime_id=runtime.runtime_id,
                     prompt=args.prompt,
-                    chunk_steps=args.chunk_steps,
+                    chunk_steps=chunk_steps,
                     max_steps=args.max_steps,
                     control_hz=args.control_hz,
                     inference_timeout_s=args.request_timeout,
@@ -180,7 +185,7 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
                 )
                 detail = (
                     f"Completed {result.completed_steps} chunk(s), "
-                    f"{args.chunk_steps} action(s) each"
+                    f"{chunk_steps} action(s) each"
                 )
             else:
                 request = EpisodeRequest(
@@ -189,7 +194,7 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
                     prompt=args.prompt,
                     task=args.task,
                     seed=args.seed,
-                    chunk_steps=args.chunk_steps,
+                    chunk_steps=chunk_steps,
                     max_policy_steps=args.max_steps,
                     inference_timeout_s=args.request_timeout,
                 )

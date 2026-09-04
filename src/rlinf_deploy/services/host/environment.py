@@ -14,6 +14,7 @@ from .executor import Command, CommandResult, Executor
 
 _MODEL_PYTHON: dict[str, str] = {
     "pi05": "3.12",
+    "streamvln": "3.12",
 }
 
 
