@@ -11,6 +11,7 @@ from rlinf_deploy.robots.sensors import SensorInput
 from rlinf_deploy.services.control.contracts import ControlServiceConfig
 from rlinf_deploy.services.inference.server import (
     http_server_command,
+    sglang_server_command,
     wireless_server_command,
 )
 from rlinf_deploy.services.simulation.contracts import SimulationServiceConfig
@@ -149,29 +150,58 @@ def _model_service(
     model: ModelConfig,
     environments: tuple[EnvironmentProfile, ...],
 ) -> ServiceSpec:
-    if model.backend != "vvla" or model.transport not in {"http", "wireless"}:
+    if model.backend not in {"vvla", "sglang"} or model.transport not in {
+        "http",
+        "wireless",
+    }:
         raise ServiceError(
             f"model {model.model_id!r} requires an unsupported "
             f"{model.backend}/{model.transport} service"
         )
+    if model.backend == "sglang" and model.transport != "http":
+        raise ServiceError(
+            f"model {model.model_id!r} uses sglang, which currently requires "
+            "the http transport"
+        )
+    environment_group = model.kind if model.backend == "vvla" else "sglang"
     environment = _find_environment(
         environments,
         node=model.node,
         project="inference",
-        group=model.kind,
-        path=model.environment or f".venv-vvla-{model.kind}",
+        group=environment_group,
+        path=model.environment or f".venv-{model.backend}-{model.kind}",
     )
     source = _option_string(model, "source", required=True)
     adapter_config_json = _binding_adapter_config(config, model)
     configured_adapter = _option_string(model, "adapter_config")
-    if adapter_config_json is not None and configured_adapter is not None:
+    if (
+        model.backend == "vvla"
+        and adapter_config_json is not None
+        and configured_adapter is not None
+    ):
         raise ServiceError(
             f"models.{model.model_id}.adapter_config conflicts with adapter "
             "configuration owned by its binding"
         )
     gpu = _option_string(model, "gpu")
     adapter_path = configured_adapter
-    if model.transport == "http":
+    command_environment: dict[str, str] = {}
+    if model.backend == "sglang":
+        if configured_adapter is not None:
+            raise ServiceError(
+                f"models.{model.model_id}.adapter_config is VVLA-specific; use "
+                "pipeline_config for SGLang"
+            )
+        argv = sglang_server_command(
+            checkpoint=source,
+            bind=model.server.bind,
+            port=model.server.port,
+            pipeline=_option_string(model, "pipeline"),
+            pipeline_config=_option_string(model, "pipeline_config"),
+            extra_args=_option_strings(model, "server_args"),
+        )
+        command_environment = _sglang_environment(model, gpu)
+    elif model.transport == "http":
         argv = http_server_command(
             policy=model.kind,
             checkpoint=source,
@@ -195,9 +225,15 @@ def _model_service(
         node=model.node,
         environment_id=environment.environment_id,
         endpoint=endpoint,
-        health_endpoint=f"{endpoint}/healthz" if model.transport == "http" else None,
-        command=Command(argv),
-        adapter_config_json=adapter_config_json,
+        health_endpoint=(
+            f"{endpoint}/health"
+            if model.backend == "sglang"
+            else f"{endpoint}/healthz" if model.transport == "http" else None
+        ),
+        command=Command(argv, environment=command_environment),
+        adapter_config_json=(
+            adapter_config_json if model.backend == "vvla" else None
+        ),
     )
 
 
@@ -212,13 +248,14 @@ def _control_service(
     model = config.models[runtime.model]
     service_id = f"control-{runtime.runtime_id}"
     endpoint = f"http://{_url_host(runtime.server.bind)}:{runtime.server.port}"
-    inference_options = _inference_options(model)
+    inference_options = _inference_options(config, runtime, model)
     try:
         control_config = ControlServiceConfig(
             runtime_id=runtime.runtime_id,
             binding_kind=runtime.binding,
             bind=runtime.server.bind,
             port=runtime.server.port,
+            inference_backend=model.backend,
             inference_transport=model.transport,
             inference_endpoint=model_endpoint,
             inference_options=inference_options,
@@ -278,13 +315,14 @@ def _simulation_service(
     model = config.models[runtime.model]
     service_id = f"simulation-{runtime.runtime_id}"
     endpoint = f"http://{_url_host(runtime.server.bind)}:{runtime.server.port}"
-    inference_options = _inference_options(model)
+    inference_options = _inference_options(config, runtime, model)
     try:
         service_config = SimulationServiceConfig(
             runtime_id=runtime.runtime_id,
             binding_kind=runtime.binding,
             bind=runtime.server.bind,
             port=runtime.server.port,
+            inference_backend=model.backend,
             inference_transport=model.transport,
             inference_endpoint=model_endpoint,
             inference_options=inference_options,
@@ -322,17 +360,91 @@ def _simulation_service(
     return runtime_spec, service
 
 
-def _inference_options(model: ModelConfig) -> dict[str, str]:
-    if model.transport != "wireless":
-        return {}
-    return {
-        "comm_config": _option_string(
-            model, "client_comm_config", required=True
-        ),
-        "server_node_id": _option_string(
-            model, "server_node_id", required=True
-        ),
+def _inference_options(
+    config: DeploymentConfig,
+    runtime: RuntimeConfig,
+    model: ModelConfig,
+) -> dict[str, object]:
+    options: dict[str, object] = {}
+    token = _option_string(model, "token")
+    if token is not None:
+        options["token"] = token
+    if model.transport == "wireless":
+        options.update(
+            {
+                "comm_config": _option_string(
+                    model, "client_comm_config", required=True
+                ),
+                "server_node_id": _option_string(
+                    model, "server_node_id", required=True
+                ),
+            }
+        )
+    if model.backend != "sglang":
+        return options
+
+    definition = _load_binding(runtime.binding)
+    adapter = dict(definition.adapter_config or {})
+    for name in ("state_fields", "action_feature_names"):
+        value = adapter.get(name)
+        if value is not None:
+            options[name] = list(value)
+
+    image_fields = _runtime_image_fields(config, runtime)
+    image_keys = {
+        field: field.rsplit(".", 1)[-1]
+        for field in image_fields
     }
+    configured_image_keys = _option_mapping(model, "image_keys")
+    if configured_image_keys is not None:
+        if any(
+            not isinstance(value, str) or not value.strip()
+            for value in configured_image_keys.values()
+        ):
+            raise ServiceError(
+                f"models.{model.model_id}.image_keys values must be non-empty "
+                "strings"
+            )
+        unknown = sorted(set(configured_image_keys) - set(image_fields))
+        if unknown:
+            raise ServiceError(
+                f"models.{model.model_id}.image_keys contains fields not produced "
+                f"by runtime {runtime.runtime_id!r}: {', '.join(unknown)}"
+            )
+        image_keys.update(configured_image_keys)
+    if len(image_keys.values()) != len(set(image_keys.values())):
+        raise ServiceError(
+            f"models.{model.model_id}.image_keys values must be unique"
+        )
+    options["image_keys"] = image_keys
+
+    parameters = dict(_option_mapping(model, "parameters") or {})
+    parameters.setdefault("action_horizon", definition.maximum_chunk_steps)
+    action_horizon = parameters["action_horizon"]
+    if (
+        isinstance(action_horizon, bool)
+        or not isinstance(action_horizon, int)
+        or not 1 <= action_horizon <= definition.maximum_chunk_steps
+    ):
+        raise ServiceError(
+            f"models.{model.model_id}.parameters.action_horizon must be an "
+            f"integer between 1 and {definition.maximum_chunk_steps}"
+        )
+    options["parameters"] = parameters
+    options["runtime"] = dict(_option_mapping(model, "runtime") or {})
+    output_action_dim = model.options.get("output_action_dim")
+    if output_action_dim is not None:
+        if (
+            isinstance(output_action_dim, bool)
+            or not isinstance(output_action_dim, int)
+            or output_action_dim <= 0
+        ):
+            raise ServiceError(
+                f"models.{model.model_id}.output_action_dim must be a positive "
+                "integer"
+            )
+        options["output_action_dim"] = output_action_dim
+    return options
 
 
 def _binding_adapter_config(
@@ -498,6 +610,67 @@ def _option_string(
             message = "must be a non-empty string when provided"
         raise ServiceError(f"models.{model.model_id}.{name} {message}")
     return value
+
+
+def _option_strings(model: ModelConfig, name: str) -> tuple[str, ...]:
+    value = model.options.get(name, ())
+    if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
+        raise ServiceError(f"models.{model.model_id}.{name} must be a list")
+    result = tuple(value)
+    if any(not isinstance(item, str) or not item for item in result):
+        raise ServiceError(
+            f"models.{model.model_id}.{name} must contain non-empty strings"
+        )
+    reserved = (
+        "--host",
+        "--port",
+        "--model-type",
+        "--pipeline",
+        "--pipeline-class-name",
+        "--pipeline-config-path",
+    )
+    if any(
+        item == option or item.startswith(f"{option}=")
+        for item in result
+        for option in reserved
+    ):
+        raise ServiceError(
+            f"models.{model.model_id}.{name} must not override host, port, model "
+            "type, or explicit pipeline settings"
+        )
+    return result
+
+
+def _option_mapping(
+    model: ModelConfig,
+    name: str,
+) -> dict[str, object] | None:
+    value = model.options.get(name)
+    if value is None:
+        return None
+    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
+        raise ServiceError(f"models.{model.model_id}.{name} must be an object")
+    return dict(value)
+
+
+def _sglang_environment(
+    model: ModelConfig,
+    gpu: str | None,
+) -> dict[str, str]:
+    if gpu is None:
+        return {}
+    prefix = "cuda:"
+    if not gpu.startswith(prefix):
+        raise ServiceError(
+            f"models.{model.model_id}.gpu must use cuda:<device> for SGLang"
+        )
+    devices = gpu.removeprefix(prefix)
+    parts = devices.split(",")
+    if not parts or any(not part.isdigit() for part in parts):
+        raise ServiceError(
+            f"models.{model.model_id}.gpu must use cuda:<device> for SGLang"
+        )
+    return {"CUDA_VISIBLE_DEVICES": ",".join(parts)}
 
 
 __all__ = [

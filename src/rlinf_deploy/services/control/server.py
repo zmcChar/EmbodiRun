@@ -188,6 +188,7 @@ def create_inference_client(config: ControlServiceConfig, timeout_s: float) -> A
         config.inference_transport,
         config.inference_endpoint,
         config.inference_options,
+        backend=config.inference_backend,
         timeout_s=timeout_s,
     )
 

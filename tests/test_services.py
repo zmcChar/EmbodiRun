@@ -19,6 +19,7 @@ from rlinf_deploy.services.host.cli.command.init import (
 )
 from rlinf_deploy.services.host.config import ConfigError, load_config
 from rlinf_deploy.services.host.environment import (
+    EnvironmentProfile,
     UvEnvironmentManager,
     environment_profiles,
 )
@@ -388,6 +389,7 @@ def test_example_resolves_real_thor_environment_and_runtime() -> None:
     assert control_config["schema"] == "rlinf.control.config.v1"
     assert control_config["binding"] == "lerobot.so101.pi05"
     assert control_config["inference"] == {
+        "backend": "vvla",
         "transport": "http",
         "endpoint": "http://127.0.0.1:8000",
         "options": {},
@@ -424,6 +426,7 @@ def test_wireless_model_resolves_server_and_control_client_boundaries(
     assert model_service.health_endpoint is None
     control_config = json.loads(control_service.control_config_json)
     assert control_config["inference"] == {
+        "backend": "vvla",
         "transport": "wireless",
         "endpoint": "wireless://inference-1",
         "options": {
@@ -433,6 +436,143 @@ def test_wireless_model_resolves_server_and_control_client_boundaries(
     }
     profiles = environment_profiles(load_config(config_path))
     assert {profile.extras for profile in profiles} == {("wireless",)}
+
+
+def test_sglang_streamvln_resolves_habitat_simulation_service(tmp_path) -> None:
+    config_path = tmp_path / "sglang-habitat.yaml"
+    config_path.write_text(
+        """
+metadata:
+  name: sglang-habitat-streamvln
+  deploy-commit: deploy123
+  inference-commit: inference123
+nodes:
+  workstation:
+    type: workstation
+    connection:
+      type: local
+simulators:
+  habitat-demo:
+    type: habitat
+    node: workstation
+    dataset: /data/episodes.json.gz
+    scenes_dir: /data/scenes
+    episode_id: episode-1
+models:
+  streamvln:
+    backend: sglang
+    transport: http
+    type: streamvln
+    node: workstation
+    environment_packages:
+      - sglang[diffusion]==0.5.18
+    source: /models/streamvln
+    pipeline: StreamVLNPipeline
+    pipeline_config: configs/streamvln-sglang.json
+    gpu: cuda:1
+    server_args: [--tp-size, "1"]
+    server:
+      bind: 127.0.0.1
+      port: 30000
+runtimes:
+  habitat-streamvln:
+    simulator: habitat-demo
+    model: streamvln
+    binding: unitree.go2.streamvln
+    server:
+      bind: 127.0.0.1
+      port: 31000
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+    profiles = environment_profiles(config)
+    plan = build_plan(config)
+
+    identities = {
+        (profile.project, profile.group, profile.install) for profile in profiles
+    }
+    assert identities == {
+        ("deploy", "sim-habitat", "project-group"),
+        ("inference", "sglang", "packages"),
+    }
+    model_service, simulation_service = plan.services
+    assert model_service.command.argv == (
+        "sglang",
+        "serve",
+        "/models/streamvln",
+        "--model-type",
+        "diffusion",
+        "--pipeline",
+        "StreamVLNPipeline",
+        "--pipeline-config-path",
+        "configs/streamvln-sglang.json",
+        "--tp-size",
+        "1",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "30000",
+    )
+    assert model_service.command.environment == {"CUDA_VISIBLE_DEVICES": "1"}
+    assert model_service.health_endpoint == "http://127.0.0.1:30000/health"
+    assert model_service.adapter_config_json is None
+    simulation_config = json.loads(simulation_service.simulation_config_json)
+    assert simulation_config["inference"] == {
+        "backend": "sglang",
+        "transport": "http",
+        "endpoint": "http://127.0.0.1:30000",
+        "options": {
+            "image_keys": {"observation.images.rgb": "rgb"},
+            "parameters": {"action_horizon": 4},
+            "runtime": {},
+        },
+    }
+
+
+def test_sglang_pi05_reuses_existing_so101_binding(tmp_path) -> None:
+    config_path = tmp_path / "sglang-so101.yaml"
+    config_path.write_text(
+        EXAMPLE.read_text(encoding="utf-8")
+        .replace("backend: vvla", "backend: sglang")
+        .replace(
+            "    source: /home/user/models/pi05_so101\n",
+            '    environment_packages: ["sglang[diffusion]==0.5.18"]\n'
+            "    source: /home/user/models/pi05_so101\n",
+        ),
+        encoding="utf-8",
+    )
+
+    model_service, control_service = build_plan(load_config(config_path)).services
+
+    assert model_service.command.argv[:5] == (
+        "sglang",
+        "serve",
+        "/home/user/models/pi05_so101",
+        "--model-type",
+        "diffusion",
+    )
+    control_config = json.loads(control_service.control_config_json)
+    assert control_config["inference"]["backend"] == "sglang"
+    assert control_config["inference"]["options"] == {
+        "action_feature_names": [
+            "shoulder_pan.pos",
+            "shoulder_lift.pos",
+            "elbow_flex.pos",
+            "wrist_flex.pos",
+            "wrist_roll.pos",
+            "gripper.pos",
+        ],
+        "image_keys": {
+            "observation.images.front": "front",
+            "observation.images.wrist": "wrist",
+        },
+        "parameters": {"action_horizon": 50},
+        "runtime": {},
+        "state_fields": ["joint_positions_deg", "gripper_position"],
+    }
 
 
 def test_uv_environment_manager_uses_only_the_selected_group() -> None:
@@ -496,6 +636,37 @@ def test_uv_environment_manager_applies_configured_package_overlay() -> None:
         "torchvision==0.25.0+cu130",
     )
     assert command.timeout_s == 1800.0
+
+
+def test_uv_environment_manager_creates_standalone_sglang_environment() -> None:
+    profile = EnvironmentProfile(
+        environment_id="node:inference:sglang:.venv-sglang",
+        node="node",
+        project="inference",
+        group="sglang",
+        path=".venv-sglang",
+        python="3.12",
+        packages=("sglang[diffusion]==0.5.18",),
+        install="packages",
+    )
+    executor = RecordingExecutor()
+
+    UvEnvironmentManager(executor).prepare(
+        profile,
+        project_dir="/opt/rlinf-inference",
+    )
+
+    assert [command.argv for command, _ in executor.commands] == [
+        ("uv", "venv", "--python", "3.12", ".venv-sglang"),
+        (
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            "/opt/rlinf-inference/.venv-sglang/bin/python",
+            "sglang[diffusion]==0.5.18",
+        ),
+    ]
 
 
 def test_project_manager_clones_and_fetches_only_when_missing() -> None:

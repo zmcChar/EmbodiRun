@@ -14,6 +14,7 @@ from .executor import Command, CommandResult, Executor
 
 _MODEL_PYTHON: dict[str, str] = {
     "pi05": "3.12",
+    "sglang": "3.12",
     "streamvln": "3.12",
 }
 
@@ -35,6 +36,7 @@ class EnvironmentProfile:
     package_index: str | None = None
     packages: tuple[str, ...] = ()
     extras: tuple[str, ...] = ()
+    install: Literal["project-group", "packages"] = "project-group"
 
 
 def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, ...]:
@@ -90,12 +92,18 @@ def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, 
         )
 
     for model in sorted(config.models.values(), key=lambda item: item.model_id):
-        if model.backend != "vvla":
+        if model.backend not in {"vvla", "sglang"}:
             raise EnvironmentError(
                 f"model {model.model_id!r} uses unsupported backend {model.backend!r}"
             )
-        group = model.kind
-        path = model.environment or f".venv-vvla-{group}"
+        if model.backend == "sglang" and not model.environment_packages:
+            raise EnvironmentError(
+                f"model {model.model_id!r} must set environment_packages to an "
+                "SGLang diffusion installation; pin it by version or commit for "
+                "reproducibility"
+            )
+        group = model.kind if model.backend == "vvla" else "sglang"
+        path = model.environment or f".venv-{model.backend}-{model.kind}"
         profiles.append(
             EnvironmentProfile(
                 environment_id=f"{model.node}:inference:{group}:{path}",
@@ -107,6 +115,9 @@ def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, 
                 package_index=model.environment_index,
                 packages=model.environment_packages,
                 extras=("wireless",) if model.transport == "wireless" else (),
+                install=(
+                    "project-group" if model.backend == "vvla" else "packages"
+                ),
             )
         )
 
@@ -158,6 +169,16 @@ class UvEnvironmentManager:
         self.uv_executable = uv_executable
 
     def sync_command(self, profile: EnvironmentProfile, *, project_dir: str) -> Command:
+        if profile.install == "packages":
+            argv = [self.uv_executable, "venv"]
+            if profile.python is not None:
+                argv.extend(("--python", profile.python))
+            argv.append(profile.path)
+            return Command(
+                argv=tuple(argv),
+                cwd=project_dir,
+                timeout_s=1800.0,
+            )
         argv = [
             self.uv_executable,
             "sync",
@@ -183,7 +204,7 @@ class UvEnvironmentManager:
         *,
         project_dir: str,
     ) -> CommandResult:
-        """Synchronize exactly the locked capability group for one profile."""
+        """Synchronize a project group or a pinned standalone package set."""
 
         result = self.executor.run(
             self.sync_command(profile, project_dir=project_dir)

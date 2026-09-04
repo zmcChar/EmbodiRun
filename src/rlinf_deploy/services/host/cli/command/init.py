@@ -277,6 +277,14 @@ def _probe_resources(
                 kind="f",
                 description=f"model {model.model_id!r} adapter config",
             )
+        pipeline_config = model.options.get("pipeline_config")
+        if isinstance(pipeline_config, str):
+            _require_path(
+                executor,
+                _configured_path(pipeline_config, node.inference_project),
+                kind="f",
+                description=f"model {model.model_id!r} pipeline config",
+            )
 
 
 def _initial_service_state(

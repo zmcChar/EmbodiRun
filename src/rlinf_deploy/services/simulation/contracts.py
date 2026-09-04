@@ -30,12 +30,14 @@ class SimulationServiceConfig:
     simulator_id: str
     simulator_kind: str
     simulator_options: Mapping[str, Any]
+    inference_backend: str = "vvla"
 
     def __post_init__(self) -> None:
         for name in (
             "runtime_id",
             "binding_kind",
             "bind",
+            "inference_backend",
             "inference_transport",
             "inference_endpoint",
             "simulator_id",
@@ -56,6 +58,10 @@ class SimulationServiceConfig:
             raise SimulationContractError(
                 "inference transport must be http or wireless"
             )
+        if self.inference_backend not in {"vvla", "sglang"}:
+            raise SimulationContractError(
+                "inference backend must be vvla or sglang"
+            )
         for name in ("inference_options", "simulator_options"):
             object.__setattr__(self, name, _mapping(getattr(self, name), name))
 
@@ -67,6 +73,7 @@ class SimulationServiceConfig:
                 "binding": self.binding_kind,
                 "server": {"bind": self.bind, "port": self.port},
                 "inference": {
+                    "backend": self.inference_backend,
                     "transport": self.inference_transport,
                     "endpoint": self.inference_endpoint,
                     "options": dict(self.inference_options),
@@ -102,6 +109,11 @@ class SimulationServiceConfig:
             binding_kind=_string(root, "binding", "simulation config"),
             bind=_string(server, "bind", "simulation config.server"),
             port=server.get("port"),
+            inference_backend=_optional_string(
+                inference.get("backend"),
+                "simulation config.inference.backend",
+            )
+            or "vvla",
             inference_transport=_string(
                 inference, "transport", "simulation config.inference"
             ),

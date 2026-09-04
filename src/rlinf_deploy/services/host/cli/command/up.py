@@ -352,6 +352,9 @@ def _materialize_service(
     if "--comm-config" in argv:
         config_index = argv.index("--comm-config") + 1
         argv[config_index] = _configured_path(argv[config_index], project)
+    if "--pipeline-config-path" in argv:
+        config_index = argv.index("--pipeline-config-path") + 1
+        argv[config_index] = _configured_path(argv[config_index], project)
     environment_variables = dict(service.command.environment)
     if service.kind in {"control", "simulation"}:
         environment_variables["PYTHONPATH"] = posixpath.join(deploy_project, "src")

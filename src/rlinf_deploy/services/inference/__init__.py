@@ -3,8 +3,11 @@
 from .client import (
     HttpResponse,
     HttpTransport,
+    HttpTransportError,
     InferenceClient,
     PolicyClient,
+    SglangHttpClient,
+    SglangHttpError,
     UrllibHttpTransport,
     VvlaHttpClient,
     VvlaWirelessClient,
@@ -23,6 +26,7 @@ from .contracts import (
 __all__ = [
     "HttpResponse",
     "HttpTransport",
+    "HttpTransportError",
     "ImagePayload",
     "InferenceClient",
     "PolicyAction",
@@ -30,6 +34,8 @@ __all__ = [
     "PolicyObservation",
     "PolicyResult",
     "Session",
+    "SglangHttpClient",
+    "SglangHttpError",
     "UrllibHttpTransport",
     "VvlaHttpClient",
     "VvlaWirelessClient",

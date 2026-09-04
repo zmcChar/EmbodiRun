@@ -1,4 +1,4 @@
-"""Bounded HTTP client for the VVLA policy service."""
+"""Bounded HTTP transport and client for the VVLA policy service."""
 
 from __future__ import annotations
 
@@ -17,7 +17,11 @@ from ..contracts import PolicyObservation, PolicyResult, Session
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
 
-class VvlaHttpError(RuntimeError):
+class HttpTransportError(RuntimeError):
+    """A bounded HTTP exchange failed before backend-specific decoding."""
+
+
+class VvlaHttpError(HttpTransportError):
     pass
 
 
@@ -69,16 +73,18 @@ class UrllibHttpTransport:
         except urllib.error.HTTPError as error:
             detail = error.read(min(maximum_bytes, 16 * 1024))
             error.close()
-            raise VvlaHttpError(
+            raise HttpTransportError(
                 f"{method} {url} returned HTTP {error.code}: "
                 f"{detail.decode('utf-8', errors='replace')}"
             ) from error
         except (urllib.error.URLError, TimeoutError, OSError) as error:
-            raise VvlaHttpError(f"{method} {url} failed: {error}") from error
+            raise HttpTransportError(f"{method} {url} failed: {error}") from error
         if len(result.body) > maximum_bytes:
-            raise VvlaHttpError(f"{method} {url} response exceeded {maximum_bytes} bytes")
+            raise HttpTransportError(
+                f"{method} {url} response exceeded {maximum_bytes} bytes"
+            )
         if not 200 <= result.status < 300:
-            raise VvlaHttpError(f"{method} {url} returned HTTP {result.status}")
+            raise HttpTransportError(f"{method} {url} returned HTTP {result.status}")
         return result
 
 
@@ -206,14 +212,17 @@ class VvlaHttpClient:
             headers["Content-Type"] = content_type
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
-        response = self.transport.request(
-            method,
-            self.base_url + path,
-            headers=headers,
-            body=body,
-            timeout_s=self.timeout_s,
-            maximum_bytes=MAX_RESPONSE_BYTES,
-        )
+        try:
+            response = self.transport.request(
+                method,
+                self.base_url + path,
+                headers=headers,
+                body=body,
+                timeout_s=self.timeout_s,
+                maximum_bytes=MAX_RESPONSE_BYTES,
+            )
+        except HttpTransportError as error:
+            raise VvlaHttpError(str(error)) from error
         try:
             payload = json.loads(response.body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -274,6 +283,7 @@ def _part(boundary: str, name: str, body: bytes, mime: str, filename: str) -> by
 __all__ = [
     "HttpResponse",
     "HttpTransport",
+    "HttpTransportError",
     "UrllibHttpTransport",
     "VvlaHttpClient",
     "VvlaHttpError",
