@@ -30,16 +30,6 @@ def run_on_nodes(
 
     values: dict[str, ResultT] = {}
     errors: dict[str, Exception] = {}
-    # Most deployments have one node. Keeping that operation on the calling
-    # thread lets Ctrl-C interrupt a long readiness wait immediately.
-    if len(nodes) == 1:
-        node_id = nodes[0]
-        try:
-            values[node_id] = operation(node_id)
-        except Exception as error:  # noqa: BLE001 - preserve per-node failures
-            errors[node_id] = error
-        return ParallelResults(values, errors)
-
     with ThreadPoolExecutor(
         max_workers=len(nodes),
         thread_name_prefix="rlinf-deploy-node",

@@ -246,31 +246,36 @@ def _binding_adapter_config(
 ) -> str | None:
     definitions = {}
     generated: set[str | None] = set()
-    configured_binding = _option_string(model, "adapter_binding")
-    if configured_binding is not None:
-        definition = _load_binding(configured_binding)
-        if definition.model_kind != model.kind:
-            raise ServiceError(
-                f"models.{model.model_id}.adapter_binding {configured_binding!r} "
-                f"does not support model {model.kind!r}"
-            )
-        definitions[configured_binding] = definition
-        generated.add(_serialize_adapter_config(configured_binding, definition))
     for runtime in config.runtimes.values():
         if runtime.model != model.model_id:
             continue
         definition = _load_binding(runtime.binding)
         definitions[runtime.binding] = definition
-        if definition.adapter_config is not None:
-            expected_images = definition.adapter_config.get("image_fields")
-            if expected_images is not None and set(runtime.inputs) != set(
-                expected_images
-            ):
-                raise ServiceError(
-                    f"runtime {runtime.runtime_id!r} inputs do not match binding "
-                    f"{runtime.binding!r} image fields"
+        if definition.adapter_config is None:
+            generated.add(None)
+            continue
+        expected_images = definition.adapter_config.get("image_fields")
+        if expected_images is not None and set(runtime.inputs) != set(expected_images):
+            raise ServiceError(
+                f"runtime {runtime.runtime_id!r} inputs do not match binding "
+                f"{runtime.binding!r} image fields"
+            )
+        try:
+            generated.add(
+                json.dumps(
+                    {
+                        **dict(definition.adapter_config),
+                        "return_steps": definition.maximum_chunk_steps,
+                    },
+                    allow_nan=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
                 )
-        generated.add(_serialize_adapter_config(runtime.binding, definition))
+            )
+        except (TypeError, ValueError) as error:
+            raise ServiceError(
+                f"binding {runtime.binding!r} adapter configuration is not JSON"
+            ) from error
     if len(generated) > 1:
         names = ", ".join(sorted(definitions))
         raise ServiceError(
@@ -278,28 +283,6 @@ def _binding_adapter_config(
             f"adapter configurations: {names}"
         )
     return next(iter(generated), None)
-
-
-def _serialize_adapter_config(
-    binding: str,
-    definition: BindingDefinition,
-) -> str | None:
-    if definition.adapter_config is None:
-        return None
-    try:
-        return json.dumps(
-            {
-                **dict(definition.adapter_config),
-                "return_steps": definition.maximum_chunk_steps,
-            },
-            allow_nan=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-    except (TypeError, ValueError) as error:
-        raise ServiceError(
-            f"binding {binding!r} adapter configuration is not JSON"
-        ) from error
 
 
 def _endpoint(

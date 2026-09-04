@@ -1,6 +1,7 @@
+# Run Pi0.5 on Thor and control one SO101 attached to Orin NX over WirelessComm.
 metadata:
   name: thor-pi0.5
-  deploy-commit: 0e2cfdee1ba6e269b053e3496f50263e26bda545
+  deploy-commit: 44d2459f76b72dcd8997a9b0b1f4cdf9a1a516ef
   inference-commit: 8b45215075718f8e59ee2ac890b9b3f80a2add98
 
 nodes:
@@ -13,19 +14,8 @@ nodes:
       username: operator
       accept_new_host_key: false
 
-  # jetson-agx-orin:
-  #   type: jetson.agx-orin
-  #   python_index: https://pypi.tuna.tsinghua.edu.cn/simple
-  #   connection:
-  #     type: ssh
-  #     host: 10.168.192.7
-  #     port: 22
-  #     username: operator
-  #     accept_new_host_key: false
-
   jetson-orin-nx:
     type: jetson.orin-nx
-    python_index: https://pypi.tuna.tsinghua.edu.cn/simple
     connection:
       type: ssh
       host: 10.168.192.133
@@ -34,17 +24,6 @@ nodes:
       accept_new_host_key: false
 
 robots:
-  # so101-1:
-  #   type: lerobot.so101
-  #   node: jetson-agx-orin
-  #   port: /dev/serial/by-id/usb-1a86_USB_Single_Serial_5C4C125563-if00
-  #   calibration_id: thor_so101_follower
-  #   calibration_dir: /home/user/.cache/huggingface/lerobot/calibration/robots/so_follower
-  #   disable_torque_on_disconnect: true
-  #   max_joint_step_deg: 5.0
-  #   max_gripper_step: 10.0
-  #   step_limit_mode: clip
-
   so101-2:
     type: lerobot.so101
     node: jetson-orin-nx
@@ -59,37 +38,21 @@ robots:
 models:
   pi05-01:
     backend: vvla
-    # The Orin NX control service sends observations to Thor through WirelessComm.
     transport: wireless
     type: pi05
     node: jetson-agx-thor-232
     gpu: cuda:0
     environment: .venv-vvla
     source: /home/user/models/pi05_so101
-    comm_config: /home/user/.config/rlinf-deploy/thor-orin-nx-wireless.yaml
-    client_comm_config: /home/jetson/.config/rlinf-deploy/thor-orin-nx-wireless.yaml
+    comm_config: /home/user/.local/share/rlinf-deploy/thor-pi0.5/sources/deploy/configs/wireless/thor-orin-nx-thor.yaml
+    client_comm_config: /home/jetson/.local/share/rlinf-deploy/thor-pi0.5/sources/deploy/configs/wireless/thor-orin-nx-control.yaml
     server_node_id: inference-thor
+    # Required by the shared model schema; WirelessComm itself listens on 9300.
     server:
-      bind: 0.0.0.0
+      bind: 127.0.0.1
       port: 8000
 
 sensors:
-  # front-camera-1:
-  #   type: v4l2
-  #   node: jetson-agx-orin
-  #   device: /dev/v4l/by-id/usb-icSpring_icspring_camera_202404160005-video-index0
-  #   width: 640
-  #   height: 480
-  #   fps: 30
-
-  # wrist-camera-1:
-  #   type: v4l2
-  #   node: jetson-agx-orin
-  #   device: /dev/v4l/by-id/usb-icSpring_icspring_camera-video-index0
-  #   width: 640
-  #   height: 480
-  #   fps: 30
-
   front-camera-2:
     type: v4l2
     node: jetson-orin-nx
@@ -106,19 +69,7 @@ sensors:
     height: 480
     fps: 30
 
-
 runtimes:
-  # so101-1-runtime:
-  #   robot: so101-1
-  #   model: pi05-01
-  #   binding: lerobot.so101.pi05
-  #   server:
-  #     bind: 127.0.0.1
-  #     port: 8100
-  #   inputs:
-  #     observation.images.front: front-camera-1
-  #     observation.images.wrist: wrist-camera-1
-
   so101-2-runtime:
     robot: so101-2
     model: pi05-01

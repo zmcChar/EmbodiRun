@@ -58,9 +58,6 @@ def main(
     )
     try:
         return args.command_handler(args, context)
-    except KeyboardInterrupt:
-        print("rlinf-deploy: interrupted", file=sys.stderr)
-        return 130
     except (OSError, RuntimeError, ValueError) as error:
         print(f"rlinf-deploy: error: {error}", file=sys.stderr)
         return 1

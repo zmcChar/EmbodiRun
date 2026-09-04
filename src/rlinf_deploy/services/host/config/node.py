@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .connection import ConnectionConfig, parse_connection
-from .validation import mapping, optional_string, string
+from .validation import mapping, string
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,20 +14,17 @@ class NodeConfig:
     node_id: str
     kind: str
     connection: ConnectionConfig
-    python_index: str | None
     options: dict[str, Any] = field(default_factory=dict, repr=False)
 
 
 def parse_node(node_id: str, value: dict[str, Any]) -> NodeConfig:
-    context = f"nodes.{node_id}"
     connection = parse_connection(
-        mapping(value.get("connection"), f"{context}.connection")
+        mapping(value.get("connection"), f"nodes.{node_id}.connection")
     )
     return NodeConfig(
         node_id=node_id,
-        kind=string(value, "type", context),
+        kind=string(value, "type", f"nodes.{node_id}"),
         connection=connection,
-        python_index=optional_string(value, "python_index", context),
         options=dict(value),
     )
 

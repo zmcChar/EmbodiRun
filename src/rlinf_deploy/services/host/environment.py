@@ -30,7 +30,6 @@ class EnvironmentProfile:
     group: str
     path: str
     python: str | None = None
-    default_index: str | None = None
     package_index: str | None = None
     packages: tuple[str, ...] = ()
     extras: tuple[str, ...] = ()
@@ -61,7 +60,6 @@ def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, 
                 group=group,
                 path=f".venv-{group}",
                 python=python,
-                default_index=config.nodes[robot.node].python_index,
                 extras=("wireless",) if robot.robot_id in wireless_robots else (),
             )
         )
@@ -81,7 +79,6 @@ def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, 
                 group=group,
                 path=path,
                 python=model.python or _MODEL_PYTHON.get(group),
-                default_index=config.nodes[model.node].python_index,
                 package_index=model.environment_index,
                 packages=model.environment_packages,
                 extras=("wireless",) if model.transport == "wireless" else (),
@@ -148,13 +145,10 @@ class UvEnvironmentManager:
             argv[2:2] = ["--python", profile.python]
         for extra in profile.extras:
             argv.extend(("--extra", extra))
-        environment = {"UV_PROJECT_ENVIRONMENT": profile.path}
-        if profile.default_index is not None:
-            environment["UV_DEFAULT_INDEX"] = profile.default_index
         return Command(
             argv=tuple(argv),
             cwd=project_dir,
-            environment=environment,
+            environment={"UV_PROJECT_ENVIRONMENT": profile.path},
             timeout_s=1800.0,
         )
 
