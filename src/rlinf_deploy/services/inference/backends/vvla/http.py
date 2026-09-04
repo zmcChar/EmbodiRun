@@ -1,91 +1,24 @@
-"""Bounded HTTP transport and client for the VVLA policy service."""
+"""VVLA inference service integration over HTTP."""
 
 from __future__ import annotations
 
 import json
-import urllib.error
 import urllib.parse
-import urllib.request
 import uuid
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any
 
-from ..contracts import PolicyObservation, PolicyResult, Session
-
-
-MAX_RESPONSE_BYTES = 4 * 1024 * 1024
-
-
-class HttpTransportError(RuntimeError):
-    """A bounded HTTP exchange failed before backend-specific decoding."""
+from ...contracts import PolicyObservation, PolicyResult, Session
+from ...protocols.http import (
+    MAX_RESPONSE_BYTES,
+    HttpTransport,
+    HttpTransportError,
+    UrllibHttpTransport,
+)
 
 
 class VvlaHttpError(HttpTransportError):
     pass
-
-
-@dataclass(frozen=True, slots=True)
-class HttpResponse:
-    status: int
-    headers: Mapping[str, str]
-    body: bytes
-
-
-class HttpTransport(Protocol):
-    def request(
-        self,
-        method: str,
-        url: str,
-        *,
-        headers: Mapping[str, str],
-        body: bytes | None,
-        timeout_s: float,
-        maximum_bytes: int,
-    ) -> HttpResponse: ...
-
-
-class UrllibHttpTransport:
-    def request(
-        self,
-        method: str,
-        url: str,
-        *,
-        headers: Mapping[str, str],
-        body: bytes | None,
-        timeout_s: float,
-        maximum_bytes: int,
-    ) -> HttpResponse:
-        request = urllib.request.Request(
-            url,
-            data=body,
-            headers=dict(headers),
-            method=method,
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=timeout_s) as response:
-                payload = response.read(maximum_bytes + 1)
-                result = HttpResponse(
-                    status=int(response.status),
-                    headers={key.lower(): value for key, value in response.headers.items()},
-                    body=payload,
-                )
-        except urllib.error.HTTPError as error:
-            detail = error.read(min(maximum_bytes, 16 * 1024))
-            error.close()
-            raise HttpTransportError(
-                f"{method} {url} returned HTTP {error.code}: "
-                f"{detail.decode('utf-8', errors='replace')}"
-            ) from error
-        except (urllib.error.URLError, TimeoutError, OSError) as error:
-            raise HttpTransportError(f"{method} {url} failed: {error}") from error
-        if len(result.body) > maximum_bytes:
-            raise HttpTransportError(
-                f"{method} {url} response exceeded {maximum_bytes} bytes"
-            )
-        if not 200 <= result.status < 300:
-            raise HttpTransportError(f"{method} {url} returned HTTP {result.status}")
-        return result
 
 
 class VvlaHttpClient:
@@ -138,7 +71,8 @@ class VvlaHttpClient:
 
     def step(self, observation: PolicyObservation) -> PolicyResult:
         body, content_type = _multipart(observation)
-        path = f"/v1/sessions/{urllib.parse.quote(observation.session_id, safe='')}/steps"
+        session_id = urllib.parse.quote(observation.session_id, safe="")
+        path = f"/v1/sessions/{session_id}/steps"
         payload = self._request_json_bytes(
             "POST",
             path,
@@ -253,9 +187,7 @@ def _multipart(observation: PolicyObservation) -> tuple[bytes, str]:
         allow_nan=False,
         separators=(",", ":"),
     ).encode("utf-8")
-    parts = [
-        _part(boundary, "metadata", metadata, "application/json", "metadata.json")
-    ]
+    parts = [_part(boundary, "metadata", metadata, "application/json", "metadata.json")]
     parts.extend(
         _part(boundary, f"image_{index}", image.data, image.mime_type, image.name)
         for index, image in enumerate(observation.images)
@@ -280,11 +212,34 @@ def _part(boundary: str, name: str, body: bytes, mime: str, filename: str) -> by
     )
 
 
+def vvla_http_server_command(
+    *,
+    policy: str,
+    checkpoint: str,
+    bind: str,
+    port: int,
+    device: str | None = None,
+    adapter_config: str | None = None,
+) -> tuple[str, ...]:
+    """Build the documented ``vvla-http-serve`` command-line contract."""
+
+    argv = [
+        "vvla-http-serve",
+        "--policy",
+        policy,
+        "--checkpoint",
+        checkpoint,
+    ]
+    if adapter_config is not None:
+        argv.extend(("--adapter-config", adapter_config))
+    if device is not None:
+        argv.extend(("--device", device))
+    argv.extend(("--host", bind, "--port", str(port)))
+    return tuple(argv)
+
+
 __all__ = [
-    "HttpResponse",
-    "HttpTransport",
-    "HttpTransportError",
-    "UrllibHttpTransport",
     "VvlaHttpClient",
     "VvlaHttpError",
+    "vvla_http_server_command",
 ]

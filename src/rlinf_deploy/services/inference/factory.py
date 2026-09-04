@@ -1,32 +1,32 @@
-"""Create an inference client from transport-neutral service routing."""
+"""Create an inference service client for a supported backend/protocol pair."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
 
-from .http import VvlaHttpClient
-from .sglang import SglangHttpClient
-from .wireless import VvlaWirelessClient
+from .backends.sglang import SglangHttpClient
+from .backends.vvla import VvlaHttpClient, VvlaWirelessClient
+from .client import InferenceClient
 
 
 def build_inference_client(
-    transport: str,
+    protocol: str,
     endpoint: str,
     options: Mapping[str, Any],
     *,
     backend: str = "vvla",
     timeout_s: float,
-) -> Any:
-    """Build one backend/transport client without depending on its caller."""
+) -> InferenceClient:
+    """Build one of the explicitly supported backend/protocol clients."""
 
     token = options.get("token")
     if token is not None and not isinstance(token, str):
         raise ValueError("inference token must be a string")
     if backend == "sglang":
-        if transport != "http":
+        if protocol != "http":
             raise ValueError(
-                "SGLang action serving currently requires the http transport"
+                "SGLang action serving currently requires the http protocol"
             )
         return SglangHttpClient(
             endpoint,
@@ -44,10 +44,10 @@ def build_inference_client(
         )
     if backend != "vvla":
         raise ValueError(f"unsupported inference backend {backend!r}")
-    if transport == "http":
+    if protocol == "http":
         return VvlaHttpClient(endpoint, token=token, timeout_s=timeout_s)
-    if transport != "wireless":
-        raise ValueError(f"unsupported inference transport {transport!r}")
+    if protocol != "wireless":
+        raise ValueError(f"unsupported inference protocol {protocol!r}")
     return VvlaWirelessClient.from_config(
         _string(options, "comm_config"),
         server_node_id=_string(options, "server_node_id"),
@@ -75,9 +75,7 @@ def _strings(options: Mapping[str, Any], name: str) -> tuple[str, ...]:
     if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
         raise ValueError(f"inference option {name!r} must be a list")
     if any(not isinstance(item, str) or not item.strip() for item in value):
-        raise ValueError(
-            f"inference option {name!r} must contain non-empty strings"
-        )
+        raise ValueError(f"inference option {name!r} must contain non-empty strings")
     return tuple(value)
 
 

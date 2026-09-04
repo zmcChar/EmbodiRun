@@ -9,7 +9,7 @@ from rlinf_deploy.bindings import BindingMapper
 from rlinf_deploy.robots import RobotAction
 from rlinf_deploy.simulators import SimulatorAdapter, SimulatorObservation
 
-from ..inference import InferenceClient
+from rlinf_deploy.services.inference import InferenceClient
 
 
 @dataclass(frozen=True, slots=True)

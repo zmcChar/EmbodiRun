@@ -1,4 +1,4 @@
-"""Adapter from Deploy's policy contract to SGLang's native action API."""
+"""SGLang inference service integration over its native HTTP action API."""
 
 from __future__ import annotations
 
@@ -11,13 +11,13 @@ from dataclasses import dataclass, field
 from threading import Lock, RLock
 from typing import Any
 
-from ..contracts import (
+from ...contracts import (
     PolicyAction,
     PolicyObservation,
     PolicyResult,
     Session,
 )
-from .http import (
+from ...protocols.http import (
     MAX_RESPONSE_BYTES,
     HttpTransport,
     HttpTransportError,
@@ -419,4 +419,31 @@ def _timing(value: object) -> dict[str, float]:
     return result
 
 
-__all__ = ["SglangHttpClient", "SglangHttpError"]
+def sglang_server_command(
+    *,
+    checkpoint: str,
+    bind: str,
+    port: int,
+    pipeline: str | None = None,
+    pipeline_config: str | None = None,
+    extra_args: Sequence[str] = (),
+) -> tuple[str, ...]:
+    """Build the documented ``sglang serve`` VLA command-line contract."""
+
+    argv = [
+        "sglang",
+        "serve",
+        checkpoint,
+        "--model-type",
+        "diffusion",
+    ]
+    if pipeline is not None:
+        argv.extend(("--pipeline", pipeline))
+    if pipeline_config is not None:
+        argv.extend(("--pipeline-config-path", pipeline_config))
+    argv.extend(extra_args)
+    argv.extend(("--host", bind, "--port", str(port)))
+    return tuple(argv)
+
+
+__all__ = ["SglangHttpClient", "SglangHttpError", "sglang_server_command"]

@@ -1,4 +1,4 @@
-"""Model-independent values exchanged with an inference backend."""
+"""Model-independent values exchanged with inference services."""
 
 from __future__ import annotations
 

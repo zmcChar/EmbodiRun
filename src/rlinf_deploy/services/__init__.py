@@ -1,1 +1,1 @@
-"""Independent Host, Control, Simulation, and Inference process layers."""
+"""Host, inference, control, and simulation service layers."""

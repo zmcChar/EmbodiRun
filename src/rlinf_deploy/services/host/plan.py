@@ -9,10 +9,10 @@ from typing import Literal
 from rlinf_deploy.bindings import BindingDefinition, binding_definition
 from rlinf_deploy.robots.sensors import SensorInput
 from rlinf_deploy.services.control.contracts import ControlServiceConfig
-from rlinf_deploy.services.inference.server import (
-    http_server_command,
-    sglang_server_command,
-    wireless_server_command,
+from rlinf_deploy.services.inference.backends.sglang import sglang_server_command
+from rlinf_deploy.services.inference.backends.vvla import (
+    vvla_http_server_command,
+    vvla_wireless_server_command,
 )
 from rlinf_deploy.services.simulation.contracts import SimulationServiceConfig
 from rlinf_deploy.simulators import simulator_definition
@@ -110,17 +110,13 @@ def build_plan(config: DeploymentConfig) -> DeploymentPlan:
         else:
             simulator = config.simulators[runtime.simulator]
             definition = simulator_definition(simulator.kind)
-            _validate_binding(
-                runtime.binding, definition.embodiment_kind, model.kind
-            )
+            _validate_binding(runtime.binding, definition.embodiment_kind, model.kind)
             if runtime.inputs:
                 raise ServiceError(
                     f"simulation runtime {runtime.runtime_id!r} receives rendered "
                     "inputs from its simulator and must not reference sensors"
                 )
-            model_endpoint = _endpoint(
-                config, model, consumer_node=simulator.node
-            )
+            model_endpoint = _endpoint(config, model, consumer_node=simulator.node)
             environment = _find_environment(
                 environments,
                 node=simulator.node,
@@ -202,7 +198,7 @@ def _model_service(
         )
         command_environment = _sglang_environment(model, gpu)
     elif model.transport == "http":
-        argv = http_server_command(
+        argv = vvla_http_server_command(
             policy=model.kind,
             checkpoint=source,
             bind=model.server.bind,
@@ -211,7 +207,7 @@ def _model_service(
             adapter_config=adapter_path,
         )
     else:
-        argv = wireless_server_command(
+        argv = vvla_wireless_server_command(
             policy=model.kind,
             checkpoint=source,
             comm_config=_option_string(model, "comm_config", required=True),
@@ -228,12 +224,12 @@ def _model_service(
         health_endpoint=(
             f"{endpoint}/health"
             if model.backend == "sglang"
-            else f"{endpoint}/healthz" if model.transport == "http" else None
+            else f"{endpoint}/healthz"
+            if model.transport == "http"
+            else None
         ),
         command=Command(argv, environment=command_environment),
-        adapter_config_json=(
-            adapter_config_json if model.backend == "vvla" else None
-        ),
+        adapter_config_json=(adapter_config_json if model.backend == "vvla" else None),
     )
 
 
@@ -276,8 +272,7 @@ def _control_service(
         control_config_json = control_config.to_json()
     except (TypeError, ValueError) as error:
         raise ServiceError(
-            f"runtime {runtime.runtime_id!r} control configuration is invalid: "
-            f"{error}"
+            f"runtime {runtime.runtime_id!r} control configuration is invalid: {error}"
         ) from error
     runtime_spec = RuntimeSpec(
         runtime_id=runtime.runtime_id,
@@ -391,10 +386,7 @@ def _inference_options(
             options[name] = list(value)
 
     image_fields = _runtime_image_fields(config, runtime)
-    image_keys = {
-        field: field.rsplit(".", 1)[-1]
-        for field in image_fields
-    }
+    image_keys = {field: field.rsplit(".", 1)[-1] for field in image_fields}
     configured_image_keys = _option_mapping(model, "image_keys")
     if configured_image_keys is not None:
         if any(
@@ -402,8 +394,7 @@ def _inference_options(
             for value in configured_image_keys.values()
         ):
             raise ServiceError(
-                f"models.{model.model_id}.image_keys values must be non-empty "
-                "strings"
+                f"models.{model.model_id}.image_keys values must be non-empty strings"
             )
         unknown = sorted(set(configured_image_keys) - set(image_fields))
         if unknown:
@@ -413,9 +404,7 @@ def _inference_options(
             )
         image_keys.update(configured_image_keys)
     if len(image_keys.values()) != len(set(image_keys.values())):
-        raise ServiceError(
-            f"models.{model.model_id}.image_keys values must be unique"
-        )
+        raise ServiceError(f"models.{model.model_id}.image_keys values must be unique")
     options["image_keys"] = image_keys
 
     parameters = dict(_option_mapping(model, "parameters") or {})
@@ -440,8 +429,7 @@ def _inference_options(
             or output_action_dim <= 0
         ):
             raise ServiceError(
-                f"models.{model.model_id}.output_action_dim must be a positive "
-                "integer"
+                f"models.{model.model_id}.output_action_dim must be a positive integer"
             )
         options["output_action_dim"] = output_action_dim
     return options

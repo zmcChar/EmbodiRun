@@ -1,26 +1,31 @@
-"""Control-to-inference contracts and transport-specific service adapters."""
+"""Inference service contracts and clients organized by backend and protocol."""
 
-from .client import (
-    HttpResponse,
-    HttpTransport,
-    HttpTransportError,
-    InferenceClient,
-    PolicyClient,
-    SglangHttpClient,
-    SglangHttpError,
-    UrllibHttpTransport,
+from .backends.sglang import SglangHttpClient, SglangHttpError
+from .backends.vvla import (
     VvlaHttpClient,
+    VvlaHttpError,
     VvlaWirelessClient,
     VvlaWirelessError,
-    WirelessRpcTransport,
-    build_inference_client,
 )
+from .client import InferenceClient, PolicyClient
 from .contracts import (
     ImagePayload,
     PolicyAction,
     PolicyObservation,
     PolicyResult,
     Session,
+)
+from .factory import build_inference_client
+from .protocols.http import (
+    HttpResponse,
+    HttpTransport,
+    HttpTransportError,
+    UrllibHttpTransport,
+)
+from .protocols.wireless import (
+    WirelessProtocolError,
+    WirelessRpcTransport,
+    WirelessTransport,
 )
 
 __all__ = [
@@ -38,8 +43,11 @@ __all__ = [
     "SglangHttpError",
     "UrllibHttpTransport",
     "VvlaHttpClient",
+    "VvlaHttpError",
     "VvlaWirelessClient",
     "VvlaWirelessError",
+    "WirelessProtocolError",
     "WirelessRpcTransport",
+    "WirelessTransport",
     "build_inference_client",
 ]

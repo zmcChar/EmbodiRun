@@ -1,15 +1,15 @@
-"""Transport-independent inference client contract."""
+"""Backend- and protocol-independent inference client contract."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any, Protocol
 
-from ..contracts import PolicyObservation, PolicyResult, Session
+from .contracts import PolicyObservation, PolicyResult, Session
 
 
 class InferenceClient(Protocol):
-    """Manage policy sessions without exposing a transport implementation."""
+    """Manage policy sessions without exposing a backend or protocol."""
 
     def health(self) -> Mapping[str, Any]: ...
 
