@@ -1,4 +1,4 @@
-"""Optional VLABench camera viewer isolated from the simulation worker."""
+"""Optional camera viewer isolated from simulator service threads."""
 
 from __future__ import annotations
 
@@ -17,16 +17,16 @@ _START_TIMEOUT_S = 5.0
 _STOP_TIMEOUT_S = 2.0
 
 
-class VLABenchViewer:
+class CameraViewer:
     """Send rendered policy cameras to a dedicated local GUI process."""
 
-    def __init__(self, simulator_id: str) -> None:
-        self.window_name = f"VLABench — {simulator_id}"
+    def __init__(self, window_name: str) -> None:
+        self.window_name = window_name
         self._process = subprocess.Popen(
             (
                 sys.executable,
                 "-c",
-                "from rlinf_deploy.simulators.vlabench.viewer import main; "
+                "from rlinf_deploy.simulators.viewer import main; "
                 "raise SystemExit(main())",
                 "--window",
                 self.window_name,
@@ -37,7 +37,7 @@ class VLABenchViewer:
         if self._process.stdout is None or self._process.stdin is None:
             self.close()
             raise RuntimeError(
-                "VLABench viewer could not create its communication pipes"
+                "simulator viewer could not create its communication pipes"
             )
         ready, _, _ = select.select(
             (self._process.stdout,), (), (), _START_TIMEOUT_S
@@ -50,7 +50,7 @@ class VLABenchViewer:
         if message.strip() != "READY":
             self.close()
             detail = message.strip() or "the GUI process did not respond"
-            raise RuntimeError(f"VLABench viewer could not start: {detail}")
+            raise RuntimeError(f"simulator viewer could not start: {detail}")
 
     def show(self, frames: Mapping[str, Any]) -> None:
         if self._process.poll() is not None or self._process.stdin is None:
@@ -82,18 +82,18 @@ def _encode_frames(frames: Mapping[str, Any]) -> bytes:
         import cv2
         import numpy as np
     except ImportError as error:
-        raise RuntimeError("VLABench viewer requires NumPy and OpenCV") from error
+        raise RuntimeError("simulator viewer requires NumPy and OpenCV") from error
 
     images = []
     for name, value in frames.items():
         image = np.asarray(value, dtype=np.uint8)
         if image.ndim != 3 or image.shape[-1] != 3:
             raise ValueError(
-                f"VLABench viewer frame {name!r} must be an HWC RGB image"
+                f"simulator viewer frame {name!r} must be an HWC RGB image"
             )
         images.append(image)
     if not images:
-        raise ValueError("VLABench viewer requires at least one camera frame")
+        raise ValueError("simulator viewer requires at least one camera frame")
 
     target_height = min(image.shape[0] for image in images)
     resized = [
@@ -113,10 +113,10 @@ def _encode_frames(frames: Mapping[str, Any]) -> bytes:
         [int(cv2.IMWRITE_JPEG_QUALITY), 90],
     )
     if not encoded:
-        raise RuntimeError("VLABench viewer could not encode its camera frames")
+        raise RuntimeError("simulator viewer could not encode its camera frames")
     result = payload.tobytes()
     if len(result) > _MAX_FRAME_BYTES:
-        raise RuntimeError("VLABench viewer frame is too large")
+        raise RuntimeError("simulator viewer frame is too large")
     return result
 
 
@@ -209,4 +209,4 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
 
-__all__ = ["VLABenchViewer"]
+__all__ = ["CameraViewer"]

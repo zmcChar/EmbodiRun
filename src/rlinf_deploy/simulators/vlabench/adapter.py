@@ -16,9 +16,9 @@ from rlinf_deploy.robots.adapter import RobotAction, RobotObservation
 from rlinf_deploy.robots.sensors.cameras import CameraFrame
 
 from ..adapter import SimulationStep, SimulatorAdapter, SimulatorObservation
+from ..viewer import CameraViewer
 from .camera import make_semantic_vlabench_environment
 from .config import VLABenchConfig
-from .viewer import VLABenchViewer
 
 VLABENCH_ACTION_DIM = 7
 
@@ -47,7 +47,9 @@ class VLABenchAdapter(SimulatorAdapter):
         self._clock = clock
         self._environment: Any | None = None
         self._viewer = (
-            VLABenchViewer(config.simulator_id) if config.viewer else None
+            CameraViewer(f"VLABench — {config.simulator_id}")
+            if config.viewer
+            else None
         )
         self._last_observation: SimulatorObservation | None = None
         self._instruction: str | None = None
