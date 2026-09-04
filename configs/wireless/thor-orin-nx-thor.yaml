@@ -1,0 +1,19 @@
+# WirelessComm endpoint used by the Pi0.5 inference service on Thor.
+local:
+  node_id: inference-thor
+  host: 10.168.192.200
+  bind_host: 0.0.0.0
+  port: 9300
+
+peers:
+  - node_id: control-orin-nx
+    host: 10.168.192.133
+    port: 9300
+
+# Bound queues prevent stale camera observations from growing without limit.
+comm:
+  max_peer_queued_messages: 16
+  max_peer_queued_bytes: 67108864
+  egress_quantum_bytes: 65536
+  egress_rate_bytes_per_second: 6250000
+  egress_burst_bytes: 65536

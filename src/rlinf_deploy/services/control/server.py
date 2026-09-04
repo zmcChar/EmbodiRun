@@ -62,15 +62,17 @@ class ControlService:
         self.monotonic = monotonic
         self.sleep = sleep
         self._task_lock = threading.Lock()
+        self._client_lock = threading.Lock()
+        self._wireless_client: Any | None = None
 
     def health(self) -> dict[str, Any]:
         """Report ready only when the configured inference service is reachable."""
 
-        client = self.client_factory(self.config, 2.0)
+        client = self._inference_client(2.0)
         try:
             health = client.health()
         finally:
-            _shutdown_client(client)
+            self._release_inference_client(client)
         if health.get("status") != "ok":
             raise ControlServiceError(
                 f"inference service at {self.config.inference_endpoint} is not healthy"
@@ -111,7 +113,7 @@ class ControlService:
                 f"robot {self.config.robot_id!r} configuration is invalid: {error}"
             ) from error
 
-        client = self.client_factory(self.config, request.inference_timeout_s)
+        client = self._inference_client(request.inference_timeout_s)
         cameras: CameraSource | None = None
         robot: Any | None = None
         controller: Any | None = None
@@ -152,8 +154,31 @@ class ControlService:
                         if cameras is not None:
                             cameras.close()
                     finally:
-                        _shutdown_client(client)
+                        self._release_inference_client(client)
         return TaskResult(request.request_id, request.runtime_id, completed)
+
+    def close(self) -> None:
+        """Release the process-owned wireless connection, when configured."""
+
+        with self._client_lock:
+            client = self._wireless_client
+            self._wireless_client = None
+        if client is not None:
+            _shutdown_client(client)
+
+    def _inference_client(self, timeout_s: float) -> Any:
+        if self.config.inference_transport != "wireless":
+            return self.client_factory(self.config, timeout_s)
+        with self._client_lock:
+            if self._wireless_client is None:
+                self._wireless_client = self.client_factory(self.config, timeout_s)
+            client = self._wireless_client
+        with_timeout = getattr(client, "with_timeout", None)
+        return with_timeout(timeout_s) if callable(with_timeout) else client
+
+    def _release_inference_client(self, client: Any) -> None:
+        if self.config.inference_transport != "wireless":
+            _shutdown_client(client)
 
 
 def create_inference_client(config: ControlServiceConfig, timeout_s: float) -> Any:
@@ -290,6 +315,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         server.serve_forever()
     finally:
         server.server_close()
+        server.control_service.close()
     return 0
 
 

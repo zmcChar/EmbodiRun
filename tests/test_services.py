@@ -12,6 +12,7 @@ import pytest
 
 from rlinf_deploy.services.control.contracts import TaskResult, error_payload
 from rlinf_deploy.services.host.cli import main
+from rlinf_deploy.services.host.cli.command import up as up_command
 from rlinf_deploy.services.host.cli.command.init import (
     DEPLOY_REPOSITORY,
     INFERENCE_REPOSITORY,
@@ -395,6 +396,55 @@ def test_example_resolves_real_thor_environment_and_runtime() -> None:
     assert control_config["robot"]["options"]["step_limit_mode"] == "clip"
 
 
+def test_standalone_model_can_select_adapter_contract_from_binding(tmp_path) -> None:
+    config_path = tmp_path / "standalone-model.yaml"
+    config_path.write_text(
+        """
+metadata:
+  name: standalone-pi05
+  deploy-commit: 0e2cfdee1ba6e269b053e3496f50263e26bda545
+  inference-commit: 8b45215075718f8e59ee2ac890b9b3f80a2add98
+nodes:
+  thor:
+    type: jetson.agx-thor-128gb
+    connection:
+      type: local
+models:
+  pi05-01:
+    backend: vvla
+    transport: http
+    type: pi05
+    node: thor
+    source: /models/pi05
+    adapter_binding: lerobot.so101.pi05
+    server:
+      bind: 127.0.0.1
+      port: 8000
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    plan = build_plan(load_config(config_path))
+
+    assert plan.runtimes == ()
+    assert json.loads(plan.services[0].adapter_config_json) == {
+        "action_feature_names": [
+            "shoulder_pan.pos",
+            "shoulder_lift.pos",
+            "elbow_flex.pos",
+            "wrist_flex.pos",
+            "wrist_roll.pos",
+            "gripper.pos",
+        ],
+        "image_fields": [
+            "observation.images.front",
+            "observation.images.wrist",
+        ],
+        "return_steps": 50,
+        "state_fields": ["joint_positions_deg", "gripper_position"],
+    }
+
+
 def test_wireless_model_resolves_server_and_control_client_boundaries(
     tmp_path,
 ) -> None:
@@ -430,6 +480,8 @@ def test_wireless_model_resolves_server_and_control_client_boundaries(
             "server_node_id": "inference-1",
         },
     }
+    profiles = environment_profiles(load_config(config_path))
+    assert {profile.extras for profile in profiles} == {("wireless",)}
 
 
 def test_uv_environment_manager_uses_only_the_selected_group() -> None:
@@ -459,6 +511,29 @@ def test_uv_environment_manager_uses_only_the_selected_group() -> None:
     )
     assert command.cwd == "/opt/rlinf-deploy"
     assert command.environment == {"UV_PROJECT_ENVIRONMENT": ".venv-robot-so101"}
+
+
+def test_uv_environment_manager_uses_node_default_index() -> None:
+    profile = replace(
+        next(
+            item
+            for item in environment_profiles(load_config(EXAMPLE))
+            if item.project == "deploy"
+        ),
+        default_index="https://pypi.tuna.tsinghua.edu.cn/simple",
+    )
+    executor = RecordingExecutor()
+
+    UvEnvironmentManager(executor).prepare(
+        profile,
+        project_dir="/opt/rlinf-deploy",
+    )
+
+    command, _check = executor.commands[0]
+    assert command.environment == {
+        "UV_PROJECT_ENVIRONMENT": ".venv-robot-so101",
+        "UV_DEFAULT_INDEX": "https://pypi.tuna.tsinghua.edu.cn/simple",
+    }
 
 
 def test_uv_environment_manager_applies_configured_package_overlay() -> None:
@@ -968,6 +1043,7 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
     model_request = next(
         request for request in start_requests if request["argv"][0].endswith("vvla-http-serve")
     )
+    assert model_request["environment"]["PYTHONUNBUFFERED"] == "1"
     assert (
         model_request["argv"][0]
         == "/home/user/.local/share/rlinf-deploy/thor-so101-pi05/"
@@ -1520,6 +1596,26 @@ def test_cli_up_fails_until_service_is_healthy(
         endpoint="http://127.0.0.1:8000",
     )
     assert executor.closed is True
+
+
+def test_cli_reports_keyboard_interrupt_without_traceback(
+    monkeypatch,
+    capsys,
+) -> None:
+    def interrupt(_args, _context):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(up_command, "run", interrupt)
+
+    exit_code = main(
+        ("--config", str(EXAMPLE), "up"),
+        executor_factory=lambda _node: pytest.fail("must not contact the node"),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 130
+    assert captured.out == ""
+    assert captured.err == "rlinf-deploy: interrupted\n"
 
 
 def test_cli_probe_only_checks_connectivity_and_does_not_write_state(

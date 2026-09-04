@@ -53,11 +53,13 @@ class VvlaWirelessClient:
         transport: WirelessTransport,
         *,
         timeout_s: float = 5.0,
+        owns_transport: bool = True,
     ) -> None:
         if timeout_s <= 0:
             raise ValueError("timeout_s must be positive")
         self.transport = transport
         self.timeout_s = float(timeout_s)
+        self.owns_transport = owns_transport
 
     @classmethod
     def from_config(
@@ -156,7 +158,17 @@ class VvlaWirelessClient:
     def shutdown(self) -> None:
         """Release the process-owned WirelessComm runtime."""
 
-        self.transport.shutdown()
+        if self.owns_transport:
+            self.transport.shutdown()
+
+    def with_timeout(self, timeout_s: float) -> VvlaWirelessClient:
+        """Share this connection through a client with a request-local timeout."""
+
+        return VvlaWirelessClient(
+            self.transport,
+            timeout_s=timeout_s,
+            owns_transport=False,
+        )
 
     def _request(
         self,

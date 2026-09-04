@@ -189,6 +189,46 @@ def test_control_service_serializes_robot_tasks() -> None:
         service._task_lock.release()
 
 
+def test_control_service_reuses_wireless_client_across_health_checks() -> None:
+    created = 0
+    shutdown = 0
+
+    class Client:
+        def health(self):
+            return {"status": "ok"}
+
+        def shutdown(self):
+            nonlocal shutdown
+            shutdown += 1
+
+    def client_factory(_config, _timeout):
+        nonlocal created
+        created += 1
+        return Client()
+
+    service = ControlService(
+        replace(
+            control_config(),
+            inference_transport="wireless",
+            inference_endpoint="wireless://inference-thor",
+            inference_options={
+                "comm_config": "/etc/rlinf/control-wireless.yaml",
+                "server_node_id": "inference-thor",
+            },
+        ),
+        client_factory=client_factory,
+    )
+
+    assert service.health()["status"] == "ok"
+    assert service.health()["status"] == "ok"
+    assert created == 1
+    assert shutdown == 0
+
+    service.close()
+
+    assert shutdown == 1
+
+
 def test_host_client_submits_task_to_control_http_service() -> None:
     port = _unused_loopback_port()
     config = control_config(port=port)

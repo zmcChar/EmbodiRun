@@ -342,6 +342,7 @@ def _materialize_service(
         config_index = argv.index("--comm-config") + 1
         argv[config_index] = _configured_path(argv[config_index], project)
     environment_variables = dict(service.command.environment)
+    environment_variables.setdefault("PYTHONUNBUFFERED", "1")
     if service.kind == "control":
         environment_variables["PYTHONPATH"] = posixpath.join(deploy_project, "src")
     return replace(
