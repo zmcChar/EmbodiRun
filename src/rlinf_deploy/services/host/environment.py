@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import posixpath
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from rlinf_deploy.robots import robot_definition
@@ -32,12 +32,18 @@ class EnvironmentProfile:
     python: str | None = None
     package_index: str | None = None
     packages: tuple[str, ...] = ()
+    extras: tuple[str, ...] = ()
 
 
 def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, ...]:
     """Return the distinct uv environments needed by the deployment."""
 
     profiles: list[EnvironmentProfile] = []
+    wireless_robots = {
+        runtime.robot
+        for runtime in config.runtimes.values()
+        if config.models[runtime.model].transport == "wireless"
+    }
     for robot in sorted(config.robots.values(), key=lambda item: item.robot_id):
         try:
             group, python = robot_environment_profile(robot.kind)
@@ -54,6 +60,7 @@ def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, 
                 group=group,
                 path=f".venv-{group}",
                 python=python,
+                extras=("wireless",) if robot.robot_id in wireless_robots else (),
             )
         )
 
@@ -74,6 +81,7 @@ def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, 
                 python=model.python or _MODEL_PYTHON.get(group),
                 package_index=model.environment_index,
                 packages=model.environment_packages,
+                extras=("wireless",) if model.transport == "wireless" else (),
             )
         )
 
@@ -95,12 +103,20 @@ def _deduplicate(profiles: list[EnvironmentProfile]) -> tuple[EnvironmentProfile
     for profile in profiles:
         identity = (profile.node, profile.path)
         previous = by_identity.get(identity)
-        if previous is not None and previous != profile:
+        if previous is not None and replace(previous, extras=()) != replace(
+            profile, extras=()
+        ):
             raise EnvironmentError(
                 f"environment path {profile.path!r} on node {profile.node!r} is "
                 "assigned incompatible profiles"
             )
-        by_identity[identity] = profile
+        if previous is None:
+            by_identity[identity] = profile
+        else:
+            by_identity[identity] = replace(
+                previous,
+                extras=tuple(sorted(set(previous.extras) | set(profile.extras))),
+            )
     return tuple(
         sorted(
             by_identity.values(),
@@ -127,6 +143,8 @@ class UvEnvironmentManager:
         ]
         if profile.python is not None:
             argv[2:2] = ["--python", profile.python]
+        for extra in profile.extras:
+            argv.extend(("--extra", extra))
         return Command(
             argv=tuple(argv),
             cwd=project_dir,

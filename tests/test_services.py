@@ -1,4 +1,5 @@
 import json
+import logging
 import socket
 import sys
 import tarfile
@@ -430,6 +431,8 @@ def test_wireless_model_resolves_server_and_control_client_boundaries(
             "server_node_id": "inference-1",
         },
     }
+    profiles = environment_profiles(load_config(config_path))
+    assert {profile.extras for profile in profiles} == {("wireless",)}
 
 
 def test_uv_environment_manager_uses_only_the_selected_group() -> None:
@@ -741,6 +744,36 @@ def test_ssh_executor_normalizes_health_channel_failure() -> None:
             "http://127.0.0.1:8000/healthz",
             timeout_s=2.0,
         )
+
+
+def test_ssh_executor_does_not_leak_paramiko_transport_logs(
+    monkeypatch,
+    capsys,
+) -> None:
+    class Client:
+        def load_system_host_keys(self):
+            pass
+
+        def set_log_channel(self, name):
+            self.log_channel = name
+
+        def connect(self, **_options):
+            logging.getLogger(self.log_channel).error(
+                "Secsh channel 5 open FAILED: Connection refused"
+            )
+
+    client = Client()
+    monkeypatch.setitem(
+        sys.modules,
+        "paramiko",
+        SimpleNamespace(SSHClient=lambda: client),
+    )
+    connection = load_config(EXAMPLE).nodes["jetson-agx-thor-232"].connection
+
+    executor = SshExecutor(connection)
+
+    assert executor._connect() is client
+    assert capsys.readouterr().err == ""
 
 
 def test_service_supervisor_uses_identity_checked_pid_lifecycle() -> None:
