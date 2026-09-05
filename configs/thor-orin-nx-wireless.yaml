@@ -43,13 +43,15 @@ models:
     gpu: cuda:0
     environment: .venv-vvla
     source: /home/user/models/pi05_so101
-    comm_config: /home/user/.local/share/rlinf-deploy/thor-pi0.5/sources/deploy/configs/wireless/thor-orin-nx-thor.yaml
-    client_comm_config: /home/jetson/.local/share/rlinf-deploy/thor-pi0.5/sources/deploy/configs/wireless/thor-orin-nx-control.yaml
-    server_node_id: inference-thor
-    # Required by the shared model schema; WirelessComm itself listens on 9300.
     server:
-      bind: 127.0.0.1
-      port: 8000
+      bind: 0.0.0.0
+      port: 9300
+    transport_options:
+      max_peer_queued_messages: 16
+      max_peer_queued_bytes: 67108864
+      egress_quantum_bytes: 65536
+      egress_rate_bytes_per_second: 6250000
+      egress_burst_bytes: 65536
 
 sensors:
   front-camera-2:
@@ -76,6 +78,15 @@ runtimes:
     server:
       bind: 127.0.0.1
       port: 8100
+    inference_client:
+      bind: 0.0.0.0
+      port: 9300
+      transport_options:
+        max_peer_queued_messages: 16
+        max_peer_queued_bytes: 67108864
+        egress_quantum_bytes: 65536
+        egress_rate_bytes_per_second: 6250000
+        egress_burst_bytes: 65536
     inputs:
       observation.images.front: front-camera-2
       observation.images.wrist: wrist-camera-2

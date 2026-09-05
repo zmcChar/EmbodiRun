@@ -9,6 +9,9 @@ import time
 from dataclasses import dataclass, replace
 from typing import Any
 
+from rlinf_deploy.services.control.contracts import ControlServiceConfig
+from rlinf_deploy.services.simulation.contracts import SimulationServiceConfig
+
 from ...config import config_digest
 from ...executor import Command, Executor
 from ...plan import ServiceSpec
@@ -180,9 +183,9 @@ def _up_node(
                 progress.advance(node_id)
 
                 _write_generated_configs(
-                    service,
                     materialized,
                     executor,
+                    node=node,
                 )
                 supervisor = ServiceSupervisor(
                     executor,
@@ -349,6 +352,27 @@ def _materialize_service(
     else:
         argv[adapter_index] = _configured_path(argv[adapter_index], deploy_project)
     project = node.inference_project if service.kind == "model" else deploy_project
+    if service.wireless_config_json is not None:
+        wireless_path = posixpath.join(
+            node.root, "generated", f"{service.service_id}.wireless.json"
+        )
+        if service.kind == "model":
+            argv[argv.index("--comm-config") + 1] = wireless_path
+        for field_name, config_type in (
+            ("control_config_json", ControlServiceConfig),
+            ("simulation_config_json", SimulationServiceConfig),
+        ):
+            payload = getattr(service, field_name)
+            if payload is not None:
+                config = config_type.from_json(payload)
+                config = replace(
+                    config,
+                    inference_options={
+                        **config.inference_options,
+                        "comm_config": wireless_path,
+                    },
+                )
+                service = replace(service, **{field_name: config.to_json()})
     if "--comm-config" in argv:
         config_index = argv.index("--comm-config") + 1
         argv[config_index] = _configured_path(argv[config_index], project)
@@ -370,27 +394,36 @@ def _materialize_service(
 
 def _write_generated_configs(
     service: ServiceSpec,
-    materialized: ServiceSpec,
     executor: Executor,
+    *,
+    node: NodeState,
 ) -> None:
-    if service.adapter_config_json is not None:
-        adapter_index = materialized.command.argv.index("--adapter-config") + 1
+    if service.wireless_config_json is not None:
         executor.write_text(
-            materialized.command.argv[adapter_index],
+            posixpath.join(
+                node.root, "generated", f"{service.service_id}.wireless.json"
+            ),
+            f"{service.wireless_config_json}\n",
+            mode=0o600,
+        )
+    if service.adapter_config_json is not None:
+        adapter_index = service.command.argv.index("--adapter-config") + 1
+        executor.write_text(
+            service.command.argv[adapter_index],
             f"{service.adapter_config_json}\n",
             mode=0o600,
         )
     if service.control_config_json is not None:
-        config_index = materialized.command.argv.index("--config") + 1
+        config_index = service.command.argv.index("--config") + 1
         executor.write_text(
-            materialized.command.argv[config_index],
+            service.command.argv[config_index],
             f"{service.control_config_json}\n",
             mode=0o600,
         )
     if service.simulation_config_json is not None:
-        config_index = materialized.command.argv.index("--config") + 1
+        config_index = service.command.argv.index("--config") + 1
         executor.write_text(
-            materialized.command.argv[config_index],
+            service.command.argv[config_index],
             f"{service.simulation_config_json}\n",
             mode=0o600,
         )

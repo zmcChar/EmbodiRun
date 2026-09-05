@@ -4,6 +4,7 @@ import shutil
 import socket
 import sys
 import tarfile
+from copy import deepcopy
 from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
@@ -11,6 +12,7 @@ from threading import Barrier, Thread
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from rlinf_deploy.services.control.contracts import TaskResult, error_payload
 from rlinf_deploy.services.host.cli import main
@@ -52,6 +54,7 @@ from rlinf_deploy.services.simulation.contracts import SimulationServiceConfig
 
 ROOT = Path(__file__).parents[1]
 EXAMPLE = ROOT / "configs" / "muti-nodes.example.yaml"
+WIRELESS_EXAMPLE = ROOT / "configs" / "thor-orin-nx-wireless.yaml"
 INFERENCE_REVISION = "a" * 40
 
 
@@ -82,11 +85,7 @@ def simulation_deployment(tmp_path, kind, backend, transport):
     if backend == "sglang":
         model["environment_packages"] = ["sglang[diffusion]==0.5.18"]
     if transport == "wireless":
-        model.update(
-            comm_config="/etc/rlinf/inference-wireless.yaml",
-            client_comm_config="/etc/rlinf/simulation-wireless.yaml",
-            server_node_id="inference-1",
-        )
+        model["server"]["port"] = 9300
     config_path = tmp_path / "simulation.yaml"
     config_path.write_text(
         json.dumps(
@@ -115,6 +114,11 @@ def simulation_deployment(tmp_path, kind, backend, transport):
                             else "franka.panda.pi05"
                         ),
                         "server": {"bind": "127.0.0.1", "port": 8100},
+                        **(
+                            {"inference_client": {"bind": "127.0.0.1", "port": 9301}}
+                            if transport == "wireless"
+                            else {}
+                        ),
                     },
                 },
             }
@@ -163,10 +167,20 @@ def test_simulation_plan_preserves_backend_and_environment_boundaries(
     assert runtime.inference_backend == backend
     assert runtime.inference_transport == transport
     if transport == "wireless":
-        assert runtime.inference_endpoint == "wireless://inference-1"
+        assert runtime.inference_endpoint == "wireless://model.policy"
         assert runtime.inference_options["comm_config"] == (
-            "/etc/rlinf/simulation-wireless.yaml"
+            "simulation-sim-runtime.wireless.json"
         )
+        server = json.loads(model_service.wireless_config_json)
+        client = json.loads(simulation_service.wireless_config_json)
+        assert server["local"]["port"] == 9300
+        assert client["local"]["port"] == 9301
+        assert client["peers"] == [
+            {key: value for key, value in server["local"].items() if key != "bind_host"}
+        ]
+    else:
+        assert model_service.wireless_config_json is None
+        assert simulation_service.wireless_config_json is None
 
 
 @pytest.mark.parametrize("wireless_first", [False, True])
@@ -571,12 +585,10 @@ def test_wireless_model_resolves_server_and_control_client_boundaries(
     config_path.write_text(
         EXAMPLE.read_text(encoding="utf-8")
         .replace("transport: http", "transport: wireless")
+        .replace("      port: 8000", "      port: 9300")
         .replace(
-            "    source: /home/user/models/pi05_so101\n",
-            "    source: /home/user/models/pi05_so101\n"
-            "    comm_config: /etc/rlinf/inference-wireless.yaml\n"
-            "    client_comm_config: /etc/rlinf/control-wireless.yaml\n"
-            "    server_node_id: inference-1\n",
+            "    inputs:\n",
+            "    inference_client:\n      bind: 127.0.0.1\n      port: 9301\n    inputs:\n",
         ),
         encoding="utf-8",
     )
@@ -586,7 +598,7 @@ def test_wireless_model_resolves_server_and_control_client_boundaries(
     model_service, control_service = plan.services
     assert model_service.command.argv[-2:] == (
         "--comm-config",
-        "/etc/rlinf/inference-wireless.yaml",
+        "pi05-01.wireless.json",
     )
     assert model_service.command.argv[0] == "vvla-wireless-serve"
     assert model_service.health_endpoint is None
@@ -594,14 +606,325 @@ def test_wireless_model_resolves_server_and_control_client_boundaries(
     assert control_config["inference"] == {
         "backend": "vvla",
         "transport": "wireless",
-        "endpoint": "wireless://inference-1",
+        "endpoint": "wireless://model.pi05-01",
         "options": {
-            "comm_config": "/etc/rlinf/control-wireless.yaml",
-            "server_node_id": "inference-1",
+            "comm_config": "control-so101-1-runtime.wireless.json",
+            "server_node_id": "model.pi05-01",
         },
     }
     profiles = environment_profiles(load_config(config_path))
     assert {profile.extras for profile in profiles} == {("wireless",)}
+
+
+def wireless_document():
+    return yaml.safe_load(WIRELESS_EXAMPLE.read_text(encoding="utf-8"))
+
+
+def load_document(tmp_path, document):
+    path = tmp_path / "deployment.yaml"
+    path.write_text(yaml.safe_dump(document), encoding="utf-8")
+    return load_config(path)
+
+
+def test_wireless_example_generates_complementary_endpoints() -> None:
+    model, control = build_plan(load_config(WIRELESS_EXAMPLE)).services
+    server = json.loads(model.wireless_config_json)
+    client = json.loads(control.wireless_config_json)
+    assert server["local"] == {
+        "node_id": "model.pi05-01",
+        "host": "10.168.192.200",
+        "bind_host": "0.0.0.0",
+        "port": 9300,
+    }
+    assert client["local"] == {
+        "node_id": "runtime.so101-2-runtime",
+        "host": "10.168.192.133",
+        "bind_host": "0.0.0.0",
+        "port": 9300,
+    }
+    assert server["peers"] == [
+        {key: value for key, value in client["local"].items() if key != "bind_host"}
+    ]
+    assert client["peers"] == [
+        {key: value for key, value in server["local"].items() if key != "bind_host"}
+    ]
+    assert (
+        server["comm"]
+        == client["comm"]
+        == {
+            "max_peer_queued_messages": 16,
+            "max_peer_queued_bytes": 67108864,
+            "egress_quantum_bytes": 65536,
+            "egress_rate_bytes_per_second": 6250000,
+            "egress_burst_bytes": 65536,
+        }
+    )
+
+
+def test_wireless_shared_model_has_distinct_runtime_peers(tmp_path) -> None:
+    document = wireless_document()
+    robot = deepcopy(document["robots"]["so101-2"])
+    robot["port"] = "/dev/second-arm"
+    document["robots"]["second-arm"] = robot
+    runtime = deepcopy(document["runtimes"]["so101-2-runtime"])
+    runtime["robot"] = "second-arm"
+    runtime["server"]["port"] = 8101
+    runtime["inference_client"]["port"] = 9301
+    runtime["inference_client"]["transport_options"]["egress_rate_bytes_per_second"] = (
+        1000000
+    )
+    document["runtimes"]["second-runtime"] = runtime
+    plan = build_plan(load_document(tmp_path, document))
+    assert plan == build_plan(load_document(tmp_path, document))
+    server = json.loads(plan.services[0].wireless_config_json)
+    assert {peer["node_id"] for peer in server["peers"]} == {
+        "runtime.second-runtime",
+        "runtime.so101-2-runtime",
+    }
+    assert {peer["port"] for peer in server["peers"]} == {9300, 9301}
+    clients = {
+        service.service_id: json.loads(service.wireless_config_json)
+        for service in plan.services[1:]
+    }
+    for client in clients.values():
+        assert [peer["node_id"] for peer in client["peers"]] == ["model.pi05-01"]
+    assert (
+        clients["control-second-runtime"]["comm"]["egress_rate_bytes_per_second"]
+        == 1000000
+    )
+    assert (
+        clients["control-so101-2-runtime"]["comm"]["egress_rate_bytes_per_second"]
+        == 6250000
+    )
+
+
+@pytest.mark.parametrize("transport", ["http", "wireless"])
+def test_data_addresses_override_ssh_hosts(tmp_path, transport) -> None:
+    document = wireless_document()
+    for index, node in enumerate(document["nodes"].values()):
+        node["connection"]["host"] = "127.0.0.1"  # SSH forwarded through Host.
+        node["address"] = f"192.168.8.{index + 1}"
+    document["models"]["pi05-01"]["transport"] = transport
+    if transport == "http":
+        del document["models"]["pi05-01"]["transport_options"]
+        del document["runtimes"]["so101-2-runtime"]["inference_client"]
+    model, control = build_plan(load_document(tmp_path, document)).services
+    if transport == "http":
+        assert (
+            json.loads(control.control_config_json)["inference"]["endpoint"]
+            == "http://192.168.8.1:9300"
+        )
+    else:
+        server = json.loads(model.wireless_config_json)
+        client = json.loads(control.wireless_config_json)
+        assert server["local"]["host"] == client["peers"][0]["host"] == "192.168.8.1"
+        assert client["local"]["host"] == server["peers"][0]["host"] == "192.168.8.2"
+
+
+def test_wireless_multiple_models_keep_their_peers_separate(tmp_path) -> None:
+    config = simulation_deployment(tmp_path, "habitat", "vvla", "wireless")
+    document = json.loads(config.path.read_text(encoding="utf-8"))
+    document["models"]["second-model"] = deepcopy(document["models"]["policy"])
+    document["models"]["second-model"]["server"]["port"] = 9400
+    runtime = deepcopy(document["runtimes"]["sim-runtime"])
+    runtime["model"] = "second-model"
+    runtime["server"]["port"] = 8101
+    runtime["inference_client"]["port"] = 9401
+    document["runtimes"]["second-runtime"] = runtime
+    services = build_plan(load_document(tmp_path, document)).services
+    endpoints = {
+        service.service_id: json.loads(service.wireless_config_json)
+        for service in services
+    }
+    assert [peer["node_id"] for peer in endpoints["policy"]["peers"]] == [
+        "runtime.sim-runtime"
+    ]
+    assert [peer["node_id"] for peer in endpoints["second-model"]["peers"]] == [
+        "runtime.second-runtime"
+    ]
+    client = endpoints["simulation-second-runtime"]
+    assert [peer["node_id"] for peer in client["peers"]] == ["model.second-model"]
+    assert len({endpoint["local"]["port"] for endpoint in endpoints.values()}) == 4
+
+
+def test_generated_endpoint_files_cannot_overwrite_another_service(tmp_path) -> None:
+    config = simulation_deployment(tmp_path, "habitat", "vvla", "wireless")
+    document = json.loads(config.path.read_text(encoding="utf-8"))
+    document["models"]["simulation-sim-runtime"] = document["models"].pop("policy")
+    document["runtimes"]["sim-runtime"]["model"] = "simulation-sim-runtime"
+    with pytest.raises(ValueError, match="model IDs must not collide"):
+        build_plan(load_document(tmp_path, document))
+
+
+@pytest.mark.parametrize(
+    "path,value,match",
+    [
+        (
+            ("runtimes", "so101-2-runtime", "inference_client"),
+            None,
+            "inference_client is required",
+        ),
+        (
+            ("runtimes", "so101-2-runtime", "inference_client", "port"),
+            8100,
+            "share port",
+        ),
+        (
+            ("runtimes", "so101-2-runtime", "inference_client", "port"),
+            True,
+            "must be an integer",
+        ),
+        (
+            ("runtimes", "so101-2-runtime", "inference_client", "port"),
+            65536,
+            "between 1 and 65535",
+        ),
+        (
+            ("runtimes", "so101-2-runtime", "inference_client", "unknown"),
+            1,
+            "unknown fields",
+        ),
+        (("models", "pi05-01", "comm_config"), "old.yaml", "generated by Host"),
+        (("models", "pi05-01", "client_comm_config"), "old.yaml", "generated by Host"),
+        (("models", "pi05-01", "server_node_id"), "old-id", "generated by Host"),
+        (("models", "pi05-01", "transport_options"), [], "must be a mapping"),
+        (
+            ("runtimes", "so101-2-runtime", "inference_client", "transport_options"),
+            [],
+            "must be a mapping",
+        ),
+        (
+            ("models", "pi05-01", "transport_options", "egress_burst_bytes"),
+            float("inf"),
+            "JSON-compatible",
+        ),
+        (("models", "pi05-01", "server", "bind"), "127.0.0.2", "cannot advertise"),
+        (
+            ("runtimes", "so101-2-runtime", "inference_client", "bind"),
+            "localhost",
+            "cannot advertise",
+        ),
+        (("nodes", "jetson-orin-nx", "address"), "0.0.0.0", "cannot advertise"),
+        (("nodes", "jetson-orin-nx", "address"), "127.0.0.1", "cannot advertise"),
+        (
+            ("nodes", "jetson-orin-nx", "address"),
+            "http://192.168.8.2:9300",
+            "without URL or port",
+        ),
+        (
+            ("nodes", "jetson-orin-nx", "connection"),
+            {"type": "local"},
+            "no advertised address",
+        ),
+    ],
+)
+def test_invalid_wireless_configuration_fails_before_execution(
+    tmp_path, path, value, match
+) -> None:
+    document = wireless_document()
+    target = document
+    for key in path[:-1]:
+        target = target[key]
+    if value is None:
+        del target[path[-1]]
+    else:
+        target[path[-1]] = value
+    with pytest.raises(ConfigError, match=match):
+        build_plan(load_document(tmp_path, document))
+
+
+@pytest.mark.parametrize("field", ["inference_client", "transport_options"])
+def test_http_rejects_wireless_only_fields(tmp_path, field) -> None:
+    document = wireless_document()
+    document["models"]["pi05-01"]["transport"] = "http"
+    if field == "inference_client":
+        del document["models"]["pi05-01"]["transport_options"]
+    with pytest.raises(ConfigError, match=rf"{field} requires wireless"):
+        load_document(tmp_path, document)
+
+
+@pytest.mark.parametrize("collision", ["model", "client", "runtime"])
+def test_wireless_listeners_conflict_on_same_node(tmp_path, collision) -> None:
+    config = simulation_deployment(tmp_path, "libero", "vvla", "wireless")
+    document = json.loads(config.path.read_text(encoding="utf-8"))
+    runtime = document["runtimes"]["sim-runtime"]
+    if collision == "model":
+        runtime["inference_client"]["port"] = 9300
+    else:
+        second = deepcopy(runtime)
+        second["server"]["port"] = 8101
+        second["inference_client"]["port"] = 9301 if collision == "client" else 9302
+        if collision == "runtime":
+            second["server"]["port"] = 9301
+        document["runtimes"]["second"] = second
+    with pytest.raises(ConfigError, match="share port"):
+        load_document(tmp_path, document)
+
+
+@pytest.mark.parametrize("target", ["robot", "simulator"])
+def test_wireless_up_writes_native_configs_and_absolute_references(
+    tmp_path, capsys, target
+) -> None:
+    config = (
+        load_config(WIRELESS_EXAMPLE)
+        if target == "robot"
+        else simulation_deployment(tmp_path, "habitat", "vvla", "wireless")
+    )
+    executors = []
+
+    def factory(_node):
+        executor = FakeNodeExecutor()
+        executors.append(executor)
+        return executor
+
+    args = ("--config", str(config.path), "--state-dir", str(tmp_path / "state"))
+    assert main((*args, "init"), executor_factory=factory) == 0
+    executors.clear()
+    assert main((*args, "up"), executor_factory=factory) == 0
+    assert capsys.readouterr().err == ""
+    files = {
+        path: content
+        for executor in executors
+        for path, (content, mode) in executor.files.items()
+    }
+    wireless_files = {
+        path: json.loads(content)
+        for path, content in files.items()
+        if path.endswith(".wireless.json")
+    }
+    assert len(wireless_files) == 2
+    assert all("/generated/" in path for path in wireless_files)
+    assert all(
+        mode == 0o600
+        for executor in executors
+        for path, (_, mode) in executor.files.items()
+        if path in wireless_files
+    )
+    service_configs = [
+        json.loads(content)
+        for path, content in files.items()
+        if path.endswith((".control.json", ".simulation.json"))
+    ]
+    assert len(service_configs) == 1
+    options = service_configs[0]["inference"]["options"]
+    client = wireless_files[options["comm_config"]]
+    assert client["peers"][0]["node_id"] == options["server_node_id"]
+    start_commands = [
+        command
+        for executor in executors
+        for command, _ in executor.commands
+        if len(command.argv) > 2
+        and command.argv[1].endswith("/supervisor.py")
+        and command.argv[2] == "start"
+    ]
+    start_requests = [json.loads(command.stdin) for command in start_commands]
+    model_argv = next(
+        request["argv"]
+        for request in start_requests
+        if "--comm-config" in request["argv"]
+    )
+    path = model_argv[model_argv.index("--comm-config") + 1]
+    assert wireless_files[path]["local"]["node_id"] == options["server_node_id"]
 
 
 def test_sglang_streamvln_resolves_habitat_simulation_service(tmp_path) -> None:

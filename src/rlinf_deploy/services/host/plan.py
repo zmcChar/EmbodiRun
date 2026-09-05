@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from rlinf_deploy.bindings import BindingDefinition, binding_definition
@@ -24,6 +24,7 @@ from .environment import (
     robot_environment_profile,
 )
 from .executor import Command
+from .network import service_host
 
 
 class ServiceError(ValueError):
@@ -44,6 +45,7 @@ class ServiceSpec:
     adapter_config_json: str | None = None
     control_config_json: str | None = None
     simulation_config_json: str | None = None
+    wireless_config_json: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,11 +132,20 @@ def build_plan(config: DeploymentConfig) -> DeploymentPlan:
             )
             simulations.append(service)
         runtimes.append(runtime_spec)
+    services = (*models, *controls, *simulations)
+    if len({service.service_id for service in services}) != len(services):
+        raise ServiceError(
+            "model IDs must not collide with generated runtime service IDs"
+        )
+    wireless = _wireless_endpoint_configs(config)
     return DeploymentPlan(
         name=config.metadata.name,
         deploy_commit=config.metadata.deploy_commit,
         environments=environments,
-        services=(*models, *controls, *simulations),
+        services=tuple(
+            replace(service, wireless_config_json=wireless.get(service.service_id))
+            for service in services
+        ),
         runtimes=tuple(runtimes),
     )
 
@@ -208,7 +219,7 @@ def _model_service(
         argv = vvla_wireless_server_command(
             policy=model.kind,
             checkpoint=source,
-            comm_config=_option_string(model, "comm_config", required=True),
+            comm_config=f"{model.model_id}.wireless.json",
             device=gpu,
             adapter_config=adapter_path,
         )
@@ -363,14 +374,11 @@ def _inference_options(
     if token is not None:
         options["token"] = token
     if model.transport == "wireless":
+        prefix = "control" if runtime.robot is not None else "simulation"
         options.update(
             {
-                "comm_config": _option_string(
-                    model, "client_comm_config", required=True
-                ),
-                "server_node_id": _option_string(
-                    model, "server_node_id", required=True
-                ),
+                "comm_config": f"{prefix}-{runtime.runtime_id}.wireless.json",
+                "server_node_id": _wireless_model_peer_id(model),
             }
         )
     if model.backend != "sglang":
@@ -494,6 +502,80 @@ def _runtime_image_fields(
     return simulator_definition(simulator.kind).image_fields
 
 
+def _wireless_model_peer_id(model: ModelConfig) -> str:
+    return f"model.{model.model_id}"
+
+
+def _runtime_node(config: DeploymentConfig, runtime: RuntimeConfig) -> str:
+    if runtime.robot is not None:
+        return config.robots[runtime.robot].node
+    return config.simulators[runtime.simulator].node
+
+
+def _wireless_endpoint_configs(config: DeploymentConfig) -> dict[str, str]:
+    """Map service IDs to JSON (also valid YAML) understood by WirelessComm.
+
+    A model knows all its runtimes; each runtime knows only its selected model.
+    Peer IDs identify processes, not physical machines.
+    """
+
+    result: dict[str, str] = {}
+    for model in config.models.values():
+        if model.transport != "wireless":
+            continue
+        runtimes = sorted(
+            (
+                runtime
+                for runtime in config.runtimes.values()
+                if runtime.model == model.model_id
+            ),
+            key=lambda runtime: runtime.runtime_id,
+        )
+        remote = any(
+            _runtime_node(config, runtime) != model.node for runtime in runtimes
+        )
+        server = {
+            "node_id": _wireless_model_peer_id(model),
+            "host": service_host(
+                config.nodes[model.node], model.server.bind, remote=remote
+            ),
+            "port": model.server.port,
+        }
+        clients = []
+        for runtime in runtimes:
+            client = runtime.inference_client
+            assert client is not None
+            node = _runtime_node(config, runtime)
+            peer = {
+                "node_id": f"runtime.{runtime.runtime_id}",
+                "host": service_host(
+                    config.nodes[node], client.server.bind, remote=node != model.node
+                ),
+                "port": client.server.port,
+            }
+            clients.append(peer)
+            prefix = "control" if runtime.robot is not None else "simulation"
+            result[f"{prefix}-{runtime.runtime_id}"] = json.dumps(
+                {
+                    "local": {**peer, "bind_host": client.server.bind},
+                    "peers": [server],
+                    "comm": client.transport_options,
+                },
+                allow_nan=False,
+                sort_keys=True,
+            )
+        result[model.model_id] = json.dumps(
+            {
+                "local": {**server, "bind_host": model.server.bind},
+                "peers": clients,
+                "comm": model.transport_options,
+            },
+            allow_nan=False,
+            sort_keys=True,
+        )
+    return result
+
+
 def _endpoint(
     config: DeploymentConfig,
     model: ModelConfig,
@@ -501,27 +583,10 @@ def _endpoint(
     consumer_node: str,
 ) -> str:
     if model.transport == "wireless":
-        server_node_id = _option_string(model, "server_node_id", required=True)
-        return f"wireless://{server_node_id}"
-    bind = model.server.bind
-    if consumer_node == model.node:
-        host = "127.0.0.1" if bind in {"0.0.0.0", "::"} else bind
-    elif bind in {"127.0.0.1", "localhost", "::1"}:
-        raise ServiceError(
-            f"model {model.model_id!r} only binds to loopback but runtime is on "
-            f"node {consumer_node!r}"
-        )
-    elif bind not in {"0.0.0.0", "::"}:
-        host = bind
-    else:
-        connection = config.nodes[model.node].connection
-        if connection.kind == "local":
-            raise ServiceError(
-                f"model {model.model_id!r} is on a local node with no advertised "
-                f"address for runtime node {consumer_node!r}"
-            )
-        assert connection.host is not None
-        host = connection.host
+        return f"wireless://{_wireless_model_peer_id(model)}"
+    host = service_host(
+        config.nodes[model.node], model.server.bind, remote=consumer_node != model.node
+    )
     return f"http://{_url_host(host)}:{model.server.port}"
 
 

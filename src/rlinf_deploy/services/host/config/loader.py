@@ -173,6 +173,17 @@ def _validate_references(
                 f"runtime {runtime.runtime_id!r} references unknown model "
                 f"{runtime.model!r}"
             )
+        wireless = models[runtime.model].transport == "wireless"
+        if wireless and runtime.inference_client is None:
+            raise ConfigError(
+                f"runtimes.{runtime.runtime_id}.inference_client is required "
+                "for wireless transport"
+            )
+        if not wireless and runtime.inference_client is not None:
+            raise ConfigError(
+                f"runtimes.{runtime.runtime_id}.inference_client requires "
+                "wireless transport"
+            )
         for input_name, sensor_id in runtime.inputs.items():
             if sensor_id not in sensors:
                 raise ConfigError(
@@ -226,6 +237,16 @@ def _validate_unique_service_ports(
                 f"{runtime.server.port} on node {node!r}"
             )
         owners[key] = runtime.runtime_id
+        if runtime.inference_client is not None:
+            port = runtime.inference_client.server.port
+            key = (node, port)
+            owner = owners.get(key)
+            if owner is not None:
+                raise ConfigError(
+                    f"services {owner!r} and {runtime.runtime_id!r}.inference_client "
+                    f"share port {port} on node {node!r}"
+                )
+            owners[key] = f"{runtime.runtime_id}.inference_client"
 
 
 __all__ = ["DeploymentConfig", "config_digest", "load_config"]
