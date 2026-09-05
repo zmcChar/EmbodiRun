@@ -71,6 +71,7 @@ uv sync --frozen --no-dev --group host                # SSH orchestration
 uv sync --python 3.12 --frozen --no-dev \
   --group robot-so101                                 # SO-101 control agent
 uv sync --frozen --no-dev --group robot-fr3           # FR3 control agent
+UV_PROJECT_ENVIRONMENT=.venv-robot-arx5 uv sync --frozen --no-dev --group robot-arx5
 ```
 
 The `wireless` extra pins WirelessComm to a reviewed commit in the
@@ -82,6 +83,33 @@ Groups may be combined when one process genuinely needs multiple capabilities;
 they are not mutually exclusive. Model inference dependencies remain owned and
 locked by the Inference project, even when inference and robot services run on
 the same physical node.
+
+ARX5 uses `type: arx.x5` and binding `arx.x5.dm05`. Its group installs the
+RealSense and V4L2 camera dependencies, not the vendor motor driver. Build the
+vendor `bimanual` extension for the Python in `.venv-robot-arx5`; set the ARX5
+robot option `sdk_path` to its absolute import directory on the control node
+(or install the extension in that environment). Its native/ROS libraries and
+configured SocketCAN interface must already be available to the control process.
+Do not rely on a different shell's Python environment. Physical connection still
+requires `operator_confirmed: true` and may enable motors or move to home.
+
+For DM05, use a matching RLinf Inference revision containing the DM05 policy.
+Configure the inference environment's OpenDM installation separately; its
+model YAML entry must set `adapter_config: /absolute/path/to/dm05.json` on the
+compute node. That JSON is deployment-owned because the norm-stat path depends
+on the selected checkpoint:
+
+```json
+{"policy_kwargs": {"norm_stats": "/models/dm05/norm_stats.json", "is_history": true, "robot_type": "ARX5", "output_action_dim": 7}}
+```
+
+Host synchronizes the core model environment before installing its
+`environment_packages` overlay; provision the compatible OpenDM package there,
+not only in a pre-existing environment that the sync can clean.
+Camera roles are `cam_global`
+plus `cam_arm` or `cam_side` (the missing wrist role is explicitly replicated).
+The binding selects 25 rows from a 50-row prediction; choose `chunk_steps: 25`
+to execute that entire selection rather than the generic 10-row prefix.
 
 ## Multi-node configuration
 

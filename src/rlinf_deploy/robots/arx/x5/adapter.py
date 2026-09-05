@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import math
+import sys
 import time
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -90,13 +91,21 @@ class ARX5Adapter(RobotAdapter):
             )
         factory = self._single_arm_factory
         if factory is None:
+            # The vendor extension is built separately for the control Python.
+            # Host starts an isolated environment, so a shell PYTHONPATH is not
+            # a reliable way to locate it. Restore the search path after import.
+            previous_path = list(sys.path)
             try:
+                if self.config.sdk_path is not None:
+                    sys.path.insert(0, self.config.sdk_path)
                 module = importlib.import_module(self.config.sdk_module)
                 factory = module.SingleArm
             except (ImportError, AttributeError) as error:
                 raise ARX5AdapterError(
                     f"could not load ARX5 SDK from {self.config.sdk_module!r}: {error}"
                 ) from error
+            finally:
+                sys.path[:] = previous_path
         try:
             self.arm = factory(
                 {"can_port": self.config.can_port, "type": self.config.robot_type}
