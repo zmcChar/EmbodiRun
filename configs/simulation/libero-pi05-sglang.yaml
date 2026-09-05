@@ -1,9 +1,11 @@
 # Run on a Linux GPU workstation with LIBERO task assets prepared.
-# Replace the checkpoint path with an SGLang-compatible Pi0.5 policy for this task.
+# Uses this workstation's downloaded LIBERO fine-tune and SGLang environment.
+# Deploy's opt-in SGLang compatibility pipeline restores LeRobot processors.
+# Update the absolute paths when running on another machine.
 # Examples use ports 8000/8100: stop one before starting another, or change ports.
 metadata:
   name: libero-pi05-sglang
-  deploy-commit: 7c96609060e6da34fd5ba885e08aa47cd8d67427
+  deploy-commit: bccd69ff2828a43bc160dad3f63421cc551b9500
 
 nodes:
   workstation:
@@ -20,7 +22,7 @@ simulators:
     max_episode_steps: 500
     width: 256
     height: 256
-    viewer: false # Set true only when the simulator node has a working display.
+    viewer: true # Requires a working display on the simulator node.
 
 models:
   pi05-01:
@@ -29,11 +31,15 @@ models:
     type: pi05
     node: workstation
     gpu: cuda:0
-    environment: .venv-sglang-pi05
+    environment: /home/user/sim-train-infer/RLinf-deploy/.venv-sglang
     environment_packages:
-      - "sglang[diffusion]==0.5.18"
-    # Image keys default to image/wrist_image; match the checkpoint.
-    source: /data/models/pi05-libero
+      - "/home/user/sim-train-infer/RLinf-deploy[sglang]"
+    source: /home/user/huggingface/hub/models--lerobot--pi05_libero_finetuned_v044/snapshots/8e174154ef5f6c60a8da12ae99c303d8963138c1
+    server_executable: rlinf-sglang-serve
+    pipeline: LeRobotPi05Pipeline
+    image_keys:
+      observation.images.image: image
+      observation.images.wrist_image: image2
     output_action_dim: 7 # Remove padded dimensions before the Panda action mapper.
     parameters:
       action_horizon: 50

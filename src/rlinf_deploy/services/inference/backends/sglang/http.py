@@ -424,6 +424,7 @@ def sglang_server_command(
     checkpoint: str,
     bind: str,
     port: int,
+    executable: str = "sglang",
     pipeline: str | None = None,
     pipeline_config: str | None = None,
     extra_args: Sequence[str] = (),
@@ -431,14 +432,14 @@ def sglang_server_command(
     """Build the documented ``sglang serve`` VLA command-line contract."""
 
     argv = [
-        "sglang",
+        executable,
         "serve",
         checkpoint,
         "--model-type",
         "diffusion",
     ]
     if pipeline is not None:
-        argv.extend(("--pipeline", pipeline))
+        argv.extend(("--pipeline-class-name", pipeline))
     if pipeline_config is not None:
         argv.extend(("--pipeline-config-path", pipeline_config))
     argv.extend(extra_args)

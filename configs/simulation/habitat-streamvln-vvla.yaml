@@ -1,8 +1,11 @@
-# Run this example on a Linux GPU workstation; replace model and dataset paths.
+# Uses this workstation's StreamVLN weights and Habitat test-scene demo episode.
+# This is a local navigation demo, not an R2R benchmark evaluation.
+# Install the current workspace's StreamVLN branch as an explicit local overlay.
+# Update model and dataset paths when running on another machine.
 # Examples use ports 8000/8100: stop one before starting another, or change ports.
 metadata:
   name: habitat-streamvln-vvla
-  deploy-commit: 7c96609060e6da34fd5ba885e08aa47cd8d67427
+  deploy-commit: bccd69ff2828a43bc160dad3f63421cc551b9500
 
 nodes:
   workstation:
@@ -14,16 +17,16 @@ simulators:
   habitat-01:
     type: habitat
     node: workstation
-    # Prepare R2R-VLNCE episodes and their referenced scene assets beforehand.
-    dataset: /data/datasets/R2R_VLNCE_v1-3_preprocessed/val_unseen/val_unseen.json.gz
-    scenes_dir: /data/scene_datasets
-    episode_id: "0" # Replace with an episode_id present in the selected dataset.
+    dataset: /home/user/.cache/rlinf-deploy/data/habitat-test-scenes/streamvln-demo.json.gz
+    scenes_dir: /home/user/.cache/rlinf-deploy/data/habitat-test-scenes
+    episode_id: streamvln-gui-demo
     max_episode_steps: 500
-    success_distance_m: 3.0
+    success_distance_m: 0.5
     width: 640
     height: 480
-    gpu_device_id: 0
-    viewer: false # Set true only when the simulator node has a working display.
+    # WSLg on this workstation uses Mesa EGL, not a CUDA-mapped EGL device.
+    gpu_device_id: -1
+    viewer: true # Requires a working display on the simulator node.
 
 models:
   streamvln-01:
@@ -32,8 +35,10 @@ models:
     type: streamvln
     node: workstation
     gpu: cuda:0
-    environment: .venv-vvla-streamvln
-    source: /data/models/streamvln
+    environment: /home/user/sim-train-infer/RLinf-deploy/.venv-vvla-streamvln
+    environment_packages:
+      - /home/user/sim-train-infer/RLinf-deploy/third_party/vvla
+    source: /home/user/huggingface/streamvln
     server:
       bind: 127.0.0.1
       port: 8000

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import select
 import struct
 import subprocess
@@ -26,8 +27,10 @@ class CameraViewer:
             (
                 sys.executable,
                 "-c",
-                "from rlinf_deploy.simulators.viewer import main; "
-                "raise SystemExit(main())",
+                (
+                    "from rlinf_deploy.simulators.viewer import main; "
+                    "raise SystemExit(main())"
+                ),
                 "--window",
                 self.window_name,
             ),
@@ -39,9 +42,7 @@ class CameraViewer:
             raise RuntimeError(
                 "simulator viewer could not create its communication pipes"
             )
-        ready, _, _ = select.select(
-            (self._process.stdout,), (), (), _START_TIMEOUT_S
-        )
+        ready, _, _ = select.select((self._process.stdout,), (), (), _START_TIMEOUT_S)
         message = (
             self._process.stdout.readline().decode("utf-8", errors="replace")
             if ready
@@ -120,16 +121,18 @@ def _encode_frames(frames: Mapping[str, Any]) -> bytes:
     return result
 
 
-def _read_frames(stream: BinaryIO, frames: Queue[bytes | None]) -> None:
+def _read_frames(
+    stream: BinaryIO, frames: Queue[bytes | None], stopped: threading.Event
+) -> None:
     try:
         while True:
-            header = _read_exact(stream, 4)
+            header = _read_exact(stream, 4, stopped)
             if header is None:
                 break
             size = struct.unpack(">I", header)[0]
             if not 0 < size <= _MAX_FRAME_BYTES:
                 break
-            payload = _read_exact(stream, size)
+            payload = _read_exact(stream, size, stopped)
             if payload is None:
                 break
             while True:
@@ -139,13 +142,25 @@ def _read_frames(stream: BinaryIO, frames: Queue[bytes | None]) -> None:
                     break
             frames.put(payload)
     finally:
-        frames.put(None)
+        # A closed window no longer drains the queue; never block shutdown.
+        while not frames.empty():
+            try:
+                frames.get_nowait()
+            except Empty:
+                break
+        frames.put_nowait(None)
 
 
-def _read_exact(stream: BinaryIO, size: int) -> bytes | None:
+def _read_exact(stream: BinaryIO, size: int, stopped: threading.Event) -> bytes | None:
     chunks = bytearray()
     while len(chunks) < size:
-        chunk = stream.read(size - len(chunks))
+        if stopped.is_set():
+            return None
+        ready, _, _ = select.select((stream,), (), (), 0.1)
+        if not ready:
+            continue
+        # Avoid a daemon thread holding stdin's buffered lock at interpreter exit.
+        chunk = os.read(stream.fileno(), size - len(chunks))
         if not chunk:
             return None
         chunks.extend(chunk)
@@ -168,10 +183,10 @@ def _run_window(window_name: str) -> int:
     label = tk.Label(root)
     label.pack()
     frames: Queue[bytes | None] = Queue(maxsize=1)
+    stopped = threading.Event()
     reader = threading.Thread(
         target=_read_frames,
-        args=(sys.stdin.buffer, frames),
-        daemon=True,
+        args=(sys.stdin.buffer, frames, stopped),
     )
     reader.start()
 
@@ -194,7 +209,11 @@ def _run_window(window_name: str) -> int:
     root.bind("<Escape>", lambda _event: root.destroy())
     root.after(16, update)
     print("READY", flush=True)
-    root.mainloop()
+    try:
+        root.mainloop()
+    finally:
+        stopped.set()
+        reader.join(timeout=_STOP_TIMEOUT_S)
     return 0
 
 

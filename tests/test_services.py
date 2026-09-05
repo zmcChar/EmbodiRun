@@ -927,7 +927,8 @@ def test_wireless_up_writes_native_configs_and_absolute_references(
     assert wireless_files[path]["local"]["node_id"] == options["server_node_id"]
 
 
-def test_sglang_streamvln_resolves_habitat_simulation_service(tmp_path) -> None:
+def test_sglang_plan_renders_an_external_pipeline_contract(tmp_path) -> None:
+    """Rendering an external pipeline name does not prove SGLang model support."""
     config_path = tmp_path / "sglang-habitat.yaml"
     config_path.write_text(
         """
@@ -993,7 +994,7 @@ runtimes:
         "/models/streamvln",
         "--model-type",
         "diffusion",
-        "--pipeline",
+        "--pipeline-class-name",
         "StreamVLNPipeline",
         "--pipeline-config-path",
         "configs/streamvln-sglang.json",
@@ -1648,6 +1649,33 @@ def test_service_supervisor_uses_identity_checked_pid_lifecycle() -> None:
     assert start_request["environment"]["RLINF_DEPLOY_SERVICE_ID"] == "pi05-01"
     assert start_request["argv"][0] == "vvla-http-serve"
     assert executor.commands[-1].timeout_s == 10.0
+
+
+def test_service_environment_activates_venv_using_the_node_path(monkeypatch) -> None:
+    import io
+    from types import SimpleNamespace
+
+    from rlinf_deploy.services.host import supervisor
+
+    monkeypatch.setenv("PATH", "/node/bin:/usr/bin")
+    monkeypatch.setenv("PYTHONHOME", "/unrelated/python")
+    payload = {
+        "argv": ["/env/sglang/bin/sglang"],
+        "cwd": "/project",
+        "environment": {
+            "RLINF_DEPLOY_SERVICE_ID": "model",
+            "VIRTUAL_ENV": "/env/sglang",
+        },
+    }
+    monkeypatch.setattr(
+        supervisor.sys,
+        "stdin",
+        SimpleNamespace(buffer=io.BytesIO(json.dumps(payload).encode())),
+    )
+    _, _, environment = supervisor._read_start_request("model")
+    assert environment["PATH"] == "/env/sglang/bin:/node/bin:/usr/bin"
+    assert environment["VIRTUAL_ENV"] == "/env/sglang"
+    assert "PYTHONHOME" not in environment
 
 
 def test_service_supervisor_rejects_unsafe_service_id() -> None:

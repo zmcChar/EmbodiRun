@@ -380,6 +380,7 @@ def _materialize_service(
         config_index = argv.index("--pipeline-config-path") + 1
         argv[config_index] = _configured_path(argv[config_index], project)
     environment_variables = dict(service.command.environment)
+    environment_variables["VIRTUAL_ENV"] = environment.path
     if service.kind in {"control", "simulation"}:
         environment_variables["PYTHONPATH"] = posixpath.join(deploy_project, "src")
     return replace(

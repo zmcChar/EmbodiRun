@@ -1,9 +1,13 @@
 import base64
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from rlinf_deploy.bindings.unitree.go2.streamvln import StreamVLNGo2Mapper
+from rlinf_deploy.robots.sensors.cameras import CameraFrame
+from rlinf_deploy.robots.unitree.go2.navigation.discrete import NavigationCommandKind
 from rlinf_deploy.services.inference import (
     HttpResponse,
     ImagePayload,
@@ -12,15 +16,183 @@ from rlinf_deploy.services.inference import (
     SglangHttpError,
     build_inference_client,
 )
-from rlinf_deploy.bindings.unitree.go2.streamvln import StreamVLNGo2Mapper
-from rlinf_deploy.robots.sensors.cameras import CameraFrame
-from rlinf_deploy.robots.unitree.go2.navigation.discrete import NavigationCommandKind
 from rlinf_deploy.services.simulation.runtime import SimulationRuntime
 from rlinf_deploy.simulators.habitat import HabitatAdapter, HabitatConfig
 from rlinf_deploy.simulators.navigation import (
     NavigationObservation,
     NavigationTransition,
 )
+
+
+@pytest.mark.parametrize(
+    "selection", ["CUDA_HOME", "CUDA_PATH", "nvcc", "pip", "missing"]
+)
+def test_sglang_environment_preserves_or_discovers_toolkit(
+    tmp_path, monkeypatch, selection
+):
+    from rlinf_deploy.services.inference.backends import sglang
+
+    monkeypatch.delenv("CUDA_HOME", raising=False)
+    monkeypatch.delenv("CUDA_PATH", raising=False)
+    if selection in {"CUDA_HOME", "CUDA_PATH"}:
+        monkeypatch.setenv(selection, "/selected/cuda")
+    monkeypatch.setattr(
+        sglang.shutil,
+        "which",
+        lambda name: "/usr/local/cuda/bin/nvcc" if selection == "nvcc" else None,
+    )
+    monkeypatch.setattr(sglang.sysconfig, "get_path", lambda name: str(tmp_path))
+    toolkit = tmp_path / "nvidia" / "cu13"
+    if selection != "missing":
+        (toolkit / "bin").mkdir(parents=True)
+        (toolkit / "bin" / "nvcc").touch()
+
+    sglang.prepare_sglang_environment()
+
+    expected_home = (
+        "/selected/cuda"
+        if selection == "CUDA_HOME"
+        else str(toolkit)
+        if selection == "pip"
+        else None
+    )
+    assert sglang.os.environ.get("CUDA_HOME") == expected_home
+    assert sglang.os.environ.get("CUDA_PATH") == (
+        "/selected/cuda" if selection == "CUDA_PATH" else None
+    )
+
+
+def test_sglang_lerobot_statistics_preserve_mean_std_math():
+    pytest.importorskip("sglang.multimodal_gen")
+    import torch
+
+    from rlinf_deploy.services.inference.adapters.sglang.pi05 import _Statistics
+
+    mean = torch.tensor([1.0, 2.0])
+    std = torch.tensor([0.0, 0.5])
+    statistics = _Statistics(mean, std, 1e-8)
+    values = torch.tensor([[1.0, 3.0]])
+    torch.testing.assert_close(
+        statistics.normalize(values), (values - mean) / (std + 1e-8), rtol=0, atol=0
+    )
+    torch.testing.assert_close(
+        statistics.denormalize(values), values * std + mean, rtol=0, atol=0
+    )
+    with pytest.raises(ValueError, match="dimensions"):
+        statistics.normalize([1.0])
+    with pytest.raises(ValueError, match="finite"):
+        statistics.normalize([float("nan"), 1.0])
+    for invalid in (1.0, [1.0], [float("nan"), 1.0]):
+        with pytest.raises(ValueError, match="statistics"):
+            statistics.denormalize(invalid)
+
+
+def test_sglang_lerobot_manifest_excludes_duplicate_processor_tensors(tmp_path):
+    pytest.importorskip("sglang.multimodal_gen")
+    import torch
+    from safetensors.torch import save_file
+    from sglang.multimodal_gen.configs.pipeline_configs.pi05 import Pi05PipelineConfig
+
+    from rlinf_deploy.services.inference.adapters.sglang.pi05 import _LeRobotPolicyModel
+
+    save_file(
+        {"model.action_out_proj.bias": torch.zeros(32)},
+        str(tmp_path / "model.safetensors"),
+    )
+    for name in ("policy_preprocessor", "policy_postprocessor"):
+        save_file(
+            {"action.mean": torch.zeros(7)}, str(tmp_path / f"{name}.safetensors")
+        )
+    manifest = _LeRobotPolicyModel._inspect_checkpoint(
+        str(tmp_path), Pi05PipelineConfig()
+    )
+    assert manifest.safetensor_files == [str(tmp_path / "model.safetensors")]
+
+
+@pytest.mark.parametrize(
+    "problem", [None, "normalization", "processor", "rename", "eps", "std", "shape"]
+)
+def test_sglang_lerobot_statistics_load_checkpoint_contract(tmp_path, problem):
+    pytest.importorskip("sglang.multimodal_gen")
+    import torch
+    from safetensors.torch import save_file
+
+    from rlinf_deploy.services.inference.adapters.sglang.pi05 import _Statistics
+
+    checkpoint = tmp_path / "snapshot"
+    checkpoint.mkdir()
+    # Hugging Face snapshots legitimately link to blobs outside their directory.
+    blob = tmp_path / "statistics.safetensors"
+    std = [-1.0, 0.5] if problem == "std" else [0.0, 0.5]
+    save_file(
+        {
+            "observation.state.mean": torch.ones(2),
+            "observation.state.std": torch.tensor(std),
+        },
+        str(blob),
+    )
+    (checkpoint / "statistics.safetensors").symlink_to(blob)
+    config = {
+        "norm_map": {
+            "STATE": "MIN_MAX" if problem == "normalization" else "MEAN_STD",
+            "VISUAL": "IDENTITY",
+        },
+        "features": {
+            "observation.state": {"shape": [3] if problem == "shape" else [2]}
+        },
+        "eps": 0.0 if problem == "eps" else 1e-8,
+    }
+    steps = [
+        {
+            "registry_name": "normalizer_processor",
+            "config": config,
+            "state_file": "statistics.safetensors",
+        }
+    ]
+    if problem == "processor":
+        steps.append({"registry_name": "custom_transform", "config": {}})
+    if problem == "rename":
+        steps.append(
+            {
+                "registry_name": "rename_observations_processor",
+                "config": {"rename_map": {"a": "b"}},
+            }
+        )
+    (checkpoint / "policy_preprocessor.json").write_text(json.dumps({"steps": steps}))
+    if problem is not None:
+        with pytest.raises(ValueError):
+            _Statistics.load(
+                checkpoint,
+                "preprocessor",
+                "normalizer_processor",
+                "observation.state",
+                "STATE",
+            )
+    else:
+        stats = _Statistics.load(
+            checkpoint,
+            "preprocessor",
+            "normalizer_processor",
+            "observation.state",
+            "STATE",
+        )
+        torch.testing.assert_close(
+            stats.normalize([1.0, 2.0]), torch.tensor([0.0, 2.0]), rtol=0, atol=0
+        )
+
+
+def test_sglang_lerobot_pipeline_preserves_native_parallel_layout_rejection():
+    pytest.importorskip("sglang.multimodal_gen")
+    from rlinf_deploy.services.inference.adapters.sglang.pi05 import LeRobotPi05Pipeline
+
+    pipeline = object.__new__(LeRobotPi05Pipeline)
+    args = SimpleNamespace(
+        pipeline_config=SimpleNamespace(
+            prefix_parallel_strategy="tp", action_parallel_strategy="tp"
+        )
+    )
+    with pytest.raises(ValueError, match="TP layout"):
+        pipeline.load_modules(args)
 
 
 class FakeTransport:
@@ -53,6 +225,23 @@ class FakeTransport:
             "timings": {"total_ms": 12.5, "detail": {"ignored": True}},
         }
         return HttpResponse(200, {}, json.dumps(response).encode())
+
+
+def test_sglang_command_selects_explicit_pipeline_and_optional_entrypoint() -> None:
+    from rlinf_deploy.services.inference.backends.sglang.http import (
+        sglang_server_command,
+    )
+
+    command = sglang_server_command(
+        checkpoint="/models/pi05",
+        bind="127.0.0.1",
+        port=8000,
+        executable="rlinf-sglang-serve",
+        pipeline="LeRobotPi05Pipeline",
+    )
+    assert command[:3] == ("rlinf-sglang-serve", "serve", "/models/pi05")
+    assert command[command.index("--pipeline-class-name") + 1] == "LeRobotPi05Pipeline"
+    assert "--pipeline" not in command
 
 
 def test_sglang_client_adapts_action_api_to_policy_contract() -> None:
@@ -201,8 +390,9 @@ def test_inference_factory_selects_backend_and_rejects_invalid_pair() -> None:
         )
 
 
-def test_habitat_streamvln_runtime_uses_sglang_action_backend(monkeypatch) -> None:
-    import rlinf_deploy.simulators.navigation as navigation
+def test_navigation_runtime_accepts_mock_sglang_action_responses(monkeypatch) -> None:
+    """Contract-only test: neither Habitat nor a real SGLang model runs here."""
+    from rlinf_deploy.simulators import navigation
 
     monkeypatch.setattr(
         navigation,

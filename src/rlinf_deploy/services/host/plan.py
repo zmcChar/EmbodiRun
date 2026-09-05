@@ -201,6 +201,7 @@ def _model_service(
             checkpoint=source,
             bind=model.server.bind,
             port=model.server.port,
+            executable=_option_string(model, "server_executable") or "sglang",
             pipeline=_option_string(model, "pipeline"),
             pipeline_config=_option_string(model, "pipeline_config"),
             extra_args=_option_strings(model, "server_args"),
