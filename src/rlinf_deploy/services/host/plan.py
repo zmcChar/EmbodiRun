@@ -68,7 +68,6 @@ class DeploymentPlan:
 
     name: str
     deploy_commit: str
-    inference_commit: str
     environments: tuple[EnvironmentProfile, ...]
     services: tuple[ServiceSpec, ...]
     runtimes: tuple[RuntimeSpec, ...]
@@ -134,7 +133,6 @@ def build_plan(config: DeploymentConfig) -> DeploymentPlan:
     return DeploymentPlan(
         name=config.metadata.name,
         deploy_commit=config.metadata.deploy_commit,
-        inference_commit=config.metadata.inference_commit,
         environments=environments,
         services=(*models, *controls, *simulations),
         runtimes=tuple(runtimes),

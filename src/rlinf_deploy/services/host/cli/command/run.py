@@ -129,8 +129,6 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
             raise RunError("configuration changed since init; run init again")
         if state.deploy_commit != context.deployment.deploy_commit:
             raise RunError("Deploy revision changed since init; run init again")
-        if state.inference_commit != context.deployment.inference_commit:
-            raise RunError("Inference revision changed since init; run init again")
         environment = state.environments.get(runtime.environment_id)
         if environment is None or environment.status != "ready":
             raise RunError(

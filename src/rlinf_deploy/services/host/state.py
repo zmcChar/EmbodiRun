@@ -53,7 +53,8 @@ class DeploymentState:
     name: str
     config_digest: str
     deploy_commit: str
-    inference_commit: str
+    # Resolved during init; absent if every node failed to initialize.
+    inference_commit: str | None
     nodes: dict[str, NodeState] = field(default_factory=dict)
     environments: dict[str, EnvironmentState] = field(default_factory=dict)
     services: dict[str, ServiceState] = field(default_factory=dict)
@@ -136,7 +137,11 @@ def _parse_state(value: Any) -> DeploymentState:
         name=_string(root, "name", "state"),
         config_digest=_string(root, "config_digest", "state"),
         deploy_commit=_string(root, "deploy_commit", "state"),
-        inference_commit=_string(root, "inference_commit", "state"),
+        inference_commit=(
+            _string(root, "inference_commit", "state")
+            if root.get("inference_commit") is not None
+            else None
+        ),
         nodes=nodes,
         environments=environments,
         services=services,

@@ -141,6 +141,37 @@ class ProjectManager:
                 f"managed checkout {project_dir!r} did not resolve to {revision!r}"
             )
 
+    def submodule_revision(self, *, project_dir: str, revision: str, path: str) -> str:
+        """Read a pinned gitlink from a commit without checking out the submodule."""
+
+        result = self.executor.run(
+            Command(
+                (
+                    self.git_executable,
+                    "-C",
+                    project_dir,
+                    "ls-tree",
+                    revision,
+                    "--",
+                    path,
+                ),
+                timeout_s=20.0,
+            )
+        )
+        fields = result.stdout.strip().split()
+        if (
+            len(fields) != 4
+            or fields[:2] != ["160000", "commit"]
+            or fields[3] != path
+            or len(fields[2]) not in {40, 64}
+            or any(character not in "0123456789abcdef" for character in fields[2])
+        ):
+            raise SourceError(
+                f"Deploy revision {revision!r} does not pin a valid submodule "
+                f"at {path!r}"
+            )
+        return fields[2]
+
 
 def managed_root(home: str, base: str, deployment_name: str) -> str:
     """Resolve the deployment root against the probed node home directory."""

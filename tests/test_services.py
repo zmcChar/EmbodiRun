@@ -34,7 +34,11 @@ from rlinf_deploy.services.host.executor import (
     SshExecutor,
 )
 from rlinf_deploy.services.host.plan import ServiceSpec, build_plan
-from rlinf_deploy.services.host.source import ProjectManager, active_deploy_project
+from rlinf_deploy.services.host.source import (
+    ProjectManager,
+    SourceError,
+    active_deploy_project,
+)
 from rlinf_deploy.services.host.state import (
     DeploymentState,
     EnvironmentState,
@@ -48,6 +52,7 @@ from rlinf_deploy.services.simulation.contracts import SimulationServiceConfig
 
 ROOT = Path(__file__).parents[1]
 EXAMPLE = ROOT / "configs" / "muti-nodes.example.yaml"
+INFERENCE_REVISION = "a" * 40
 
 
 def simulation_deployment(tmp_path, kind, backend, transport):
@@ -89,7 +94,6 @@ def simulation_deployment(tmp_path, kind, backend, transport):
                 "metadata": {
                     "name": "simulation",
                     "deploy-commit": "deploy123",
-                    "inference-commit": "inference123",
                 },
                 "nodes": {
                     "workstation": {
@@ -226,7 +230,8 @@ class ResultExecutor:
 
 
 class FakeNodeExecutor:
-    def __init__(self) -> None:
+    def __init__(self, inference_commit=INFERENCE_REVISION) -> None:
+        self.inference_commit = inference_commit
         self.commands = []
         self.files = {}
         self.health_requests = []
@@ -255,6 +260,13 @@ class FakeNodeExecutor:
             return CommandResult(0, f"{repository}\n", "")
         if "rev-parse" in argv and "HEAD" in argv:
             return CommandResult(0, "resolved\nresolved\n", "")
+        if "ls-tree" in argv:
+            entry = (
+                f"160000 commit {self.inference_commit}\tthird_party/vvla\n"
+                if self.inference_commit is not None
+                else ""
+            )
+            return CommandResult(0, entry)
         if len(argv) > 2 and argv[1].endswith("/supervisor.py"):
             return CommandResult(0, "running\t321\n", "")
         return CommandResult(0, "", "")
@@ -599,7 +611,6 @@ def test_sglang_streamvln_resolves_habitat_simulation_service(tmp_path) -> None:
 metadata:
   name: sglang-habitat-streamvln
   deploy-commit: deploy123
-  inference-commit: inference123
 nodes:
   workstation:
     type: workstation
@@ -960,6 +971,72 @@ def test_project_manager_clones_and_fetches_only_when_missing() -> None:
     assert ("git", "-C", "/opt/project", "fetch", "origin", "abc1234") in argv
 
 
+def test_project_manager_reads_gitlink_from_requested_commit(tmp_path) -> None:
+    executor = LocalExecutor()
+    project = str(tmp_path / "deploy")
+
+    def git(*arguments):
+        return executor.run(Command(("git", "-C", project, *arguments)))
+
+    executor.run(Command(("git", "init", project)))
+    for revision in (INFERENCE_REVISION, "b" * 40):
+        git(
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            f"160000,{revision},third_party/vvla",
+        )
+        git(
+            "-c",
+            "user.name=Deploy test",
+            "-c",
+            "user.email=deploy@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "commit",
+            "-m",
+            "Pin inference",
+        )
+        if revision == INFERENCE_REVISION:
+            deploy_commit = git("rev-parse", "HEAD").stdout.strip()
+
+    manager = ProjectManager(executor)
+    assert (
+        manager.submodule_revision(
+            project_dir=project, revision=deploy_commit, path="third_party/vvla"
+        )
+        == INFERENCE_REVISION
+    )
+    assert (
+        manager.submodule_revision(
+            project_dir=project, revision="HEAD", path="third_party/vvla"
+        )
+        == "b" * 40
+    )
+    assert not (tmp_path / "deploy/third_party/vvla").exists()
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "",
+        f"100644 blob {INFERENCE_REVISION}\tthird_party/vvla\n",
+        f"040000 tree {INFERENCE_REVISION}\tthird_party/vvla\n",
+        f"160000 commit {INFERENCE_REVISION}\tother/path\n",
+        "160000 commit main\tthird_party/vvla\n",
+    ],
+)
+def test_project_manager_rejects_missing_or_invalid_gitlink(entry) -> None:
+    executor = ResultExecutor(CommandResult(0, entry))
+    with pytest.raises(SourceError, match="does not pin a valid submodule"):
+        ProjectManager(executor).submodule_revision(
+            project_dir="/opt/deploy", revision="deploy123", path="third_party/vvla"
+        )
+    assert len(executor.commands) == 1
+
+
 def test_local_executor_preserves_cwd_argv_environment_and_stdin(tmp_path) -> None:
     executor = LocalExecutor()
 
@@ -1301,12 +1378,23 @@ def test_duplicate_yaml_keys_are_rejected(tmp_path) -> None:
         "  name: one\n"
         "  name: two\n"
         "  deploy-commit: abc\n"
-        "  inference-commit: def\n"
         "nodes: {}\n",
         encoding="utf-8",
     )
 
     with pytest.raises(ConfigError, match="duplicate YAML key"):
+        load_config(config_path)
+
+
+def test_metadata_rejects_independent_inference_revision(tmp_path) -> None:
+    config_path = tmp_path / "obsolete.yaml"
+    config_path.write_text(
+        EXAMPLE.read_text(encoding="utf-8").replace(
+            "metadata:\n", "metadata:\n  inference-commit: obsolete\n", 1
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="inference-commit"):
         load_config(config_path)
 
 
@@ -1359,6 +1447,72 @@ def test_control_and_model_ports_on_one_node_must_be_distinct(tmp_path) -> None:
         load_config(config_path)
 
 
+def test_cli_init_rejects_deploy_without_inference_gitlink(tmp_path, capsys) -> None:
+    executor = FakeNodeExecutor(inference_commit=None)
+    exit_code = main(
+        ("--config", str(EXAMPLE), "--state-dir", str(tmp_path), "init"),
+        executor_factory=lambda _node: executor,
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "does not pin a valid submodule" in captured.err
+    assert "third_party/vvla" in captured.err
+    commands = [command.argv for command, _check in executor.commands]
+    assert not any("--group" in argv for argv in commands)
+    assert not any(
+        "-C" in argv and argv[2].endswith("/sources/inference") for argv in commands
+    )
+    state = StateStore(tmp_path / "thor-so101-pi05.json").load()
+    assert state is not None
+    assert state.inference_commit is None
+    assert not state.nodes
+    assert not state.environments
+
+
+def test_cli_init_rejects_inconsistent_inference_gitlinks(tmp_path, capsys) -> None:
+    config_path = two_node_model_config(tmp_path)
+
+    def factory(node):
+        return FakeNodeExecutor(
+            inference_commit=(
+                INFERENCE_REVISION if node.node_id == "jetson-worker" else "b" * 40
+            )
+        )
+
+    exit_code = main(
+        ("--config", str(config_path), "--state-dir", str(tmp_path), "init"),
+        executor_factory=factory,
+    )
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "different Inference revisions" in captured.err
+    assert StateStore(tmp_path / "thor-so101-pi05.json").load() is None
+
+
+def test_cli_init_preserves_resolved_revision_after_partial_failure(
+    tmp_path, capsys
+) -> None:
+    config_path = two_node_model_config(tmp_path)
+
+    def factory(node):
+        return (
+            FailingExecutor() if node.node_id == "jetson-worker" else FakeNodeExecutor()
+        )
+
+    exit_code = main(
+        ("--config", str(config_path), "--state-dir", str(tmp_path), "init"),
+        executor_factory=factory,
+    )
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "connection refused" in captured.err
+    state = StateStore(tmp_path / "thor-so101-pi05.json").load()
+    assert state is not None
+    assert state.inference_commit == INFERENCE_REVISION
+    assert set(state.nodes) == {"jetson-agx-thor-232"}
+
+
 def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> None:
     executors = []
 
@@ -1382,11 +1536,31 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
     assert "2 environments ready" in init_output.out
     initialized = StateStore(tmp_path / "thor-so101-pi05.json").load()
     assert initialized is not None
+    assert initialized.inference_commit == INFERENCE_REVISION
     assert {item.group for item in initialized.environments.values()} == {
         "pi05",
         "robot-so101",
     }
     init_argv = [command.argv for command, _check in executors[0].commands]
+    deploy_project = initialized.nodes["jetson-agx-thor-232"].deploy_project
+    inference_project = initialized.nodes["jetson-agx-thor-232"].inference_project
+    assert (
+        "/usr/bin/git",
+        "-C",
+        deploy_project,
+        "ls-tree",
+        load_config(EXAMPLE).metadata.deploy_commit,
+        "--",
+        "third_party/vvla",
+    ) in init_argv
+    assert (
+        "/usr/bin/git",
+        "-C",
+        inference_project,
+        "checkout",
+        "--detach",
+        INFERENCE_REVISION,
+    ) in init_argv
     assert any(argv[-2:] == ("--group", "pi05") for argv in init_argv)
     assert any(argv[-2:] == ("--group", "robot-so101") for argv in init_argv)
     assert executors[0].closed is True
@@ -2222,13 +2396,16 @@ def test_cli_up_rejects_config_changed_after_init(tmp_path, capsys) -> None:
     assert "configuration changed since init" in captured.err
 
 
-def test_state_store_round_trip_is_atomic_and_secret_free(tmp_path) -> None:
+@pytest.mark.parametrize("inference_commit", ["def", None])
+def test_state_store_round_trip_is_atomic_and_secret_free(
+    tmp_path, inference_commit
+) -> None:
     state_path = tmp_path / "state" / "deployment.json"
     state = DeploymentState(
         name="lab",
         config_digest="1234",
         deploy_commit="abc",
-        inference_commit="def",
+        inference_commit=inference_commit,
         nodes={
             "node": NodeState(
                 node_id="node",

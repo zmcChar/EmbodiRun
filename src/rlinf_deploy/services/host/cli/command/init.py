@@ -41,6 +41,7 @@ class NodeInitialization:
 
     node: NodeState
     environments: tuple[EnvironmentState, ...]
+    inference_commit: str
 
 
 def register(commands: Any) -> None:
@@ -112,6 +113,12 @@ def _initialize(
             raise
 
     results = run_on_nodes(context.config.nodes, initialize)
+    inference_commits = {result.inference_commit for result in results.values.values()}
+    if len(inference_commits) > 1:
+        raise InitError(
+            "nodes resolved different Inference revisions from Deploy; "
+            "use an immutable deploy-commit and run init again"
+        )
     nodes = {node_id: result.node for node_id, result in results.values.items()}
     environments = {
         environment.environment_id: environment
@@ -122,7 +129,7 @@ def _initialize(
         name=context.deployment.name,
         config_digest=digest,
         deploy_commit=context.deployment.deploy_commit,
-        inference_commit=context.deployment.inference_commit,
+        inference_commit=next(iter(inference_commits), None),
         nodes=nodes,
         environments=environments,
         services=_initial_service_state(context.deployment, previous, digest),
@@ -162,7 +169,9 @@ def _initialize_node(
             python_version=probe.python_version,
         )
         progress.update(node_id, "Preparing locked sources")
-        _prepare_projects(context, executor, node_state, git=probe.git)
+        inference_commit = _prepare_projects(
+            context, executor, node_state, git=probe.git
+        )
         executor.replace_symlink(
             active_deploy_project(node_state.root),
             node_state.deploy_project,
@@ -197,7 +206,7 @@ def _initialize_node(
         _probe_resources(context, executor, node_state)
         progress.advance(node_id)
         progress.succeed(node_id)
-        return NodeInitialization(node_state, tuple(environments))
+        return NodeInitialization(node_state, tuple(environments), inference_commit)
 
 
 def _profiles_on(
@@ -215,7 +224,7 @@ def _prepare_projects(
     node: NodeState,
     *,
     git: str,
-) -> None:
+) -> str:
     projects = {
         profile.project for profile in _profiles_on(context.deployment, node.node_id)
     }
@@ -227,12 +236,18 @@ def _prepare_projects(
             revision=context.deployment.deploy_commit,
             project_dir=node.deploy_project,
         )
+    inference_commit = manager.submodule_revision(
+        project_dir=node.deploy_project,
+        revision=context.deployment.deploy_commit,
+        path="third_party/vvla",
+    )
     if "inference" in projects:
         manager.prepare(
             repository=INFERENCE_REPOSITORY,
-            revision=context.deployment.inference_commit,
+            revision=inference_commit,
             project_dir=node.inference_project,
         )
+    return inference_commit
 
 
 def _probe_resources(

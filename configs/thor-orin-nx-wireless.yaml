@@ -2,7 +2,6 @@
 metadata:
   name: thor-pi0.5
   deploy-commit: 44d2459f76b72dcd8997a9b0b1f4cdf9a1a516ef
-  inference-commit: 8b45215075718f8e59ee2ac890b9b3f80a2add98
 
 nodes:
   jetson-agx-thor-232:
