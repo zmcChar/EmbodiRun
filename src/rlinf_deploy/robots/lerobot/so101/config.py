@@ -1,4 +1,4 @@
-"""Configuration and fail-closed step limits for a LeRobot SO-101 follower."""
+"""Configuration and fail-closed step limits for a Feetech SO-101 follower."""
 
 from __future__ import annotations
 

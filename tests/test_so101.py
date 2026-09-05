@@ -48,7 +48,7 @@ def test_so101_reject_mode_remains_fail_closed() -> None:
     hardware = FakeSO101([0.0, 0.0, 0.0, 0.0, 0.0, 50.0])
     adapter = SO101Adapter(
         SO101Config(port="/dev/fake", max_joint_step_deg=5.0),
-        lerobot_robot=hardware,
+        controller=hardware,
     )
     adapter.connect()
 
@@ -67,7 +67,7 @@ def test_so101_clip_mode_bounds_every_joint_and_gripper() -> None:
             max_gripper_step=10.0,
             step_limit_mode="clip",
         ),
-        lerobot_robot=hardware,
+        controller=hardware,
     )
     adapter.connect()
 
@@ -94,7 +94,7 @@ def test_so101_clip_mode_bounds_each_command_in_a_sequence() -> None:
             max_gripper_step=10.0,
             step_limit_mode="clip",
         ),
-        lerobot_robot=hardware,
+        controller=hardware,
     )
     adapter.connect()
 

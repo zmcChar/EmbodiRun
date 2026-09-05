@@ -1,4 +1,4 @@
-"""LeRobot SO-101 follower hardware adapter."""
+"""SO-101 follower hardware adapter using the Feetech SDK."""
 
 from ... import RobotDefinition
 from .adapter import (
