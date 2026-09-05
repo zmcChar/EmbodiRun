@@ -17,8 +17,8 @@ VVLA_ROOT = Path(__file__).parents[1] / "third_party" / "vvla"
 sys.path.insert(0, str(VVLA_ROOT))
 pytest.importorskip("torch", reason="pinned VVLA integration requires Torch")
 
-from vvla.serve.contracts import ModelAction, ModelResult  # noqa: E402
-from vvla.serve.http_server import (  # noqa: E402
+from vvla.engine.serve.contracts import ModelAction, ModelResult  # noqa: E402
+from vvla.engine.serve.http_server import (  # noqa: E402
     PolicyHttpService,
     create_http_server,
 )

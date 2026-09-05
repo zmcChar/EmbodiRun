@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 
@@ -22,6 +23,7 @@ class ARX5Config:
     sdk_gripper_closed_position: float = 0.0
     sdk_gripper_open_position: float = 5.0
     sdk_module: str = "bimanual"
+    sdk_path: str | None = None
 
     @classmethod
     def from_mapping(
@@ -46,6 +48,7 @@ class ARX5Config:
             "sdk_gripper_closed_position",
             "sdk_gripper_open_position",
             "sdk_module",
+            "sdk_path",
         }
         unknown = sorted(
             (key for key in values if key not in allowed),
@@ -69,6 +72,10 @@ class ARX5Config:
             raise TypeError("operator_confirmed must be a boolean")
         if not isinstance(self.sdk_module, str) or not self.sdk_module.strip():
             raise ValueError("sdk_module must not be empty")
+        if self.sdk_path is not None and (
+            not isinstance(self.sdk_path, str) or not Path(self.sdk_path).is_absolute()
+        ):
+            raise ValueError("sdk_path must be an absolute path on the control node")
         for name in (
             "max_translation_step_m",
             "max_rotation_step_rad",
