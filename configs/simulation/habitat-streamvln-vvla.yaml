@@ -5,7 +5,7 @@
 # Examples use ports 8000/8100: stop one before starting another, or change ports.
 metadata:
   name: habitat-streamvln-vvla
-  deploy-commit: bccd69ff2828a43bc160dad3f63421cc551b9500
+  deploy-commit: c3f939a4f2dda25b76560f65f1bd9a2d468fb4f8
 
 nodes:
   workstation:
