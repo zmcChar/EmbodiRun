@@ -216,14 +216,74 @@ class UvEnvironmentManager:
     ) -> CommandResult:
         """Synchronize a project group or a pinned standalone package set."""
 
-        result = self.executor.run(
-            self.sync_command(profile, project_dir=project_dir)
+        result = (
+            self._existing_environment(profile, project_dir=project_dir)
+            if profile.install == "packages"
+            else None
         )
+        if result is None:
+            result = self.executor.run(
+                self.sync_command(profile, project_dir=project_dir)
+            )
         if not profile.packages:
             return result
-        return self.executor.run(
-            self.package_command(profile, project_dir=project_dir)
+        return self.executor.run(self.package_command(profile, project_dir=project_dir))
+
+    def _existing_environment(
+        self,
+        profile: EnvironmentProfile,
+        *,
+        project_dir: str,
+    ) -> CommandResult | None:
+        """Reuse a valid standalone environment without changing its interpreter."""
+
+        path = posixpath.join(project_dir, profile.path)
+        exists = self.executor.run(
+            Command(("test", "-f", posixpath.join(path, "pyvenv.cfg")), timeout_s=20.0),
+            check=False,
         )
+        if exists.exit_code != 0:
+            return None
+
+        find_python = (
+            self.uv_executable,
+            "python",
+            "find",
+            "--no-project",
+            "--no-python-downloads",
+            "--resolve-links",
+        )
+        actual = self.executor.run(
+            Command((*find_python, path), cwd=project_dir, timeout_s=20.0),
+            check=False,
+        )
+        if actual.exit_code != 0 or not actual.stdout.strip():
+            raise EnvironmentError(
+                f"environment {path!r} has an unusable Python interpreter; "
+                "choose a different environment path or repair it before retrying init"
+            )
+        if profile.python is not None:
+            # uv prefers the active environment if it satisfies the request;
+            # resolving links also supports requests naming an interpreter path.
+            requested = self.executor.run(
+                Command(
+                    (*find_python, profile.python),
+                    cwd=project_dir,
+                    environment={"VIRTUAL_ENV": path},
+                    timeout_s=20.0,
+                ),
+                check=False,
+            )
+            if (
+                requested.exit_code != 0
+                or requested.stdout.strip() != actual.stdout.strip()
+            ):
+                raise EnvironmentError(
+                    f"environment {path!r} does not match configured Python "
+                    f"{profile.python!r}; choose a different environment path or "
+                    "explicitly rebuild it before retrying init"
+                )
+        return actual
 
     def package_command(
         self,

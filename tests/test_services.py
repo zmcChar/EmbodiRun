@@ -1,5 +1,6 @@
 import json
 import logging
+import shutil
 import socket
 import sys
 import tarfile
@@ -19,12 +20,14 @@ from rlinf_deploy.services.host.cli.command.init import (
 )
 from rlinf_deploy.services.host.config import ConfigError, load_config
 from rlinf_deploy.services.host.environment import (
+    EnvironmentError,
     EnvironmentProfile,
     UvEnvironmentManager,
     environment_profiles,
 )
 from rlinf_deploy.services.host.executor import (
     Command,
+    CommandError,
     CommandResult,
     JsonHttpResponse,
     LocalExecutor,
@@ -789,8 +792,9 @@ def test_uv_environment_manager_applies_configured_package_overlay() -> None:
     assert command.timeout_s == 1800.0
 
 
-def test_uv_environment_manager_creates_standalone_sglang_environment() -> None:
-    profile = EnvironmentProfile(
+@pytest.fixture
+def standalone_environment_profile() -> EnvironmentProfile:
+    return EnvironmentProfile(
         environment_id="node:inference:sglang:.venv-sglang",
         node="node",
         project="inference",
@@ -800,14 +804,20 @@ def test_uv_environment_manager_creates_standalone_sglang_environment() -> None:
         packages=("sglang[diffusion]==0.5.18",),
         install="packages",
     )
-    executor = RecordingExecutor()
+
+
+def test_uv_environment_manager_creates_standalone_sglang_environment(
+    standalone_environment_profile,
+) -> None:
+    executor = ResultExecutor(CommandResult(1), CommandResult(0), CommandResult(0))
 
     UvEnvironmentManager(executor).prepare(
-        profile,
+        standalone_environment_profile,
         project_dir="/opt/rlinf-inference",
     )
 
-    assert [command.argv for command, _ in executor.commands] == [
+    assert [command.argv for command in executor.commands] == [
+        ("test", "-f", "/opt/rlinf-inference/.venv-sglang/pyvenv.cfg"),
         ("uv", "venv", "--python", "3.12", ".venv-sglang"),
         (
             "uv",
@@ -818,6 +828,112 @@ def test_uv_environment_manager_creates_standalone_sglang_environment() -> None:
             "sglang[diffusion]==0.5.18",
         ),
     ]
+
+
+@pytest.mark.parametrize(
+    "python_request,install_fails",
+    [
+        (None, False),
+        ("version", False),
+        ("range", False),
+        ("path", False),
+        ("version", True),
+    ],
+)
+def test_standalone_environment_init_is_repeatable(
+    tmp_path, standalone_environment_profile, python_request, install_fails
+) -> None:
+    uv = shutil.which("uv")
+    if uv is None:
+        pytest.skip("environment lifecycle regression requires uv")
+    major, minor = sys.version_info[:2]
+    requests = {
+        "version": f"{major}.{minor}",
+        "range": f">={major}.{minor},<{major}.{minor + 1}",
+        "path": sys.executable,
+    }
+    profile = replace(standalone_environment_profile, python=sys.executable)
+
+    class PackageExecutor(LocalExecutor):
+        def __init__(self):
+            self.commands = []
+            self.install_attempts = 0
+
+        def run(self, command, *, check=True):
+            self.commands.append(command)
+            # Exercise real uv creation/discovery without downloading SGLang.
+            if command.argv[1:3] == ("pip", "install"):
+                self.install_attempts += 1
+                if install_fails and self.install_attempts == 1:
+                    raise CommandError(1, "simulated package download failure")
+                return CommandResult(0, "packages ready\n")
+            return super().run(command, check=check)
+
+    executor = PackageExecutor()
+    manager = UvEnvironmentManager(executor, uv_executable=uv)
+    if install_fails:
+        with pytest.raises(CommandError, match="simulated package download failure"):
+            manager.prepare(profile, project_dir=str(tmp_path))
+    else:
+        manager.prepare(profile, project_dir=str(tmp_path))
+    environment_path = tmp_path / profile.path
+    config_stat = (environment_path / "pyvenv.cfg").stat()
+    installed_module = (
+        environment_path / f"lib/python{major}.{minor}/site-packages/env_probe.py"
+    )
+    installed_module.write_text("VALUE = 'preserved'\n", encoding="utf-8")
+
+    result = manager.prepare(
+        replace(profile, python=requests.get(python_request)),
+        project_dir=str(tmp_path),
+    )
+
+    assert result.stdout == "packages ready\n"
+    assert executor.install_attempts == 2
+    assert sum(command.argv[1] == "venv" for command in executor.commands) == 1
+    assert (
+        environment_path / "pyvenv.cfg"
+    ).stat().st_mtime_ns == config_stat.st_mtime_ns
+    probe = executor.run(
+        Command(
+            (
+                str(environment_path / "bin/python"),
+                "-c",
+                "import env_probe; print(env_probe.VALUE)",
+            )
+        )
+    )
+    assert probe.stdout == "preserved\n"
+
+
+@pytest.mark.parametrize(
+    "actual,requested",
+    [
+        (CommandResult(1, stderr="broken interpreter"), None),
+        (
+            CommandResult(0, "/usr/bin/python3.11\n"),
+            CommandResult(0, "/usr/bin/python3.12\n"),
+        ),
+        (
+            CommandResult(0, "/usr/bin/python3.11\n"),
+            CommandResult(1, stderr="Python not found"),
+        ),
+    ],
+)
+def test_standalone_environment_rejects_broken_or_incompatible_python(
+    standalone_environment_profile, actual, requested
+) -> None:
+    results = [CommandResult(0), actual]
+    if requested is not None:
+        results.append(requested)
+    executor = ResultExecutor(*results)
+    with pytest.raises(EnvironmentError, match="environment.*choose a different"):
+        UvEnvironmentManager(executor).prepare(
+            standalone_environment_profile,
+            project_dir="/opt/rlinf-inference",
+        )
+    assert not executor.results
+    assert not any(command.argv[1] in {"venv", "pip"} for command in executor.commands)
 
 
 def test_project_manager_clones_and_fetches_only_when_missing() -> None:
