@@ -47,13 +47,15 @@ class SimulationService:
         self.client_factory = client_factory or create_inference_client
         self.runtime_factory = runtime_factory
         self._episode_lock = threading.Lock()
+        self._client_lock = threading.Lock()
+        self._wireless_client: Any | None = None
 
     def health(self) -> dict[str, Any]:
-        client = self.client_factory(self.config, 2.0)
+        client = self._inference_client(2.0)
         try:
             health = client.health()
         finally:
-            _shutdown_client(client)
+            self._release_inference_client(client)
         if health.get("status") != "ok":
             raise SimulationServiceError(
                 f"inference service at {self.config.inference_endpoint} is not healthy"
@@ -102,7 +104,7 @@ class SimulationService:
         simulator: Any | None = None
         runtime: Any | None = None
         try:
-            client = self.client_factory(self.config, request.inference_timeout_s)
+            client = self._inference_client(request.inference_timeout_s)
             simulator = definition.adapter_type(simulator_config)
             runtime = self.runtime_factory(
                 simulator,
@@ -129,7 +131,7 @@ class SimulationService:
                         simulator.close()
                 finally:
                     if client is not None:
-                        _shutdown_client(client)
+                        self._release_inference_client(client)
         return EpisodeResult(
             request_id=request.request_id,
             runtime_id=request.runtime_id,
@@ -139,6 +141,29 @@ class SimulationService:
             terminated=outcome.terminated,
             truncated=outcome.truncated,
         )
+
+    def close(self) -> None:
+        """Release the process-owned wireless connection, when configured."""
+
+        with self._client_lock:
+            client = self._wireless_client
+            self._wireless_client = None
+        if client is not None:
+            _shutdown_client(client)
+
+    def _inference_client(self, timeout_s: float) -> Any:
+        if self.config.inference_transport != "wireless":
+            return self.client_factory(self.config, timeout_s)
+        with self._client_lock:
+            if self._wireless_client is None:
+                self._wireless_client = self.client_factory(self.config, timeout_s)
+            client = self._wireless_client
+        with_timeout = getattr(client, "with_timeout", None)
+        return with_timeout(timeout_s) if callable(with_timeout) else client
+
+    def _release_inference_client(self, client: Any) -> None:
+        if self.config.inference_transport != "wireless":
+            _shutdown_client(client)
 
 
 def create_inference_client(
@@ -251,6 +276,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         server.serve_forever()
     finally:
         server.server_close()
+        server.simulation_service.close()
     return 0
 
 

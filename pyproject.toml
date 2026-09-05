@@ -55,10 +55,6 @@ default-groups = ["dev"]
 conflicts = [
     [
         { group = "sim-isaac" },
-        { group = "robot-so101" },
-    ],
-    [
-        { group = "sim-isaac" },
         { group = "sim-libero" },
     ],
     [

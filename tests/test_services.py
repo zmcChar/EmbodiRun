@@ -3,8 +3,8 @@ import logging
 import socket
 import sys
 import tarfile
-from io import BytesIO
 from dataclasses import replace
+from io import BytesIO
 from pathlib import Path
 from threading import Barrier, Thread
 from types import SimpleNamespace
@@ -30,7 +30,7 @@ from rlinf_deploy.services.host.executor import (
     LocalExecutor,
     SshExecutor,
 )
-from rlinf_deploy.services.host.plan import ServiceError, ServiceSpec, build_plan
+from rlinf_deploy.services.host.plan import ServiceSpec, build_plan
 from rlinf_deploy.services.host.source import ProjectManager, active_deploy_project
 from rlinf_deploy.services.host.state import (
     DeploymentState,
@@ -41,9 +41,160 @@ from rlinf_deploy.services.host.state import (
     StateStore,
 )
 from rlinf_deploy.services.host.supervisor import ServiceSupervisor, SupervisorError
+from rlinf_deploy.services.simulation.contracts import SimulationServiceConfig
 
 ROOT = Path(__file__).parents[1]
 EXAMPLE = ROOT / "configs" / "muti-nodes.example.yaml"
+
+
+def simulation_deployment(tmp_path, kind, backend, transport):
+    options = {
+        "vlabench": {"task": "select_fruit"},
+        "libero": {"suite": "libero_spatial", "task_id": 0},
+        "habitat": {
+            "dataset": "/data/episodes.json.gz",
+            "scenes_dir": "/data/scenes",
+            "episode_id": "episode-1",
+        },
+        "isaac": {
+            "task": "navigation",
+            "instruction": "walk to the door",
+            "goal_position": [1, 0, 0],
+        },
+    }
+    navigation = kind in {"habitat", "isaac"}
+    model = {
+        "backend": backend,
+        "transport": transport,
+        "type": "streamvln" if navigation else "pi05",
+        "node": "workstation",
+        "source": "/models/checkpoint",
+        "server": {"bind": "127.0.0.1", "port": 8000},
+    }
+    if backend == "sglang":
+        model["environment_packages"] = ["sglang[diffusion]==0.5.18"]
+    if transport == "wireless":
+        model.update(
+            comm_config="/etc/rlinf/inference-wireless.yaml",
+            client_comm_config="/etc/rlinf/simulation-wireless.yaml",
+            server_node_id="inference-1",
+        )
+    config_path = tmp_path / "simulation.yaml"
+    config_path.write_text(
+        json.dumps(
+            {
+                "metadata": {
+                    "name": "simulation",
+                    "deploy-commit": "deploy123",
+                    "inference-commit": "inference123",
+                },
+                "nodes": {
+                    "workstation": {
+                        "type": "workstation",
+                        "connection": {"type": "local"},
+                    },
+                },
+                "simulators": {
+                    "sim": {"type": kind, "node": "workstation", **options[kind]},
+                },
+                "models": {"policy": model},
+                "runtimes": {
+                    "sim-runtime": {
+                        "simulator": "sim",
+                        "model": "policy",
+                        "binding": (
+                            "unitree.go2.streamvln"
+                            if navigation
+                            else "franka.panda.pi05"
+                        ),
+                        "server": {"bind": "127.0.0.1", "port": 8100},
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return load_config(config_path)
+
+
+@pytest.mark.parametrize(
+    "kind,backend,transport",
+    [
+        (kind, "vvla", transport)
+        for kind in ("vlabench", "libero", "habitat", "isaac")
+        for transport in ("http", "wireless")
+    ]
+    + [(kind, "sglang", "http") for kind in ("vlabench", "libero")],
+)
+def test_simulation_plan_preserves_backend_and_environment_boundaries(
+    tmp_path, kind, backend, transport
+) -> None:
+    config = simulation_deployment(tmp_path, kind, backend, transport)
+    profiles = environment_profiles(config)
+    simulation_profile = next(p for p in profiles if p.project == "deploy")
+    model_profile = next(p for p in profiles if p.project == "inference")
+    expected_extras = ("wireless",) if transport == "wireless" else ()
+    assert simulation_profile.group == f"sim-{kind}"
+    assert simulation_profile.extras == model_profile.extras == expected_extras
+    manager = UvEnvironmentManager(RecordingExecutor())
+    command = manager.sync_command(simulation_profile, project_dir="/opt/deploy")
+    assert ("--extra" in command.argv) == (transport == "wireless")
+    if transport == "wireless":
+        assert command.argv[-2:] == ("--extra", "wireless")
+    assert model_profile.install == (
+        "packages" if backend == "sglang" else "project-group"
+    )
+
+    model_service, simulation_service = build_plan(config).services
+    assert model_service.command.argv[0] == (
+        "sglang" if backend == "sglang" else f"vvla-{transport}-serve"
+    )
+    assert simulation_service.command.argv[0] == "rlinf-simulation-serve"
+    runtime = SimulationServiceConfig.from_json(
+        simulation_service.simulation_config_json
+    )
+    assert runtime.inference_backend == backend
+    assert runtime.inference_transport == transport
+    if transport == "wireless":
+        assert runtime.inference_endpoint == "wireless://inference-1"
+        assert runtime.inference_options["comm_config"] == (
+            "/etc/rlinf/simulation-wireless.yaml"
+        )
+
+
+@pytest.mark.parametrize("wireless_first", [False, True])
+def test_simulators_sharing_environment_union_wireless_dependencies(
+    tmp_path, wireless_first
+) -> None:
+    config = simulation_deployment(tmp_path, "habitat", "vvla", "http")
+    other_id = "aaa-wireless" if wireless_first else "zzz-wireless"
+    config = replace(
+        config,
+        simulators={
+            **config.simulators,
+            other_id: replace(config.simulators["sim"], simulator_id=other_id),
+        },
+        models={
+            **config.models,
+            "wireless": replace(
+                config.models["policy"],
+                model_id="wireless",
+                transport="wireless",
+            ),
+        },
+        runtimes={
+            **config.runtimes,
+            "wireless": replace(
+                config.runtimes["sim-runtime"],
+                runtime_id="wireless",
+                simulator=other_id,
+                model="wireless",
+            ),
+        },
+    )
+    profiles = environment_profiles(config)
+    assert len(profiles) == 2
+    assert all(profile.extras == ("wireless",) for profile in profiles)
 
 
 class RecordingExecutor:

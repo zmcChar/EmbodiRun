@@ -48,6 +48,11 @@ def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, 
         for runtime in config.runtimes.values()
         if config.models[runtime.model].transport == "wireless"
     }
+    wireless_simulators = {
+        runtime.simulator
+        for runtime in config.runtimes.values()
+        if config.models[runtime.model].transport == "wireless"
+    }
     for robot in sorted(config.robots.values(), key=lambda item: item.robot_id):
         try:
             group, python = robot_environment_profile(robot.kind)
@@ -88,6 +93,11 @@ def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, 
                 group=definition.environment_group,
                 path=f".venv-{definition.environment_group}",
                 python=definition.python,
+                extras=(
+                    ("wireless",)
+                    if simulator.simulator_id in wireless_simulators
+                    else ()
+                ),
             )
         )
 

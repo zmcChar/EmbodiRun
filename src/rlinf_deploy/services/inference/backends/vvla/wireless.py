@@ -13,7 +13,6 @@ from ...protocols.wireless import (
     WirelessTransport,
 )
 
-
 RPC_SCHEMA = "vvla.policy.rpc.v1"
 REQUEST_TAG = 0x56564C41
 RESPONSE_TAG = 0x56564C42
