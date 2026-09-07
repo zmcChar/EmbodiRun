@@ -222,6 +222,18 @@ the chunk bound is always the stopping condition. A requested chunk length above
 the binding maximum is rejected before connecting to the robot; a short model
 response is rejected before any action from that response is executed.
 
+## Manual control and software emergency stop
+
+The Control service owns the robot connection across model tasks. Task completion
+holds the robot through its adapter; it does not disconnect it or automatically
+return it to a home pose. Service shutdown releases the hardware.
+
+Manual control takes priority over model actions. Software emergency stop latches
+outside the motion queue, cancels active work, and clears pending actions. Reset
+does not resume an interrupted model task. Keyboard input works without a
+joystick; robot-specific joystick mappings remain in the robot packages.
+See [control usage and safety limits](docs/control.md).
+
 ## HTTP contract
 
 The client expects these endpoints:

@@ -3,15 +3,29 @@
 from __future__ import annotations
 
 import math
+import threading
 import time
 import uuid
 from collections.abc import Callable, Sequence
+from typing import Protocol
 
 from rlinf_deploy.bindings import BindingMapper
 from rlinf_deploy.robots import RobotAction, RobotAdapter
 from rlinf_deploy.robots.sensors.cameras import CameraFrame
 
 from ..inference import InferenceClient, PolicyResult
+
+
+class ControlRuntimeCancelled(RuntimeError):
+    """A task-scoped control interruption cancelled model execution."""
+
+
+class CommandSink(Protocol):
+    robot_id: str
+
+    def execute(self, action: RobotAction) -> None: ...
+
+    def stop(self) -> None: ...
 
 
 class ControlRuntime:
@@ -26,16 +40,14 @@ class ControlRuntime:
         mapper: BindingMapper,
         chunk_steps: int,
         control_hz: float = 5.0,
+        command_sink: CommandSink | None = None,
+        cancel_event: threading.Event | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         if not instruction.strip():
             raise ValueError("instruction must not be empty")
-        if (
-            isinstance(chunk_steps, bool)
-            or not isinstance(chunk_steps, int)
-            or chunk_steps <= 0
-        ):
+        if isinstance(chunk_steps, bool) or not isinstance(chunk_steps, int) or chunk_steps <= 0:
             raise ValueError("chunk_steps must be a positive integer")
         if (
             isinstance(control_hz, bool)
@@ -49,6 +61,10 @@ class ControlRuntime:
         self.instruction = instruction
         self.mapper = mapper
         self.chunk_steps = chunk_steps
+        self.command_sink = command_sink
+        if command_sink is not None and command_sink.robot_id != robot.robot_id:
+            raise ValueError("command_sink robot_id must match robot")
+        self.cancel_event = cancel_event
         self.action_period_s = 1.0 / control_hz
         self.monotonic = monotonic
         self.sleep = sleep
@@ -66,6 +82,7 @@ class ControlRuntime:
     ) -> PolicyResult:
         if reset:
             self.reset()
+        self._raise_if_cancelled()
         observation = self.robot.observe()
         request = self.mapper.map_observation(
             observation,
@@ -76,6 +93,7 @@ class ControlRuntime:
             frames=tuple(frames),
         )
         result = self.client.step(request)
+        self._raise_if_cancelled()
         actions = tuple(self.mapper.map_result(result))
         if not actions:
             raise RuntimeError("binding returned an empty action chunk")
@@ -89,18 +107,23 @@ class ControlRuntime:
         actions = actions[: self.chunk_steps]
         deadline_s = self.monotonic()
         for index, action in enumerate(actions):
-            self.robot.execute(action)
+            self._raise_if_cancelled()
+            self._execute(action)
             if index + 1 == len(actions):
                 continue
             deadline_s += self.action_period_s
             remaining_s = deadline_s - self.monotonic()
             if remaining_s > 0:
-                self.sleep(remaining_s)
+                if self.cancel_event is None:
+                    self.sleep(remaining_s)
+                else:
+                    self.cancel_event.wait(remaining_s)
+                    self._raise_if_cancelled()
         self.step_id += 1
         return result
 
     def reset(self) -> None:
-        self.robot.stop()
+        self._stop()
         self.session = self.client.reset(
             self.session.session_id,
             request_id=f"reset-{uuid.uuid4().hex}",
@@ -109,9 +132,25 @@ class ControlRuntime:
 
     def close(self) -> None:
         try:
-            self.robot.stop()
+            self._stop()
         finally:
             self.client.close(self.session.session_id)
 
+    def _execute(self, action: RobotAction) -> None:
+        if self.command_sink is None:
+            self.robot.execute(action)
+            return
+        self.command_sink.execute(action)
 
-__all__ = ["ControlRuntime"]
+    def _stop(self) -> None:
+        if self.command_sink is None:
+            self.robot.stop()
+            return
+        self.command_sink.stop()
+
+    def _raise_if_cancelled(self) -> None:
+        if self.cancel_event is not None and self.cancel_event.is_set():
+            raise ControlRuntimeCancelled("model task was cancelled by control authority")
+
+
+__all__ = ["CommandSink", "ControlRuntime", "ControlRuntimeCancelled"]

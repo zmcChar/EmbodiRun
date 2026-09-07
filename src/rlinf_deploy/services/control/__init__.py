@@ -8,11 +8,12 @@ from .contracts import (
     error_message,
     error_payload,
 )
-from .runtime import ControlRuntime
+from .runtime import ControlRuntime, ControlRuntimeCancelled
 
 __all__ = [
     "ControlContractError",
     "ControlRuntime",
+    "ControlRuntimeCancelled",
     "ControlServiceConfig",
     "TaskRequest",
     "TaskResult",

@@ -119,6 +119,8 @@ def test_control_service_executes_chunks_and_releases_resources(monkeypatch) -> 
             events.append("camera.close")
 
     class Robot:
+        robot_id = "so101-1"
+
         def __init__(self, config):
             events.append(("robot.config", config))
 
@@ -127,6 +129,9 @@ def test_control_service_executes_chunks_and_releases_resources(monkeypatch) -> 
 
         def close(self):
             events.append("robot.close")
+
+        def stop(self):
+            events.append("robot.stop")
 
     class Runtime:
         def __init__(self, robot, client, **options):
@@ -162,12 +167,14 @@ def test_control_service_executes_chunks_and_releases_resources(monkeypatch) -> 
 
     assert result == TaskResult("task-1", "so101-runtime", 2)
     assert events.count("camera.capture") == 2
-    assert events[-4:] == [
+    assert events[-3:] == [
         "runtime.close",
-        "robot.close",
         "camera.close",
         "client.shutdown",
     ]
+    assert "robot.close" not in events
+    service.close()
+    assert events[-2:] == ["robot.stop", "robot.close"]
     runtime_options = next(
         value
         for item in events
@@ -250,9 +257,9 @@ def test_host_client_submits_task_to_control_http_service() -> None:
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        result = ControlClient(
-            LocalExecutor(), f"http://127.0.0.1:{port}"
-        ).run(task_request(), timeout_s=2.0)
+        result = ControlClient(LocalExecutor(), f"http://127.0.0.1:{port}").run(
+            task_request(), timeout_s=2.0
+        )
     finally:
         server.shutdown()
         server.server_close()
