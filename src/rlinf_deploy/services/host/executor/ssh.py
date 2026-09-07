@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import http.client
 import json
+import logging
 import os
 import posixpath
 import shlex
 import uuid
-from pathlib import Path
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -18,6 +19,10 @@ from .command import Command, CommandError, CommandResult
 from .response import JsonHttpResponse
 
 _MAX_JSON_RESPONSE_BYTES = 64 * 1024
+_PARAMIKO_LOG_CHANNEL = "rlinf_deploy.paramiko"
+_PARAMIKO_LOGGER = logging.getLogger(_PARAMIKO_LOG_CHANNEL)
+_PARAMIKO_LOGGER.addHandler(logging.NullHandler())
+_PARAMIKO_LOGGER.propagate = False
 
 
 class SshExecutor:
@@ -42,6 +47,7 @@ class SshExecutor:
             ) from error
 
         client = paramiko.SSHClient()
+        client.set_log_channel(_PARAMIKO_LOG_CHANNEL)
         client.load_system_host_keys()
         if self.connection.accept_new_host_key:
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())

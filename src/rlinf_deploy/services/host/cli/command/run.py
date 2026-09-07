@@ -9,9 +9,11 @@ from typing import Any
 
 from rlinf_deploy.bindings import binding_definition
 from rlinf_deploy.services.control.contracts import TaskRequest
+from rlinf_deploy.services.simulation.contracts import EpisodeRequest
 
 from ...config import config_digest
 from ...control import ControlClient
+from ...simulation import SimulationClient
 from ...state import StateStore
 from ..context import CommandContext
 
@@ -29,22 +31,23 @@ DEFAULT_REQUEST_TIMEOUT_S = 60.0
 def register(commands: Any) -> None:
     parser = commands.add_parser(
         "run",
-        help="submit one task to a configured control runtime",
+        help="run one task or episode on a configured runtime",
     )
     parser.add_argument("--runtime", required=True, help="configured runtime ID")
     parser.add_argument(
         "--prompt",
-        required=True,
-        help="instruction sent unchanged through Control to Inference",
+        help="instruction override; simulators may provide their own instruction",
     )
+    parser.add_argument("--task", help="simulator task override")
+    parser.add_argument("--seed", type=int, help="simulator episode seed")
     parser.add_argument(
         "--chunk-steps",
         type=_positive_integer,
-        default=DEFAULT_CHUNK_STEPS,
+        default=None,
         metavar="N",
         help=(
             "actions to execute from each inference chunk "
-            f"(default: {DEFAULT_CHUNK_STEPS})"
+            f"(default: up to {DEFAULT_CHUNK_STEPS}, capped by the binding)"
         ),
     )
     parser.add_argument(
@@ -78,7 +81,7 @@ def register(commands: Any) -> None:
 
 
 def run(args: argparse.Namespace, context: CommandContext) -> int:
-    if not args.prompt.strip():
+    if args.prompt is not None and not args.prompt.strip():
         raise RunError("--prompt must not be empty")
     runtime = next(
         (
@@ -94,10 +97,21 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
             f"unknown runtime {args.runtime!r}; available runtimes: "
             f"{available or 'none'}"
         )
+    if runtime.target_kind == "robot" and args.prompt is None:
+        raise RunError("--prompt is required for robot runtimes")
+    if runtime.target_kind == "robot" and (
+        args.task is not None or args.seed is not None
+    ):
+        raise RunError("--task and --seed are only valid for simulator runtimes")
     definition = binding_definition(runtime.binding)
-    if args.chunk_steps > definition.maximum_chunk_steps:
+    chunk_steps = (
+        min(DEFAULT_CHUNK_STEPS, definition.maximum_chunk_steps)
+        if args.chunk_steps is None
+        else args.chunk_steps
+    )
+    if chunk_steps > definition.maximum_chunk_steps:
         raise RunError(
-            f"--chunk-steps {args.chunk_steps} exceeds binding "
+            f"--chunk-steps {chunk_steps} exceeds binding "
             f"{runtime.binding!r} maximum {definition.maximum_chunk_steps}"
         )
 
@@ -115,61 +129,83 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
             raise RunError("configuration changed since init; run init again")
         if state.deploy_commit != context.deployment.deploy_commit:
             raise RunError("Deploy revision changed since init; run init again")
-        if state.inference_commit != context.deployment.inference_commit:
-            raise RunError("Inference revision changed since init; run init again")
         environment = state.environments.get(runtime.environment_id)
         if environment is None or environment.status != "ready":
             raise RunError(
                 f"environment {runtime.environment_id!r} is not ready; run init again"
             )
-        service = state.services.get(runtime.control_service_id)
+        service = state.services.get(runtime.service_id)
         if service is None or service.status != "running":
             raise RunError(
-                f"control service {runtime.control_service_id!r} is not running; "
+                f"{runtime.target_kind} service {runtime.service_id!r} is not running; "
                 "run `rlinf-deploy ... up`"
             )
-        if service.node != runtime.node or service.endpoint != runtime.control_endpoint:
+        if service.node != runtime.node or service.endpoint != runtime.service_endpoint:
             raise RunError(
-                f"control service {runtime.control_service_id!r} does not match "
+                f"runtime service {runtime.service_id!r} does not match "
                 "the configured runtime; restart the deployment"
             )
         if runtime.node not in state.nodes:
             raise RunError(f"initialized state is missing node {runtime.node!r}")
-        request = TaskRequest(
-            request_id=f"task-{uuid.uuid4().hex}",
-            runtime_id=runtime.runtime_id,
-            prompt=args.prompt,
-            chunk_steps=args.chunk_steps,
-            max_steps=args.max_steps,
-            control_hz=args.control_hz,
-            inference_timeout_s=args.request_timeout,
-        )
+        request_id = f"task-{uuid.uuid4().hex}"
         progress.advance(runtime.node)
 
+        playback_s = (
+            args.max_steps * max(0, chunk_steps - 1) / args.control_hz
+            if runtime.target_kind == "robot"
+            else 0.0
+        )
         task_timeout_s = max(
-            60.0,
-            args.max_steps * args.request_timeout
-            + args.max_steps * max(0, args.chunk_steps - 1) / args.control_hz
-            + 30.0,
+            60.0, args.max_steps * args.request_timeout + playback_s + 30.0
         )
         progress.update(
             runtime.node,
-            "Executing control task",
-            detail=f"{args.max_steps} chunk(s), {args.chunk_steps} action(s) each",
+            (
+                "Executing control task"
+                if runtime.target_kind == "robot"
+                else "Executing simulation episode"
+            ),
+            detail=f"{args.max_steps} chunk(s), {chunk_steps} action(s) each",
         )
         with context.executor(runtime.node) as executor:
-            result = ControlClient(executor, runtime.control_endpoint).run(
-                request,
-                timeout_s=task_timeout_s,
-            )
+            if runtime.target_kind == "robot":
+                request = TaskRequest(
+                    request_id=request_id,
+                    runtime_id=runtime.runtime_id,
+                    prompt=args.prompt,
+                    chunk_steps=chunk_steps,
+                    max_steps=args.max_steps,
+                    control_hz=args.control_hz,
+                    inference_timeout_s=args.request_timeout,
+                )
+                result = ControlClient(executor, runtime.service_endpoint).run(
+                    request, timeout_s=task_timeout_s
+                )
+                detail = (
+                    f"Completed {result.completed_steps} chunk(s), "
+                    f"{chunk_steps} action(s) each"
+                )
+            else:
+                request = EpisodeRequest(
+                    request_id=request_id,
+                    runtime_id=runtime.runtime_id,
+                    prompt=args.prompt,
+                    task=args.task,
+                    seed=args.seed,
+                    chunk_steps=chunk_steps,
+                    max_policy_steps=args.max_steps,
+                    inference_timeout_s=args.request_timeout,
+                )
+                result = SimulationClient(executor, runtime.service_endpoint).run(
+                    request, timeout_s=task_timeout_s
+                )
+                detail = (
+                    f"Episode completed: {result.policy_steps} policy step(s), "
+                    f"{result.environment_steps} environment step(s), "
+                    f"reward={result.total_reward:g}"
+                )
         progress.advance(runtime.node)
-        progress.succeed(
-            runtime.node,
-            detail=(
-                f"Completed {result.completed_steps} chunk(s), "
-                f"{args.chunk_steps} action(s) each"
-            ),
-        )
+        progress.succeed(runtime.node, detail=detail)
     except BaseException as error:
         progress.fail(runtime.node, error)
         progress.finish(success=False)

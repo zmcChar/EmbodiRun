@@ -13,6 +13,7 @@ from rlinf_deploy.services.inference import (
 class FakeWirelessTransport:
     def __init__(self) -> None:
         self.calls: list[tuple[str, Mapping[str, Any] | None, float]] = []
+        self.shutdown_calls = 0
 
     def request(self, method, payload, *, timeout_s):
         self.calls.append((method, payload, timeout_s))
@@ -31,7 +32,7 @@ class FakeWirelessTransport:
         raise AssertionError(f"unexpected method: {method}")
 
     def shutdown(self) -> None:
-        pass
+        self.shutdown_calls += 1
 
 
 def test_wireless_client_builds_structured_step_payload() -> None:
@@ -57,3 +58,19 @@ def test_wireless_client_builds_structured_step_payload() -> None:
     ]
     assert timeout_s == 2.5
     assert result.request_id == "request-1"
+
+
+def test_wireless_client_timeout_view_does_not_close_shared_transport() -> None:
+    transport = FakeWirelessTransport()
+    owner = VvlaWirelessClient(transport, timeout_s=2.0)
+    request_client = owner.with_timeout(60.0)
+
+    request_client.open_session(robot_id="fr3", action_space="pi05.action_chunk.v1")
+    request_client.shutdown()
+
+    assert transport.calls[0][2] == 60.0
+    assert transport.shutdown_calls == 0
+
+    owner.shutdown()
+
+    assert transport.shutdown_calls == 1

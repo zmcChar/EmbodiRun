@@ -17,7 +17,7 @@ from rlinf_deploy.bindings import BindingDefinition, binding_definition
 from rlinf_deploy.robots import RobotDefinition, robot_definition
 from rlinf_deploy.robots.sensors import SensorInput
 from rlinf_deploy.robots.sensors.cameras import CameraSource, create_camera_source
-from rlinf_deploy.services.inference import VvlaHttpClient, VvlaWirelessClient
+from rlinf_deploy.services.inference import build_inference_client
 
 from .contracts import (
     ControlContractError,
@@ -62,15 +62,17 @@ class ControlService:
         self.monotonic = monotonic
         self.sleep = sleep
         self._task_lock = threading.Lock()
+        self._client_lock = threading.Lock()
+        self._wireless_client: Any | None = None
 
     def health(self) -> dict[str, Any]:
         """Report ready only when the configured inference service is reachable."""
 
-        client = self.client_factory(self.config, 2.0)
+        client = self._inference_client(2.0)
         try:
             health = client.health()
         finally:
-            _shutdown_client(client)
+            self._release_inference_client(client)
         if health.get("status") != "ok":
             raise ControlServiceError(
                 f"inference service at {self.config.inference_endpoint} is not healthy"
@@ -111,7 +113,7 @@ class ControlService:
                 f"robot {self.config.robot_id!r} configuration is invalid: {error}"
             ) from error
 
-        client = self.client_factory(self.config, request.inference_timeout_s)
+        client = self._inference_client(request.inference_timeout_s)
         cameras: CameraSource | None = None
         robot: Any | None = None
         controller: Any | None = None
@@ -152,27 +154,41 @@ class ControlService:
                         if cameras is not None:
                             cameras.close()
                     finally:
-                        _shutdown_client(client)
+                        self._release_inference_client(client)
         return TaskResult(request.request_id, request.runtime_id, completed)
+
+    def close(self) -> None:
+        """Release the process-owned wireless connection, when configured."""
+
+        with self._client_lock:
+            client = self._wireless_client
+            self._wireless_client = None
+        if client is not None:
+            _shutdown_client(client)
+
+    def _inference_client(self, timeout_s: float) -> Any:
+        if self.config.inference_transport != "wireless":
+            return self.client_factory(self.config, timeout_s)
+        with self._client_lock:
+            if self._wireless_client is None:
+                self._wireless_client = self.client_factory(self.config, timeout_s)
+            client = self._wireless_client
+        with_timeout = getattr(client, "with_timeout", None)
+        return with_timeout(timeout_s) if callable(with_timeout) else client
+
+    def _release_inference_client(self, client: Any) -> None:
+        if self.config.inference_transport != "wireless":
+            _shutdown_client(client)
 
 
 def create_inference_client(config: ControlServiceConfig, timeout_s: float) -> Any:
     """Select the Control-to-Inference client from the static runtime config."""
 
-    if config.inference_transport == "http":
-        token = config.inference_options.get("token")
-        if token is not None and not isinstance(token, str):
-            raise ControlServiceError("inference token must be a string")
-        return VvlaHttpClient(config.inference_endpoint, token=token, timeout_s=timeout_s)
-    comm_config = _option_string(config.inference_options, "comm_config")
-    server_node_id = _option_string(config.inference_options, "server_node_id")
-    token = config.inference_options.get("token")
-    if token is not None and not isinstance(token, str):
-        raise ControlServiceError("inference token must be a string")
-    return VvlaWirelessClient.from_config(
-        comm_config,
-        server_node_id=server_node_id,
-        token=token,
+    return build_inference_client(
+        config.inference_transport,
+        config.inference_endpoint,
+        config.inference_options,
+        backend=config.inference_backend,
         timeout_s=timeout_s,
     )
 
@@ -290,6 +306,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         server.serve_forever()
     finally:
         server.server_close()
+        server.control_service.close()
     return 0
 
 
@@ -313,13 +330,6 @@ def _definitions(
             f"robot type {config.robot_kind!r} is not available"
         ) from None
     return binding, robot
-
-
-def _option_string(options: Mapping[str, Any], name: str) -> str:
-    value = options.get(name)
-    if not isinstance(value, str) or not value.strip():
-        raise ControlServiceError(f"inference option {name!r} must be non-empty")
-    return value
 
 
 def _shutdown_client(client: Any) -> None:

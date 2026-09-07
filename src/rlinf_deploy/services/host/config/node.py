@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .connection import ConnectionConfig, parse_connection
-from .validation import mapping, string
+from .validation import mapping, optional_string, string
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,6 +15,7 @@ class NodeConfig:
     kind: str
     connection: ConnectionConfig
     options: dict[str, Any] = field(default_factory=dict, repr=False)
+    address: str | None = None
 
 
 def parse_node(node_id: str, value: dict[str, Any]) -> NodeConfig:
@@ -26,6 +27,7 @@ def parse_node(node_id: str, value: dict[str, Any]) -> NodeConfig:
         kind=string(value, "type", f"nodes.{node_id}"),
         connection=connection,
         options=dict(value),
+        address=optional_string(value, "address", f"nodes.{node_id}"),
     )
 
 

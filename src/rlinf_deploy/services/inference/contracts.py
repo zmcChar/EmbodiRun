@@ -1,4 +1,4 @@
-"""Model-independent values exchanged with a VVLA policy server."""
+"""Model-independent values exchanged with inference services."""
 
 from __future__ import annotations
 

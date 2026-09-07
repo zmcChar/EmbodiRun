@@ -13,10 +13,6 @@ from .mapper import (
 MAXIMUM_CHUNK_STEPS = 50
 ADAPTER_CONFIG = {
     "state_fields": ("joint_positions_deg", "gripper_position"),
-    "image_fields": (
-        "observation.images.front",
-        "observation.images.wrist",
-    ),
     "action_feature_names": SO101_POSITION_FEATURES,
 }
 

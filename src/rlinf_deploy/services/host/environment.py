@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import posixpath
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from rlinf_deploy.robots import robot_definition
+from rlinf_deploy.simulators import simulator_definition
 
 from .config import DeploymentConfig
 from .executor import Command, CommandResult, Executor
 
 _MODEL_PYTHON: dict[str, str] = {
     "pi05": "3.12",
+    "sglang": "3.12",
+    "streamvln": "3.12",
 }
 
 
@@ -32,12 +35,24 @@ class EnvironmentProfile:
     python: str | None = None
     package_index: str | None = None
     packages: tuple[str, ...] = ()
+    extras: tuple[str, ...] = ()
+    install: Literal["project-group", "packages"] = "project-group"
 
 
 def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, ...]:
     """Return the distinct uv environments needed by the deployment."""
 
     profiles: list[EnvironmentProfile] = []
+    wireless_robots = {
+        runtime.robot
+        for runtime in config.runtimes.values()
+        if config.models[runtime.model].transport == "wireless"
+    }
+    wireless_simulators = {
+        runtime.simulator
+        for runtime in config.runtimes.values()
+        if config.models[runtime.model].transport == "wireless"
+    }
     for robot in sorted(config.robots.values(), key=lambda item: item.robot_id):
         try:
             group, python = robot_environment_profile(robot.kind)
@@ -54,16 +69,51 @@ def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, 
                 group=group,
                 path=f".venv-{group}",
                 python=python,
+                extras=("wireless",) if robot.robot_id in wireless_robots else (),
+            )
+        )
+
+    for simulator in sorted(
+        config.simulators.values(), key=lambda item: item.simulator_id
+    ):
+        try:
+            definition = simulator_definition(simulator.kind)
+        except (KeyError, TypeError):
+            raise EnvironmentError(
+                f"simulator {simulator.simulator_id!r} has no environment profile "
+                f"for type {simulator.kind!r}"
+            ) from None
+        profiles.append(
+            EnvironmentProfile(
+                environment_id=(
+                    f"{simulator.node}:deploy:{definition.environment_group}"
+                ),
+                node=simulator.node,
+                project="deploy",
+                group=definition.environment_group,
+                path=f".venv-{definition.environment_group}",
+                python=definition.python,
+                extras=(
+                    ("wireless",)
+                    if simulator.simulator_id in wireless_simulators
+                    else ()
+                ),
             )
         )
 
     for model in sorted(config.models.values(), key=lambda item: item.model_id):
-        if model.backend != "vvla":
+        if model.backend not in {"vvla", "sglang"}:
             raise EnvironmentError(
                 f"model {model.model_id!r} uses unsupported backend {model.backend!r}"
             )
-        group = model.kind
-        path = model.environment or f".venv-vvla-{group}"
+        if model.backend == "sglang" and not model.environment_packages:
+            raise EnvironmentError(
+                f"model {model.model_id!r} must set environment_packages to an "
+                "SGLang diffusion installation; pin it by version or commit for "
+                "reproducibility"
+            )
+        group = model.kind if model.backend == "vvla" else "sglang"
+        path = model.environment or f".venv-{model.backend}-{model.kind}"
         profiles.append(
             EnvironmentProfile(
                 environment_id=f"{model.node}:inference:{group}:{path}",
@@ -74,6 +124,10 @@ def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, 
                 python=model.python or _MODEL_PYTHON.get(group),
                 package_index=model.environment_index,
                 packages=model.environment_packages,
+                extras=("wireless",) if model.transport == "wireless" else (),
+                install=(
+                    "project-group" if model.backend == "vvla" else "packages"
+                ),
             )
         )
 
@@ -95,12 +149,20 @@ def _deduplicate(profiles: list[EnvironmentProfile]) -> tuple[EnvironmentProfile
     for profile in profiles:
         identity = (profile.node, profile.path)
         previous = by_identity.get(identity)
-        if previous is not None and previous != profile:
+        if previous is not None and replace(previous, extras=()) != replace(
+            profile, extras=()
+        ):
             raise EnvironmentError(
                 f"environment path {profile.path!r} on node {profile.node!r} is "
                 "assigned incompatible profiles"
             )
-        by_identity[identity] = profile
+        if previous is None:
+            by_identity[identity] = profile
+        else:
+            by_identity[identity] = replace(
+                previous,
+                extras=tuple(sorted(set(previous.extras) | set(profile.extras))),
+            )
     return tuple(
         sorted(
             by_identity.values(),
@@ -117,6 +179,16 @@ class UvEnvironmentManager:
         self.uv_executable = uv_executable
 
     def sync_command(self, profile: EnvironmentProfile, *, project_dir: str) -> Command:
+        if profile.install == "packages":
+            argv = [self.uv_executable, "venv"]
+            if profile.python is not None:
+                argv.extend(("--python", profile.python))
+            argv.append(profile.path)
+            return Command(
+                argv=tuple(argv),
+                cwd=project_dir,
+                timeout_s=1800.0,
+            )
         argv = [
             self.uv_executable,
             "sync",
@@ -127,6 +199,8 @@ class UvEnvironmentManager:
         ]
         if profile.python is not None:
             argv[2:2] = ["--python", profile.python]
+        for extra in profile.extras:
+            argv.extend(("--extra", extra))
         return Command(
             argv=tuple(argv),
             cwd=project_dir,
@@ -140,16 +214,76 @@ class UvEnvironmentManager:
         *,
         project_dir: str,
     ) -> CommandResult:
-        """Synchronize exactly the locked capability group for one profile."""
+        """Synchronize a project group or a pinned standalone package set."""
 
-        result = self.executor.run(
-            self.sync_command(profile, project_dir=project_dir)
+        result = (
+            self._existing_environment(profile, project_dir=project_dir)
+            if profile.install == "packages"
+            else None
         )
+        if result is None:
+            result = self.executor.run(
+                self.sync_command(profile, project_dir=project_dir)
+            )
         if not profile.packages:
             return result
-        return self.executor.run(
-            self.package_command(profile, project_dir=project_dir)
+        return self.executor.run(self.package_command(profile, project_dir=project_dir))
+
+    def _existing_environment(
+        self,
+        profile: EnvironmentProfile,
+        *,
+        project_dir: str,
+    ) -> CommandResult | None:
+        """Reuse a valid standalone environment without changing its interpreter."""
+
+        path = posixpath.join(project_dir, profile.path)
+        exists = self.executor.run(
+            Command(("test", "-f", posixpath.join(path, "pyvenv.cfg")), timeout_s=20.0),
+            check=False,
         )
+        if exists.exit_code != 0:
+            return None
+
+        find_python = (
+            self.uv_executable,
+            "python",
+            "find",
+            "--no-project",
+            "--no-python-downloads",
+            "--resolve-links",
+        )
+        actual = self.executor.run(
+            Command((*find_python, path), cwd=project_dir, timeout_s=20.0),
+            check=False,
+        )
+        if actual.exit_code != 0 or not actual.stdout.strip():
+            raise EnvironmentError(
+                f"environment {path!r} has an unusable Python interpreter; "
+                "choose a different environment path or repair it before retrying init"
+            )
+        if profile.python is not None:
+            # uv prefers the active environment if it satisfies the request;
+            # resolving links also supports requests naming an interpreter path.
+            requested = self.executor.run(
+                Command(
+                    (*find_python, profile.python),
+                    cwd=project_dir,
+                    environment={"VIRTUAL_ENV": path},
+                    timeout_s=20.0,
+                ),
+                check=False,
+            )
+            if (
+                requested.exit_code != 0
+                or requested.stdout.strip() != actual.stdout.strip()
+            ):
+                raise EnvironmentError(
+                    f"environment {path!r} does not match configured Python "
+                    f"{profile.python!r}; choose a different environment path or "
+                    "explicitly rebuild it before retrying init"
+                )
+        return actual
 
     def package_command(
         self,

@@ -241,24 +241,34 @@ and `session_revision` provide idempotency and ordering.
 
 ## WirelessComm contract
 
-Install the optional client and give both processes complementary WirelessComm
-YAML files whose peer directories contain each other. Start the inference process
-with `vvla-wireless-serve`, then create the Deploy client from its local config:
+For Host-managed deployment, use
+[`configs/thor-orin-nx-wireless.yaml`](configs/thor-orin-nx-wireless.yaml).
+It has the same `nodes`, `models`, and `runtimes` structure as HTTP deployments:
 
-```python
-from rlinf_deploy import VvlaWirelessClient
+- `models.<id>.server` is the actual inference listener for either transport.
+- `runtimes.<id>.server` remains the loopback HTTP interface used by Host.
+- Wireless runtimes additionally declare `inference_client.bind` and `port`,
+  since each client process also listens for WirelessComm traffic. HTTP runtimes
+  do not declare this block.
+- Optional `transport_options` under a model or `inference_client` are passed to
+  that endpoint's native WirelessComm `comm` settings. These are independent
+  per-endpoint settings, validated by WirelessComm when the endpoint starts.
 
-client = VvlaWirelessClient.from_config(
-    "configs/wireless.example.yaml",
-    server_node_id="inference-1",
-    token="shared-token",
-    timeout_s=5.0,
-)
-try:
-    capabilities = client.capabilities()
-finally:
-    client.shutdown()
-```
+For cross-node wildcard listeners, the advertised data address defaults to
+`nodes.<id>.connection.host`. Set `nodes.<id>.address` when the SSH host is a
+management address or tunnel, or when a `local` node needs to serve another node.
+Explicit listener addresses must themselves be reachable by their peers;
+loopback listeners cannot serve other nodes. Each listener on the same node
+must use a distinct port, including Host-facing HTTP and WirelessComm listeners.
+
+`validate` checks the topology without contacting nodes. `init` prepares the
+environments, including the wireless extra. During `up`, Host generates native
+WirelessComm configs under each node's deployment `generated/` directory and
+passes their absolute paths to VVLA and the robot/simulator runtime. Peer IDs
+identify model/runtime instances: a model lists all its runtimes, while a runtime
+lists only its selected model. Do not specify `comm_config`, `client_comm_config`,
+or `server_node_id` in the deployment YAML anymore. Changes to a running topology
+require `down` → `init` → `up`; generated files are not hot-reloaded.
 
 Wireless steps carry the same versioned session/step fields as HTTP, while image
 bytes remain separate WirelessComm payload segments instead of being assembled as

@@ -23,6 +23,13 @@ from rlinf_deploy.services.control.server import (
 )
 from rlinf_deploy.services.host.control import ControlClient
 from rlinf_deploy.services.host.executor import LocalExecutor
+from rlinf_deploy.services.inference import VvlaWirelessClient
+from rlinf_deploy.services.simulation.contracts import (
+    EpisodeRequest,
+    SimulationServiceConfig,
+)
+from rlinf_deploy.services.simulation.runtime import EpisodeOutcome
+from rlinf_deploy.services.simulation.server import SimulationService
 
 
 def control_config(*, port: int = 8100) -> ControlServiceConfig:
@@ -189,6 +196,46 @@ def test_control_service_serializes_robot_tasks() -> None:
         service._task_lock.release()
 
 
+def test_control_service_reuses_wireless_client_across_health_checks() -> None:
+    created = 0
+    shutdown = 0
+
+    class Client:
+        def health(self):
+            return {"status": "ok"}
+
+        def shutdown(self):
+            nonlocal shutdown
+            shutdown += 1
+
+    def client_factory(_config, _timeout):
+        nonlocal created
+        created += 1
+        return Client()
+
+    service = ControlService(
+        replace(
+            control_config(),
+            inference_transport="wireless",
+            inference_endpoint="wireless://inference-thor",
+            inference_options={
+                "comm_config": "/etc/rlinf/control-wireless.yaml",
+                "server_node_id": "inference-thor",
+            },
+        ),
+        client_factory=client_factory,
+    )
+
+    assert service.health()["status"] == "ok"
+    assert service.health()["status"] == "ok"
+    assert created == 1
+    assert shutdown == 0
+
+    service.close()
+
+    assert shutdown == 1
+
+
 def test_host_client_submits_task_to_control_http_service() -> None:
     port = _unused_loopback_port()
     config = control_config(port=port)
@@ -221,6 +268,108 @@ def test_host_client_submits_task_to_control_http_service() -> None:
     assert result == TaskResult("task-1", "so101-runtime", 2)
     assert service.received == task_request()
     assert not thread.is_alive()
+
+
+@pytest.mark.parametrize("episode_fails", [False, True])
+def test_simulation_keeps_wireless_connection_until_service_close(
+    monkeypatch, episode_fails
+) -> None:
+    events = []
+    calls = []
+    created = []
+
+    class Transport:
+        def request(self, method, payload, *, timeout_s):
+            calls.append((method, timeout_s))
+            if method == "health":
+                return {"status": "ok"}
+            if method == "open_session":
+                return {"session_id": "session-1", "session_revision": 0}
+            if method == "close":
+                events.append("session.close")
+                return {}
+            raise AssertionError(method)
+
+        def shutdown(self):
+            events.append("transport.shutdown")
+
+    def client_factory(_config, timeout_s):
+        client = VvlaWirelessClient(Transport(), timeout_s=timeout_s)
+        created.append(client)
+        return client
+
+    class Simulator:
+        def __init__(self, config):
+            pass
+
+        def close(self):
+            events.append("simulator.close")
+
+    class Runtime:
+        def __init__(self, simulator, client, **options):
+            self.client = client
+            self.session = None
+
+        def run(self, **options):
+            self.session = self.client.open_session(
+                robot_id="sim", action_space="pi05.action_chunk.v1"
+            )
+            # A health request while an episode owns the connection must be safe.
+            assert service.health()["status"] == "ok"
+            assert self.client.timeout_s == 60.0
+            if episode_fails:
+                raise RuntimeError("episode failed")
+            return EpisodeOutcome(1, 1, 0.0, True, False)
+
+        def close(self):
+            if self.session is not None:
+                self.client.close(self.session.session_id)
+
+    monkeypatch.setattr(
+        "rlinf_deploy.services.simulation.server.simulator_definition",
+        lambda _kind: SimpleNamespace(
+            embodiment_kind="franka.panda.eef",
+            config_factory=lambda _id, options: options,
+            adapter_type=Simulator,
+        ),
+    )
+    service = SimulationService(
+        SimulationServiceConfig(
+            runtime_id="sim-runtime",
+            binding_kind="franka.panda.pi05",
+            bind="127.0.0.1",
+            port=8100,
+            inference_transport="wireless",
+            inference_endpoint="wireless://inference-1",
+            inference_options={},
+            simulator_id="sim",
+            simulator_kind="vlabench",
+            simulator_options={},
+        ),
+        client_factory=client_factory,
+        runtime_factory=Runtime,
+    )
+    request = EpisodeRequest("episode-1", "sim-runtime", "pick up", None, 0, 1, 1, 60.0)
+    try:
+        assert service.health()["status"] == "ok"
+        for _ in range(2):
+            if episode_fails:
+                with pytest.raises(RuntimeError, match="episode failed"):
+                    service.execute(request)
+            else:
+                assert service.execute(request).policy_steps == 1
+            assert service.health()["status"] == "ok"
+        assert len(created) == 1
+        assert events == ["session.close", "simulator.close"] * 2
+        assert [timeout for method, timeout in calls if method == "open_session"] == [
+            60.0
+        ] * 2
+        assert calls.count(("health", 2.0)) == 5
+        assert calls.count(("health", 60.0)) == 2
+    finally:
+        service.close()
+    service.close()
+    assert events.count("transport.shutdown") == 1
 
 
 def _unused_loopback_port() -> int:

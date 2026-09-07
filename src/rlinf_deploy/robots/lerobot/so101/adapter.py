@@ -1,11 +1,15 @@
-"""Fail-closed SO-101 follower execution through the LeRobot API."""
+"""Fail-closed SO-101 follower execution through the Feetech SDK."""
 
 from __future__ import annotations
 
+import json
 import math
+import os
 import time
 from collections.abc import Mapping, Sequence
-from typing import Any
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Protocol
 
 from ...adapter import RobotAction, RobotAdapter, RobotObservation
 from .config import SO101Config
@@ -21,9 +25,432 @@ SO101_JOINTS = (
 SO101_MOTORS = (*SO101_JOINTS, "gripper")
 SO101_POSITION_FEATURES = tuple(f"{name}.pos" for name in SO101_MOTORS)
 
+_MOTOR_IDS = dict(zip(SO101_MOTORS, range(1, 7)))
+_STS3215_MODEL_NUMBER = 777
+_ENCODER_RESOLUTION = 4096
+_READ_RETRIES = 2
+
+_RETURN_DELAY = (7, 1)
+_MIN_POSITION = (9, 2)
+_MAX_POSITION = (11, 2)
+_MAX_TORQUE = (16, 2)
+_PHASE = (18, 1)
+_P_COEFFICIENT = (21, 1)
+_D_COEFFICIENT = (22, 1)
+_I_COEFFICIENT = (23, 1)
+_PROTECTION_CURRENT = (28, 2)
+_HOMING_OFFSET = (31, 2)
+_OPERATING_MODE = (33, 1)
+_OVERLOAD_TORQUE = (36, 1)
+_TORQUE_ENABLE = (40, 1)
+_ACCELERATION = (41, 1)
+_GOAL_POSITION = (42, 2)
+_LOCK = (55, 1)
+_PRESENT_POSITION = (56, 2)
+_MAXIMUM_ACCELERATION = (85, 1)
+
 
 class SO101AdapterError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class _MotorCalibration:
+    motor_id: int
+    drive_mode: int
+    homing_offset: int
+    range_min: int
+    range_max: int
+
+
+class _SO101Controller(Protocol):
+    @property
+    def is_connected(self) -> bool: ...
+
+    @property
+    def is_calibrated(self) -> bool: ...
+
+    def connect(self, *, calibrate: bool) -> None: ...
+
+    def get_observation(self) -> Mapping[str, object]: ...
+
+    def send_action(self, action: Mapping[str, float]) -> None: ...
+
+    def disconnect(self) -> None: ...
+
+
+def _integer(value: object, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise SO101AdapterError(f"{name} must be an integer")
+    return value
+
+
+def _default_calibration_dir() -> Path:
+    configured = os.environ.get("HF_LEROBOT_CALIBRATION")
+    if configured:
+        root = Path(configured).expanduser()
+    else:
+        lerobot_home = os.environ.get("HF_LEROBOT_HOME")
+        if lerobot_home:
+            root = Path(lerobot_home).expanduser() / "calibration"
+        else:
+            hf_home = Path(
+                os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")
+            ).expanduser()
+            root = hf_home / "lerobot" / "calibration"
+    return root / "robots" / "so_follower"
+
+
+def _load_calibration(config: SO101Config) -> dict[str, _MotorCalibration]:
+    calibration_dir = config.calibration_dir or _default_calibration_dir()
+    calibration_id = config.calibration_id or config.robot_id
+    path = calibration_dir / f"{calibration_id}.json"
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise SO101AdapterError(
+            f"SO-101 calibration file does not exist: {path}"
+        ) from None
+    except (OSError, json.JSONDecodeError) as error:
+        raise SO101AdapterError(
+            f"failed to read SO-101 calibration file {path}: {error}"
+        ) from error
+    if not isinstance(value, Mapping):
+        raise SO101AdapterError(
+            f"SO-101 calibration file must contain an object: {path}"
+        )
+
+    expected = set(SO101_MOTORS)
+    actual = set(value)
+    if actual != expected:
+        raise SO101AdapterError(
+            "SO-101 calibration motors do not match the hardware; "
+            f"missing={sorted(expected - actual)!r}, "
+            f"unexpected={sorted(actual - expected)!r}"
+        )
+
+    calibration: dict[str, _MotorCalibration] = {}
+    required_fields = {
+        "id",
+        "drive_mode",
+        "homing_offset",
+        "range_min",
+        "range_max",
+    }
+    for motor in SO101_MOTORS:
+        item = value[motor]
+        if not isinstance(item, Mapping) or set(item) != required_fields:
+            raise SO101AdapterError(
+                f"SO-101 calibration for {motor!r} must contain "
+                f"{sorted(required_fields)!r}"
+            )
+        motor_id = _integer(item["id"], f"calibration.{motor}.id")
+        drive_mode = _integer(item["drive_mode"], f"calibration.{motor}.drive_mode")
+        homing_offset = _integer(
+            item["homing_offset"], f"calibration.{motor}.homing_offset"
+        )
+        range_min = _integer(item["range_min"], f"calibration.{motor}.range_min")
+        range_max = _integer(item["range_max"], f"calibration.{motor}.range_max")
+        if motor_id != _MOTOR_IDS[motor]:
+            raise SO101AdapterError(
+                f"calibration.{motor}.id must be {_MOTOR_IDS[motor]}, got {motor_id}"
+            )
+        if drive_mode not in (0, 1):
+            raise SO101AdapterError(f"calibration.{motor}.drive_mode must be 0 or 1")
+        if range_min == range_max:
+            raise SO101AdapterError(
+                f"calibration.{motor} range_min and range_max must differ"
+            )
+        calibration[motor] = _MotorCalibration(
+            motor_id=motor_id,
+            drive_mode=drive_mode,
+            homing_offset=homing_offset,
+            range_min=range_min,
+            range_max=range_max,
+        )
+    return calibration
+
+
+def _decode_sign_magnitude(value: int, sign_bit: int) -> int:
+    mask = 1 << sign_bit
+    return -(value & ~mask) if value & mask else value
+
+
+def _encode_sign_magnitude(value: int, sign_bit: int) -> int:
+    return (-value | (1 << sign_bit)) if value < 0 else value
+
+
+class _FeetechSO101Controller:
+    """Minimal STS3215 bus used by the Deploy SO-101 adapter."""
+
+    def __init__(self, config: SO101Config) -> None:
+        try:
+            import scservo_sdk
+        except ImportError as error:
+            raise SO101AdapterError(
+                "SO-101 support requires the Feetech servo SDK; run "
+                "`uv sync --frozen --no-dev --group robot-so101`"
+            ) from error
+
+        self.config = config
+        self.calibration = _load_calibration(config)
+        self.sdk = scservo_sdk
+        self.port_handler = scservo_sdk.PortHandler(config.port)
+        # The PyPI SDK underestimates packet timeouts for a multi-motor bus.
+        self.port_handler.setPacketTimeout = self._set_packet_timeout
+        self.packet_handler = scservo_sdk.PacketHandler(0)
+        self._connected = False
+        self._calibrated = False
+
+    @property
+    def is_connected(self) -> bool:
+        return self._connected
+
+    @property
+    def is_calibrated(self) -> bool:
+        return self._calibrated
+
+    def _set_packet_timeout(self, packet_length: int) -> None:
+        self.port_handler.packet_start_time = self.port_handler.getCurrentTime()
+        byte_time = self.port_handler.tx_time_per_byte
+        self.port_handler.packet_timeout = (
+            byte_time * packet_length + byte_time * 3 + 50
+        )
+
+    def _communication_error(self, operation: str, result: int, error: int) -> None:
+        if result != self.sdk.COMM_SUCCESS:
+            detail = self.packet_handler.getTxRxResult(result)
+            raise SO101AdapterError(f"{operation} failed: {detail}")
+        if error:
+            detail = self.packet_handler.getRxPacketError(error)
+            raise SO101AdapterError(f"{operation} failed: {detail}")
+
+    def _read_register(
+        self,
+        motor_id: int,
+        register: tuple[int, int],
+        *,
+        sign_bit: int | None = None,
+        retries: int = _READ_RETRIES,
+    ) -> int:
+        address, size = register
+        read = {
+            1: self.packet_handler.read1ByteTxRx,
+            2: self.packet_handler.read2ByteTxRx,
+        }[size]
+        for attempt in range(retries + 1):
+            value, result, error = read(self.port_handler, motor_id, address)
+            if result == self.sdk.COMM_SUCCESS and not error:
+                return (
+                    _decode_sign_magnitude(value, sign_bit)
+                    if sign_bit is not None
+                    else value
+                )
+            if attempt == retries:
+                self._communication_error(
+                    f"read register {address} from motor {motor_id}", result, error
+                )
+        raise AssertionError("unreachable")
+
+    def _write_register(
+        self,
+        motor_id: int,
+        register: tuple[int, int],
+        value: int,
+        *,
+        sign_bit: int | None = None,
+        retries: int = _READ_RETRIES,
+    ) -> None:
+        address, size = register
+        if sign_bit is not None:
+            value = _encode_sign_magnitude(value, sign_bit)
+        write = {
+            1: self.packet_handler.write1ByteTxRx,
+            2: self.packet_handler.write2ByteTxRx,
+        }[size]
+        for attempt in range(retries + 1):
+            result, error = write(self.port_handler, motor_id, address, value)
+            if result == self.sdk.COMM_SUCCESS and not error:
+                return
+            if attempt == retries:
+                self._communication_error(
+                    f"write register {address} on motor {motor_id}", result, error
+                )
+
+    def _handshake(self) -> None:
+        firmware_versions: set[tuple[int, int]] = set()
+        for motor, motor_id in _MOTOR_IDS.items():
+            model, result, error = self.packet_handler.ping(self.port_handler, motor_id)
+            self._communication_error(f"ping motor {motor!r}", result, error)
+            if model != _STS3215_MODEL_NUMBER:
+                raise SO101AdapterError(
+                    f"motor {motor!r} has model number {model}; "
+                    f"expected STS3215 ({_STS3215_MODEL_NUMBER})"
+                )
+            firmware_versions.add(
+                (
+                    self._read_register(motor_id, (0, 1)),
+                    self._read_register(motor_id, (1, 1)),
+                )
+            )
+        if len(firmware_versions) != 1:
+            raise SO101AdapterError(
+                "SO-101 motors must use the same firmware version; "
+                f"found {sorted(firmware_versions)!r}"
+            )
+
+    def _matches_calibration(self) -> bool:
+        for motor, item in self.calibration.items():
+            motor_id = item.motor_id
+            if self._read_register(motor_id, _MIN_POSITION) != item.range_min:
+                return False
+            if self._read_register(motor_id, _MAX_POSITION) != item.range_max:
+                return False
+            if (
+                self._read_register(motor_id, _HOMING_OFFSET, sign_bit=11)
+                != item.homing_offset
+            ):
+                return False
+        return True
+
+    def _set_torque(self, enabled: bool) -> None:
+        for motor_id in _MOTOR_IDS.values():
+            self._write_register(motor_id, _TORQUE_ENABLE, int(enabled))
+            self._write_register(motor_id, _LOCK, int(enabled))
+
+    def _configure(self) -> None:
+        self._set_torque(False)
+        try:
+            for motor, motor_id in _MOTOR_IDS.items():
+                self._write_register(motor_id, _RETURN_DELAY, 0)
+                self._write_register(motor_id, _MAXIMUM_ACCELERATION, 254)
+                self._write_register(motor_id, _ACCELERATION, 254)
+                phase = self._read_register(motor_id, _PHASE)
+                if phase & 0x10:
+                    self._write_register(motor_id, _PHASE, phase & ~0x10)
+                self._write_register(motor_id, _OPERATING_MODE, 0)
+                self._write_register(motor_id, _P_COEFFICIENT, 16)
+                self._write_register(motor_id, _I_COEFFICIENT, 0)
+                self._write_register(motor_id, _D_COEFFICIENT, 32)
+                if motor == "gripper":
+                    self._write_register(motor_id, _MAX_TORQUE, 500)
+                    self._write_register(motor_id, _PROTECTION_CURRENT, 250)
+                    self._write_register(motor_id, _OVERLOAD_TORQUE, 25)
+        except BaseException:
+            # Leave the arm torque-disabled when configuration is incomplete.
+            raise
+        else:
+            self._set_torque(True)
+
+    def connect(self, *, calibrate: bool) -> None:
+        if calibrate:
+            raise SO101AdapterError(
+                "interactive calibration is not supported by the Deploy runtime"
+            )
+        if self.is_connected:
+            return
+        try:
+            if not self.port_handler.openPort():
+                raise SO101AdapterError(
+                    f"failed to open SO-101 port {self.config.port}"
+                )
+            self._connected = True
+            self.port_handler.setPacketTimeoutMillis(1000)
+            self._handshake()
+            self._calibrated = self._matches_calibration()
+            if self._calibrated:
+                self._configure()
+        except BaseException:
+            self._close_port()
+            raise
+
+    def _normalized_position(self, motor: str, raw: int) -> float:
+        item = self.calibration[motor]
+        if motor == "gripper":
+            bounded = min(item.range_max, max(item.range_min, raw))
+            normalized = (
+                (bounded - item.range_min) * 100 / (item.range_max - item.range_min)
+            )
+            return 100 - normalized if item.drive_mode else normalized
+        midpoint = (item.range_min + item.range_max) / 2
+        return (raw - midpoint) * 360 / (_ENCODER_RESOLUTION - 1)
+
+    def _raw_position(self, motor: str, normalized: float) -> int:
+        item = self.calibration[motor]
+        if motor == "gripper":
+            bounded = min(100.0, max(0.0, normalized))
+            if item.drive_mode:
+                bounded = 100 - bounded
+            return int(
+                bounded / 100 * (item.range_max - item.range_min) + item.range_min
+            )
+        midpoint = (item.range_min + item.range_max) / 2
+        return int(normalized * (_ENCODER_RESOLUTION - 1) / 360 + midpoint)
+
+    def _read_positions(self) -> dict[str, float]:
+        address, size = _PRESENT_POSITION
+        reader = self.sdk.GroupSyncRead(
+            self.port_handler, self.packet_handler, address, size
+        )
+        for motor_id in _MOTOR_IDS.values():
+            if not reader.addParam(motor_id):
+                raise SO101AdapterError(
+                    f"failed to prepare position read for motor {motor_id}"
+                )
+        for attempt in range(_READ_RETRIES + 1):
+            result = reader.txRxPacket()
+            if result == self.sdk.COMM_SUCCESS:
+                break
+            if attempt == _READ_RETRIES:
+                self._communication_error("read SO-101 positions", result, 0)
+
+        positions: dict[str, float] = {}
+        for motor, motor_id in _MOTOR_IDS.items():
+            if not reader.isAvailable(motor_id, address, size):
+                raise SO101AdapterError(
+                    f"position response for motor {motor!r} is incomplete"
+                )
+            raw = _decode_sign_magnitude(reader.getData(motor_id, address, size), 15)
+            positions[f"{motor}.pos"] = self._normalized_position(motor, raw)
+        return positions
+
+    def get_observation(self) -> Mapping[str, object]:
+        if not self.is_connected:
+            raise SO101AdapterError("SO-101 is not connected")
+        return self._read_positions()
+
+    def send_action(self, action: Mapping[str, float]) -> None:
+        if not self.is_connected:
+            raise SO101AdapterError("SO-101 is not connected")
+        address, size = _GOAL_POSITION
+        writer = self.sdk.GroupSyncWrite(
+            self.port_handler, self.packet_handler, address, size
+        )
+        for motor, motor_id in _MOTOR_IDS.items():
+            raw = self._raw_position(motor, action[f"{motor}.pos"])
+            encoded = _encode_sign_magnitude(raw, 15)
+            data = [self.sdk.SCS_LOBYTE(encoded), self.sdk.SCS_HIBYTE(encoded)]
+            if not writer.addParam(motor_id, data):
+                raise SO101AdapterError(
+                    f"failed to prepare position command for motor {motor!r}"
+                )
+        result = writer.txPacket()
+        self._communication_error("write SO-101 positions", result, 0)
+
+    def _close_port(self) -> None:
+        if getattr(self.port_handler, "is_open", False):
+            self.port_handler.closePort()
+        self._connected = False
+        self._calibrated = False
+
+    def disconnect(self) -> None:
+        if not self.is_connected:
+            return
+        try:
+            if self.config.disable_torque_on_disconnect:
+                self._set_torque(False)
+        finally:
+            self._close_port()
 
 
 def _number(value: object, name: str) -> float:
@@ -55,56 +482,31 @@ class SO101Adapter(RobotAdapter):
     """Synchronous adapter for one calibrated SO-101 follower arm."""
 
     def __init__(
-        self, config: SO101Config, *, lerobot_robot: Any | None = None
+        self, config: SO101Config, *, controller: _SO101Controller | None = None
     ) -> None:
         self.config = config
         self.robot_id = config.robot_id
-        if lerobot_robot is None:
-            try:
-                from lerobot.robots.so_follower import (
-                    SO101Follower,
-                    SO101FollowerConfig,
-                )
-            except ImportError as error:
-                raise SO101AdapterError(
-                    "SO-101 support requires LeRobot with Feetech support; "
-                    "run `uv sync --python 3.12 --frozen --no-dev "
-                    "--group robot-so101`"
-                ) from error
-            options: dict[str, object] = {
-                "port": config.port,
-                "id": config.calibration_id or config.robot_id,
-                "disable_torque_on_disconnect": config.disable_torque_on_disconnect,
-                "use_degrees": True,
-                # RLinf validates or clips steps before reaching the SDK.
-                "max_relative_target": None,
-                "cameras": {},
-            }
-            if config.calibration_dir is not None:
-                options["calibration_dir"] = config.calibration_dir
-            lerobot_robot = SO101Follower(SO101FollowerConfig(**options))
-        self.robot = lerobot_robot
+        self.controller = controller or _FeetechSO101Controller(config)
 
     def connect(self) -> None:
-        if self.robot.is_connected:
+        if self.controller.is_connected:
             return
         try:
-            self.robot.connect(calibrate=False)
+            self.controller.connect(calibrate=False)
         except BaseException:
-            if self.robot.is_connected:
-                self.robot.disconnect()
+            if self.controller.is_connected:
+                self.controller.disconnect()
             raise
-        if not self.robot.is_calibrated:
-            self.robot.disconnect()
+        if not self.controller.is_calibrated:
+            self.controller.disconnect()
             raise SO101AdapterError(
-                "SO-101 is not calibrated; run lerobot-calibrate with --robot.id "
-                f"{self.config.calibration_id or self.config.robot_id!r}"
+                "SO-101 motor calibration does not match the configured calibration file"
             )
 
     def _read_positions(self) -> tuple[float, ...]:
-        if not self.robot.is_connected:
+        if not self.controller.is_connected:
             raise SO101AdapterError("SO-101 is not connected")
-        raw = self.robot.get_observation()
+        raw = self.controller.get_observation()
         if not isinstance(raw, Mapping):
             raise SO101AdapterError("SO-101 observation must be an object")
         missing = set(SO101_POSITION_FEATURES) - raw.keys()
@@ -195,16 +597,16 @@ class SO101Adapter(RobotAdapter):
                 (*target_joints, target_gripper),
             )
         }
-        self.robot.send_action(command)
+        self.controller.send_action(command)
 
     def stop(self) -> None:
         """Hold the measured pose; SO-101 exposes no separate stop primitive."""
         positions = self._read_positions()
-        self.robot.send_action(dict(zip(SO101_POSITION_FEATURES, positions)))
+        self.controller.send_action(dict(zip(SO101_POSITION_FEATURES, positions)))
 
     def close(self) -> None:
-        if self.robot.is_connected:
-            self.robot.disconnect()
+        if self.controller.is_connected:
+            self.controller.disconnect()
 
 
 __all__ = [

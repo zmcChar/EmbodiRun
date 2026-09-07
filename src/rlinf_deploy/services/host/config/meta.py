@@ -15,13 +15,12 @@ _GIT_REVISION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]*\Z")
 class MetadataConfig:
     name: str
     deploy_commit: str
-    inference_commit: str
 
 
 def parse_metadata(value: dict[str, Any]) -> MetadataConfig:
     reject_unknown(
         value,
-        {"name", "deploy-commit", "inference-commit"},
+        {"name", "deploy-commit"},
         "metadata",
     )
     name = string(value, "name", "metadata")
@@ -33,7 +32,6 @@ def parse_metadata(value: dict[str, Any]) -> MetadataConfig:
     return MetadataConfig(
         name=name,
         deploy_commit=_revision(value, "deploy-commit"),
-        inference_commit=_revision(value, "inference-commit"),
     )
 
 
