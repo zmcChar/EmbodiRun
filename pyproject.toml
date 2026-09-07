@@ -12,6 +12,10 @@ license = "Apache-2.0"
 dependencies = []
 
 [project.optional-dependencies]
+# Compute-service integration only; never needed by Host or robot clients.
+sglang = [
+    "sglang[diffusion]==0.5.18; python_version >= '3.12' and sys_platform == 'linux'",
+]
 wireless = [
     "wireless-comm @ git+ssh://git@github.com/BUAA-CI-LAB/WirelessComm.git@da66e99d391d6e2ef76583aa973b03f9dc8b12d5",
 ]
@@ -29,17 +33,60 @@ host = [
 robot-so101 = ["feetech-servo-sdk>=1,<2"]
 robot-fr3 = ["franky-control>=1.1.4,<2"]
 robot-go2 = []
+sim-libero = [
+    "lerobot[libero]>=0.6,<0.7",
+    "Pillow>=10,<13",
+]
+sim-habitat = [
+    "habitat-sim @ git+https://github.com/facebookresearch/habitat-sim.git@acbe6f4922e68145e401e55c30f9dfea460a3f24",
+    "opencv-python-headless>=4.10,<5",
+    "Pillow>=10,<13",
+]
+sim-isaac = [
+    "isaacsim[all,extscache]==6.0.1.0",
+    "opencv-python-headless>=4.10,<5",
+    "Pillow>=10,<13",
+]
+sim-vlabench = [
+    "lerobot>=0.6,<0.7",
+    "Pillow>=10,<13",
+    "VLABench @ git+https://github.com/OpenMOSS/VLABench.git@cf588fe60c0c7282174fe979f5913170cfe69017",
+]
 
 [tool.uv]
 required-version = ">=0.12.0,<0.13"
 default-groups = ["dev"]
+conflicts = [
+    [{ extra = "sglang" }, { group = "sim-libero" }],
+    [{ extra = "sglang" }, { group = "sim-vlabench" }],
+    [{ extra = "sglang" }, { group = "sim-isaac" }],
+    [
+        { group = "sim-isaac" },
+        { group = "sim-libero" },
+    ],
+    [
+        { group = "sim-isaac" },
+        { group = "sim-vlabench" },
+    ],
+]
+
+[tool.uv.extra-build-variables]
+egl-probe = { CMAKE_POLICY_VERSION_MINIMUM = "3.5" }
+hf-egl-probe = { CMAKE_POLICY_VERSION_MINIMUM = "3.5" }
+habitat-sim = { CMAKE_POLICY_VERSION_MINIMUM = "3.5", HEADLESS = "True" }
 
 [tool.uv.dependency-groups]
 robot-so101 = { requires-python = ">=3.12" }
+sim-habitat = { requires-python = ">=3.11,<3.12" }
+sim-isaac = { requires-python = ">=3.12,<3.13" }
+sim-libero = { requires-python = ">=3.12" }
+sim-vlabench = { requires-python = ">=3.12" }
 
 [project.scripts]
 rlinf-deploy = "rlinf_deploy.services.host.cli.cli:main"
 rlinf-control-serve = "rlinf_deploy.services.control.server:main"
+rlinf-simulation-serve = "rlinf_deploy.services.simulation.server:main"
+rlinf-sglang-serve = "rlinf_deploy.services.inference.adapters.sglang.pi05:main"
 rlinf-go2-streamvln = "rlinf_deploy.bindings.unitree.go2.streamvln.cli:main"
 
 [tool.setuptools.packages.find]

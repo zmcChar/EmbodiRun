@@ -17,7 +17,7 @@ Communication with VVLA must go through the versioned HTTP or WirelessComm API.
 
 - `src/rlinf_deploy/services/host`: host CLI, configuration, state, and SSH lifecycle
 - `src/rlinf_deploy/services/control`: Host task contracts and control-node runtime
-- `src/rlinf_deploy/services/inference`: Control-to-Inference contracts and clients
+- `src/rlinf_deploy/services/inference`: inference contracts, protocols, backend clients, and launch descriptors
 - `src/rlinf_deploy/robots`: robot interfaces and adapters
 - `src/rlinf_deploy/bindings`: policy-to-robot bindings
 - `src/rlinf_deploy/simulators`: simulator adapters

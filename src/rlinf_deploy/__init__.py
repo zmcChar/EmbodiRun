@@ -1,4 +1,4 @@
-"""Robot and simulator deployment clients for RLinf inference services."""
+"""Robot and simulator clients for supported inference services."""
 
 from .robots import RobotAction, RobotAdapter, RobotObservation, RobotProfile
 from .services.inference import (
@@ -8,6 +8,7 @@ from .services.inference import (
     PolicyObservation,
     PolicyResult,
     Session,
+    SglangHttpClient,
     VvlaHttpClient,
     VvlaWirelessClient,
 )
@@ -23,6 +24,7 @@ __all__ = [
     "RobotObservation",
     "RobotProfile",
     "Session",
+    "SglangHttpClient",
     "VvlaHttpClient",
     "VvlaWirelessClient",
 ]

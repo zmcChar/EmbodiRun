@@ -99,9 +99,7 @@ class ServiceSupervisor:
     def stop(self, service_id: str) -> ProcessStatus:
         """Stop only the process carrying this service's identity marker."""
 
-        result = self.executor.run(
-            self._command("stop", service_id, timeout_s=10.0)
-        )
+        result = self.executor.run(self._command("stop", service_id, timeout_s=10.0))
         return _parse_status(result.stdout, log=self._log_path(service_id))
 
     def _command(
@@ -282,6 +280,16 @@ def _read_start_request(
         raise SupervisorError("service start request has an invalid identity")
     process_environment = os.environ.copy()
     process_environment.update(environment)
+    virtual_environment = environment.get("VIRTUAL_ENV")
+    if virtual_environment:
+        # Resolve PATH on the service node, not on the host running the CLI.
+        process_environment["PATH"] = os.pathsep.join(
+            (
+                posixpath.join(virtual_environment, "bin"),
+                process_environment.get("PATH", os.defpath),
+            )
+        )
+        process_environment.pop("PYTHONHOME", None)
     return argv, cwd, process_environment
 
 
