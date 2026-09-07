@@ -67,9 +67,22 @@ class SshExecutor:
             kwargs["key_filename"] = os.fspath(
                 Path(self.connection.identity_file).expanduser()
             )
+        proxy = None
         try:
+            if self.connection.proxy_command is not None:
+                command = shlex.join(
+                    part.replace("%h", self.connection.host).replace(
+                        "%p", str(self.connection.port)
+                    )
+                    for part in shlex.split(self.connection.proxy_command)
+                )
+                proxy = paramiko.ProxyCommand(command)
+                kwargs["sock"] = proxy
             client.connect(**kwargs)
         except Exception as error:  # noqa: BLE001 - normalize third-party errors
+            client.close()
+            if proxy is not None:
+                proxy.close()
             detail = _redact(str(error), self._password)
             raise RuntimeError(f"SSH connection failed: {detail}") from None
         self._client = client

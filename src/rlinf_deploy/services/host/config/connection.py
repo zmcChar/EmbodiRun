@@ -30,6 +30,7 @@ class ConnectionConfig:
     accept_new_host_key: bool = False
     connect_timeout_s: float = 10.0
     command_timeout_s: float = 30.0
+    proxy_command: str | None = None
 
 
 def parse_connection(value: dict[str, Any]) -> ConnectionConfig:
@@ -51,6 +52,7 @@ def parse_connection(value: dict[str, Any]) -> ConnectionConfig:
         "accept_new_host_key",
         "connect_timeout_s",
         "command_timeout_s",
+        "proxy_command",
     }
     reject_unknown(value, allowed, "SSH connection")
     password_env = optional_string(value, "password_env", context)
@@ -68,6 +70,7 @@ def parse_connection(value: dict[str, Any]) -> ConnectionConfig:
         username=string(value, "username", context),
         password_env=password_env,
         identity_file=optional_string(value, "identity_file", context),
+        proxy_command=optional_string(value, "proxy_command", context),
         accept_new_host_key=boolean(
             value.get("accept_new_host_key", False),
             f"{context}.accept_new_host_key",
