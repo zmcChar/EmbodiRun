@@ -1,5 +1,6 @@
 import json
 import logging
+import shlex
 import shutil
 import socket
 import sys
@@ -53,9 +54,50 @@ from rlinf_deploy.services.host.supervisor import ServiceSupervisor, SupervisorE
 from rlinf_deploy.services.simulation.contracts import SimulationServiceConfig
 
 ROOT = Path(__file__).parents[1]
-EXAMPLE = ROOT / "configs" / "muti-nodes.example.yaml"
-WIRELESS_EXAMPLE = ROOT / "configs" / "thor-orin-nx-wireless.yaml"
+CONFIGS = ROOT / "configs" / "http-wireless-inference"
+EXAMPLE = CONFIGS / "http.yaml"
+WIRELESS_EXAMPLE = CONFIGS / "wireless.yaml"
 INFERENCE_REVISION = "a" * 40
+
+
+@pytest.fixture(scope="module", autouse=True)
+def service_examples(tmp_path_factory):
+    """Keep lifecycle inputs small without separate copies of the lab YAMLs."""
+    directory = tmp_path_factory.mktemp("service-examples")
+    with pytest.MonkeyPatch.context() as patch:
+        for transport, variable, arm in (
+            ("http", "EXAMPLE", "so101-1"),
+            ("wireless", "WIRELESS_EXAMPLE", "so101-2"),
+        ):
+            document = yaml.safe_load((CONFIGS / f"{transport}.yaml").read_text())
+            runtime = document["runtimes"][f"{arm}-runtime"]
+            robot = document["robots"][arm]
+            sensors = {name: document["sensors"][name] for name in runtime["inputs"].values()}
+            model = document["models"]["pi05-01"]
+            model.pop("server_args")
+            if transport == "http":
+                document["metadata"]["name"] = "thor-so101-pi05"
+                robot.update(node=model["node"], port="/dev/ttyACM0")
+                for sensor in sensors.values():
+                    sensor["node"] = model["node"]
+                model["server"]["bind"] = "127.0.0.1"
+            else:
+                # Exercise explicit transport limits independently of lab defaults.
+                limits = {"max_peer_queued_messages": 16, "max_peer_queued_bytes": 67108864,
+                          "egress_quantum_bytes": 65536, "egress_rate_bytes_per_second": 6250000,
+                          "egress_burst_bytes": 65536}
+                model["transport_options"] = dict(limits)
+                runtime["inference_client"]["transport_options"] = dict(limits)
+            document["nodes"] = {name: node for name, node in document["nodes"].items()
+                                 if name in {model["node"], robot["node"]}}
+            for node in document["nodes"].values():
+                node["connection"].pop("proxy_command")
+            document.update(robots={arm: robot}, sensors=sensors,
+                            runtimes={f"{arm}-runtime": runtime})
+            path = directory / f"{transport}.yaml"
+            path.write_text(yaml.safe_dump(document, sort_keys=False))
+            patch.setattr(sys.modules[__name__], variable, path)
+        yield
 
 
 def simulation_deployment(tmp_path, kind, backend, transport):
@@ -514,7 +556,21 @@ def two_node_model_config(tmp_path: Path) -> Path:
     return config_path
 
 
-def test_example_resolves_real_thor_environment_and_runtime() -> None:
+@pytest.mark.parametrize("transport", ["http", "wireless"])
+def test_lab_examples_preserve_shared_model_and_launch_arguments(transport):
+    config = load_config(CONFIGS / f"{transport}.yaml")
+    model, *controls = build_plan(config).services
+    assert model.node == "jetson-agx-thor-232"
+    assert len(controls) == 2
+    assert {control.node for control in controls} == {"jetson-agx-orin-174", "jetson-orin-nx"}
+    assert model.command.argv[-5:] == (
+        "--dtype", "bfloat16", "--num-steps", "10", "--capture-full-loop",
+    )
+    assert all(json.loads(control.control_config_json)["inference"]["transport"] == transport
+               for control in controls)
+
+
+def test_single_node_environment_and_runtime() -> None:
     config = load_config(EXAMPLE)
     profiles = environment_profiles(config)
     plan = build_plan(config)
@@ -632,13 +688,13 @@ def test_wireless_example_generates_complementary_endpoints() -> None:
     client = json.loads(control.wireless_config_json)
     assert server["local"] == {
         "node_id": "model.pi05-01",
-        "host": "10.168.192.200",
+        "host": "192.168.2.232",
         "bind_host": "0.0.0.0",
         "port": 9300,
     }
     assert client["local"] == {
         "node_id": "runtime.so101-2-runtime",
-        "host": "10.168.192.133",
+        "host": "192.168.2.148",
         "bind_host": "0.0.0.0",
         "port": 9300,
     }
@@ -1583,6 +1639,45 @@ def test_ssh_executor_normalizes_health_channel_failure() -> None:
             "http://127.0.0.1:8000/healthz",
             timeout_s=2.0,
         )
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_ssh_proxy_substitutes_endpoint_and_closes_on_failure(monkeypatch, fail):
+    from rlinf_deploy.services.host.config.connection import ConnectionConfig
+
+    events = []
+    proxy = SimpleNamespace(close=lambda: events.append("proxy-closed"))
+
+    def connect(**kwargs):
+        assert kwargs["sock"] is proxy
+        assert kwargs["hostname"] == "lab-node" and kwargs["port"] == 2222
+        if fail:
+            raise OSError("fixture connection failure")
+
+    client = SimpleNamespace(
+        load_system_host_keys=lambda: None, set_log_channel=lambda _: None,
+        connect=connect, close=lambda: events.append("client-closed"),
+    )
+
+    def proxy_factory(command):
+        assert shlex.split(command) == ["nc", "-X", "5", "-x", "127.0.0.1:1080", "lab-node", "2222"]
+        return proxy
+
+    monkeypatch.setitem(sys.modules, "paramiko", SimpleNamespace(
+        SSHClient=lambda: client, ProxyCommand=proxy_factory,
+    ))
+    executor = SshExecutor(ConnectionConfig(
+        kind="ssh", host="lab-node", port=2222, username="user",
+        proxy_command="nc -X 5 -x 127.0.0.1:1080 %h %p",
+    ))
+    if fail:
+        with pytest.raises(RuntimeError, match="fixture connection failure"):
+            executor._connect()
+        assert events == ["client-closed", "proxy-closed"]
+    else:
+        assert executor._connect() is client
+        executor.close()
+        assert events == ["client-closed"]
 
 
 def test_ssh_executor_does_not_leak_paramiko_transport_logs(

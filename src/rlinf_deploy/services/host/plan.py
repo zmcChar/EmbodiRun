@@ -224,6 +224,8 @@ def _model_service(
             device=gpu,
             adapter_config=adapter_path,
         )
+    if model.backend == "vvla":
+        argv = (*argv, *_option_strings(model, "server_args"))
     endpoint = _endpoint(config, model, consumer_node=model.node)
     return ServiceSpec(
         service_id=model.model_id,

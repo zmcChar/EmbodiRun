@@ -1,4 +1,7 @@
 import time
+import json
+import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -108,3 +111,74 @@ def test_so101_clip_mode_bounds_each_command_in_a_sequence() -> None:
 def test_so101_config_rejects_unknown_step_limit_mode() -> None:
     with pytest.raises(ValueError, match="step_limit_mode"):
         SO101Config(port="/dev/fake", step_limit_mode="unsafe")
+
+
+@pytest.mark.parametrize("read_only", [False, True])
+def test_feetech_read_only_capture_never_writes_motor_registers(tmp_path, monkeypatch, read_only):
+    writes = []
+
+    class Port:
+        is_open = False
+
+        def openPort(self):
+            self.is_open = True
+            return True
+
+        def closePort(self):
+            self.is_open = False
+
+        def setPacketTimeoutMillis(self, value):
+            pass
+
+    class Packet:
+        def ping(self, port, motor):
+            return 777, 0, 0
+
+        def read1ByteTxRx(self, port, motor, address):
+            return (1 if address in (0, 1) else 0), 0, 0
+
+        def read2ByteTxRx(self, port, motor, address):
+            return {9: 1000, 11: 3000, 31: 0}[address], 0, 0
+
+        def write1ByteTxRx(self, port, motor, address, value):
+            writes.append((motor, address, value))
+            return 0, 0
+
+        write2ByteTxRx = write1ByteTxRx
+
+    class Reader:
+        def __init__(self, *args):
+            pass
+
+        def addParam(self, motor):
+            return True
+
+        def txRxPacket(self):
+            return 0
+
+        def isAvailable(self, *args):
+            return True
+
+        def getData(self, *args):
+            return 2000
+
+    port = Port()
+    monkeypatch.setitem(sys.modules, "scservo_sdk", SimpleNamespace(
+        PortHandler=lambda _: port, PacketHandler=lambda _: Packet(), GroupSyncRead=Reader, COMM_SUCCESS=0))
+    calibration = {name.removesuffix(".pos"): {"id": index, "drive_mode": 0, "homing_offset": 0,
+                                              "range_min": 1000, "range_max": 3000}
+                   for index, name in enumerate(SO101_POSITION_FEATURES, 1)}
+    (tmp_path / "arm.json").write_text(json.dumps(calibration))
+    robot = SO101Adapter(SO101Config(port="/dev/fake", robot_id="arm", calibration_dir=tmp_path),
+                         read_only=read_only)
+    robot.connect()
+    observation = robot.observe()
+    assert observation.values == {"joint_positions_deg": [0.0] * 5, "gripper_position": 50.0}
+    if read_only:
+        with pytest.raises(SO101AdapterError, match="read-only"):
+            robot.execute(action([0.0] * 5, 50.0))
+        with pytest.raises(SO101AdapterError, match="read-only"):
+            robot.stop()
+    robot.close()
+    assert not port.is_open
+    assert bool(writes) is not read_only

@@ -18,11 +18,12 @@ def test_standard_host_plan_selects_arx5_and_dm05(tmp_path):
     from rlinf_deploy.services.host.plan import build_plan
 
     root = Path(__file__).parents[1]
-    config = yaml.safe_load((root / "configs/muti-nodes.example.yaml").read_text())
-    node = next(iter(config["nodes"]))
+    config = yaml.safe_load((root / "configs/http-wireless-inference/http.yaml").read_text())
+    node = config["robots"]["so101-1"]["node"]
     config["robots"] = {"arm": {"type": "arx.x5", "node": node}}
     model = next(iter(config["models"].values()))
     model.update(type="dm05", environment=".venv-vvla-dm05")
+    model.pop("server_args")
     adapter_config = tmp_path / "dm05.json"
     adapter_config.write_text(
         '{"policy_kwargs": {"norm_stats": "/models/dm05/norm_stats.json", '

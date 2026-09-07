@@ -11,4 +11,6 @@ __pycache__/
 build/
 dist/
 artifacts/
+benchmarks/snapshots/
+benchmarks/http-wireless-inference-benchmark/reports/
 checkpoints/
