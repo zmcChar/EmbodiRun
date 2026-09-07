@@ -1,9 +1,11 @@
 # Run on a Linux GPU workstation with VLABench task assets prepared.
-# Replace the checkpoint path with a Pi0.5 policy trained for this environment.
+# Official VLABench/pi05-primitive-10task, revision f658a8b.
+# source is a local OpenPI bundle: params/ plus an explicit openpi_config.json.
+# VVLA requires its pi05 and pi05-openpi extras; it caches the converted tensors.
 # Examples use ports 8000/8100: stop one before starting another, or change ports.
 metadata:
   name: vlabench-pi05-vvla
-  deploy-commit: 7c96609060e6da34fd5ba885e08aa47cd8d67427
+  deploy-commit: d5d2991157eb168481e32ebe6249ebdd4dfc20b7
 
 nodes:
   workstation:
@@ -19,7 +21,7 @@ simulators:
     max_episode_steps: 500
     width: 480
     height: 480
-    viewer: false # Set true only when the simulator node has a working display.
+    viewer: true # Requires a working display on the simulator node.
 
 models:
   pi05-01:
@@ -29,8 +31,12 @@ models:
     node: workstation
     gpu: cuda:0
     environment: .venv-vvla-pi05
-    # Match the simulator's image/second_image/wrist_image cameras and 7D actions.
-    source: /data/models/pi05-vlabench
+    source: /home/user/huggingface/pi05_vlabench_primitive_f658a8b
+    # OpenPI camera slot names are generic; map by the checkpoint's training order.
+    image_keys:
+      observation.images.image: observation.images.base_0_rgb
+      observation.images.second_image: observation.images.left_wrist_0_rgb
+      observation.images.wrist_image: observation.images.right_wrist_0_rgb
     server:
       bind: 127.0.0.1
       port: 8000
