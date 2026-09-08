@@ -119,11 +119,26 @@ its nodes:
 
 ```bash
 uv run rlinf-deploy \
-  --config configs/muti-nodes.example.yaml validate
+  --config configs/http-wireless-inference/http.yaml validate
 
 uv run rlinf-deploy \
-  --config configs/muti-nodes.example.yaml probe
+  --config configs/http-wireless-inference/http.yaml probe
 ```
+
+The HTTP and WirelessComm lab examples both run PI0.5 on Thor
+(`192.168.2.232`), with `so101-1` and its cameras on AGX Orin
+(`192.168.2.174`) and `so101-2` and its cameras on Orin NX
+(`192.168.2.148`). Both arms share the same model service. Run one protocol
+configuration at a time. The
+[HTTP / WirelessComm inference benchmark](benchmarks/http-wireless-inference-benchmark/README.md)
+includes a read-only recorder for real camera frames and joint state, then
+compares both protocols from the two control nodes by replaying fixed
+observations. It does not execute robot actions.
+
+The lab examples use `connection.proxy_command` for the Host's SOCKS5 proxy at
+`127.0.0.1:1080`; remove that option when Host can reach the LAN directly.
+`%h` and `%p` expand to the configured SSH host and port. This only routes SSH;
+the nodes exchange inference data directly on their configured LAN addresses.
 
 `probe` checks every node even if another node is unreachable. It reports the
 connection address, latency, platform, architecture, and availability of
@@ -134,21 +149,21 @@ the terminal shows each node's current stage and elapsed time.
 Initialize the nodes, then start their persistent services:
 
 ```bash
-# The checked-in configuration uses key-based SSH to the lab Thor and its
-# verified SO-101, calibration, camera, and pi0.5 checkpoint paths.
+# The checked-in configuration uses key-based SSH to Thor and both Orin nodes,
+# with the observed serial, calibration, camera, and checkpoint paths.
 uv run rlinf-deploy \
-  --config configs/muti-nodes.example.yaml init
+  --config configs/http-wireless-inference/http.yaml init
 
 # During Deploy-side development, reload Control without restarting pi0.5.
 uv run rlinf-deploy \
-  --config configs/muti-nodes.example.yaml down --target control
+  --config configs/http-wireless-inference/http.yaml down --target control
 uv run rlinf-deploy \
-  --config configs/muti-nodes.example.yaml sync --target deploy
+  --config configs/http-wireless-inference/http.yaml sync --target deploy
 uv run rlinf-deploy \
-  --config configs/muti-nodes.example.yaml up
+  --config configs/http-wireless-inference/http.yaml up
 
 uv run rlinf-deploy \
-  --config configs/muti-nodes.example.yaml down
+  --config configs/http-wireless-inference/http.yaml down
 ```
 
 `init` probes Python, Git, and uv; checks configured robot, calibration, model,
@@ -177,19 +192,19 @@ service configuration or either pinned revision still require the normal
 
 `up` refuses to run without state from a successful `init`, or if the YAML has
 changed since initialization. It starts PID-supervised inference and control
-services and waits for both health checks. It is idempotent for processes that
+services and waits for their health checks. It is idempotent for processes that
 are already running. Starting Control loads static robot, sensor, binding, and
 inference routing configuration, but does not connect to or move the arm.
 `down` stops identity-checked processes and remains available when the YAML has
 changed; `--target control` or `--target model` limits it to one service kind.
 Both commands operate on different nodes concurrently.
 
-After `up` reports both services healthy, submit one prompt to a configured
+After `up` reports the services healthy, submit one prompt to a configured
 control runtime:
 
 ```bash
 rlinf-deploy \
-  --config configs/muti-nodes.example.yaml run \
+  --config configs/http-wireless-inference/http.yaml run \
   --runtime so101-1-runtime \
   --prompt "Pick up the cube and put it into the bowl." \
   --chunk-steps 10
@@ -215,7 +230,7 @@ into inference image payloads.
 Each returned row is still subject to the SO101 joint and gripper step limits
 from the deployment YAML. `step_limit_mode: reject` rejects an oversized target
 without sending it. `step_limit_mode: clip` bounds every joint and the gripper
-independently before sending that row; the checked-in Thor configuration uses 5
+independently before sending that row; the checked-in SO101 configurations use 5
 degrees and 10 gripper units for its initial tests. Clipping is a per-row rate
 limit, not collision avoidance. A Pi0.5 response has no task-complete signal, so
 the chunk bound is always the stopping condition. A requested chunk length above
@@ -253,24 +268,34 @@ and `session_revision` provide idempotency and ordering.
 
 ## WirelessComm contract
 
-Install the optional client and give both processes complementary WirelessComm
-YAML files whose peer directories contain each other. Start the inference process
-with `vvla-wireless-serve`, then create the Deploy client from its local config:
+For Host-managed deployment, use
+[`configs/http-wireless-inference/wireless.yaml`](configs/http-wireless-inference/wireless.yaml).
+It has the same `nodes`, `models`, and `runtimes` structure as HTTP deployments:
 
-```python
-from rlinf_deploy import VvlaWirelessClient
+- `models.<id>.server` is the actual inference listener for either transport.
+- `runtimes.<id>.server` remains the loopback HTTP interface used by Host.
+- Wireless runtimes additionally declare `inference_client.bind` and `port`,
+  since each client process also listens for WirelessComm traffic. HTTP runtimes
+  do not declare this block.
+- Optional `transport_options` under a model or `inference_client` are passed to
+  that endpoint's native WirelessComm `comm` settings. These are independent
+  per-endpoint settings, validated by WirelessComm when the endpoint starts.
 
-client = VvlaWirelessClient.from_config(
-    "configs/wireless.example.yaml",
-    server_node_id="inference-1",
-    token="shared-token",
-    timeout_s=5.0,
-)
-try:
-    capabilities = client.capabilities()
-finally:
-    client.shutdown()
-```
+For cross-node wildcard listeners, the advertised data address defaults to
+`nodes.<id>.connection.host`. Set `nodes.<id>.address` when the SSH host is a
+management address or tunnel, or when a `local` node needs to serve another node.
+Explicit listener addresses must themselves be reachable by their peers;
+loopback listeners cannot serve other nodes. Each listener on the same node
+must use a distinct port, including Host-facing HTTP and WirelessComm listeners.
+
+`validate` checks the topology without contacting nodes. `init` prepares the
+environments, including the wireless extra. During `up`, Host generates native
+WirelessComm configs under each node's deployment `generated/` directory and
+passes their absolute paths to VVLA and the robot/simulator runtime. Peer IDs
+identify model/runtime instances: a model lists all its runtimes, while a runtime
+lists only its selected model. Do not specify `comm_config`, `client_comm_config`,
+or `server_node_id` in the deployment YAML anymore. Changes to a running topology
+require `down` → `init` → `up`; generated files are not hot-reloaded.
 
 Wireless steps carry the same versioned session/step fields as HTTP, while image
 bytes remain separate WirelessComm payload segments instead of being assembled as

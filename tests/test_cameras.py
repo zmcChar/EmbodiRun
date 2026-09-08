@@ -7,6 +7,31 @@ from rlinf_deploy.robots.sensors.cameras import (
 )
 
 
+def test_viewer_reader_stops_with_an_open_or_partial_input_pipe() -> None:
+    import os
+    from queue import Queue
+    from threading import Event, Thread
+
+    from rlinf_deploy.simulators.viewer import _read_frames
+
+    for partial in (b"", b"\x00\x00", b"\x00\x00\x00\x04xy"):
+        read_fd, write_fd = os.pipe()
+        with (
+            os.fdopen(read_fd, "rb") as stream,
+            os.fdopen(write_fd, "wb", buffering=0) as writer,
+        ):
+            frames = Queue(maxsize=1)
+            frames.put(b"previous-frame")
+            stopped = Event()
+            reader = Thread(target=_read_frames, args=(stream, frames, stopped))
+            reader.start()
+            writer.write(partial)
+            stopped.set()
+            reader.join(timeout=2)
+            assert not reader.is_alive()
+            assert frames.get_nowait() is None
+
+
 class FakeCapture:
     def __init__(self) -> None:
         self.settings = []

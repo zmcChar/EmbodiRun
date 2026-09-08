@@ -1,0 +1,123 @@
+# Thor PI0.5 -> AGX Orin SO101 + Orin NX SO101, over HTTP.
+# Run one protocol at a time. See benchmarks/http-wireless-inference-benchmark/README.md.
+# AGX Orin keeps the existing calibration ID thor_so101_follower.
+metadata:
+  name: thor-so101-http
+  deploy-commit: ac74a0f84783d313d757ac87b5a617b40f2ab955
+nodes:
+  jetson-agx-thor-232:
+    type: jetson.agx-thor-128gb
+    connection:
+      type: ssh
+      host: 192.168.2.232
+      port: 22
+      username: operator
+      accept_new_host_key: false
+      proxy_command: nc -X 5 -x 127.0.0.1:1080 %h %p
+  jetson-agx-orin-174:
+    type: jetson.agx-orin-32gb
+    connection:
+      type: ssh
+      host: 192.168.2.174
+      port: 22
+      username: operator
+      accept_new_host_key: false
+      proxy_command: nc -X 5 -x 127.0.0.1:1080 %h %p
+  jetson-orin-nx:
+    type: jetson.orin-nx
+    connection:
+      type: ssh
+      host: 192.168.2.148
+      port: 22
+      username: jetson
+      accept_new_host_key: false
+      proxy_command: nc -X 5 -x 127.0.0.1:1080 %h %p
+robots:
+  so101-1:
+    type: lerobot.so101
+    node: jetson-agx-orin-174
+    port: /dev/serial/by-id/usb-1a86_USB_Single_Serial_5C4C125563-if00
+    calibration_id: thor_so101_follower
+    calibration_dir: /home/user/.cache/huggingface/lerobot/calibration/robots/so_follower
+    disable_torque_on_disconnect: true
+    max_joint_step_deg: 5.0
+    max_gripper_step: 10.0
+    step_limit_mode: clip
+  so101-2:
+    type: lerobot.so101
+    node: jetson-orin-nx
+    port: /dev/serial/by-id/usb-1a86_USB_Single_Serial_5C4C125310-if00
+    calibration_id: orin_nx_so101_follower
+    calibration_dir: /home/jetson/.cache/huggingface/lerobot/calibration/robots/so_follower
+    disable_torque_on_disconnect: true
+    max_joint_step_deg: 5.0
+    max_gripper_step: 10.0
+    step_limit_mode: clip
+sensors:
+  front-camera:
+    type: v4l2
+    node: jetson-agx-orin-174
+    device: /dev/v4l/by-id/usb-icSpring_icspring_camera_202404160005-video-index0
+    width: 640
+    height: 480
+    fps: 30
+  wrist-camera:
+    type: v4l2
+    node: jetson-agx-orin-174
+    device: /dev/v4l/by-id/usb-icSpring_icspring_camera-video-index0
+    width: 640
+    height: 480
+    fps: 30
+  front-camera-2:
+    type: v4l2
+    node: jetson-orin-nx
+    device: /dev/v4l/by-id/usb-icSpring_icspring_camera_202404160005-video-index0
+    width: 640
+    height: 480
+    fps: 30
+  wrist-camera-2:
+    type: v4l2
+    node: jetson-orin-nx
+    device: /dev/v4l/by-id/usb-icSpring_icspring_camera-video-index0
+    width: 640
+    height: 480
+    fps: 30
+models:
+  pi05-01:
+    backend: vvla
+    transport: http
+    type: pi05
+    node: jetson-agx-thor-232
+    gpu: cuda:0
+    environment: .venv-vvla
+    source: /home/user/models/pi05_so101
+    server:
+      bind: 0.0.0.0
+      port: 8000
+    server_args:
+    - --dtype
+    - bfloat16
+    - --num-steps
+    - '10'
+    - --capture-full-loop
+runtimes:
+  so101-1-runtime:
+    robot: so101-1
+    model: pi05-01
+    binding: lerobot.so101.pi05
+    server:
+      bind: 127.0.0.1
+      port: 8100
+    inputs:
+      observation.images.front: front-camera
+      observation.images.wrist: wrist-camera
+  so101-2-runtime:
+    robot: so101-2
+    model: pi05-01
+    binding: lerobot.so101.pi05
+    server:
+      bind: 127.0.0.1
+      port: 8100
+    inputs:
+      observation.images.front: front-camera-2
+      observation.images.wrist: wrist-camera-2

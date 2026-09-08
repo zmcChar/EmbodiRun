@@ -17,7 +17,7 @@ from rlinf_deploy.bindings import BindingDefinition, binding_definition
 from rlinf_deploy.robots import RobotAction, RobotDefinition, robot_definition
 from rlinf_deploy.robots.sensors import SensorInput
 from rlinf_deploy.robots.sensors.cameras import CameraSource, create_camera_source
-from rlinf_deploy.services.inference import VvlaHttpClient, VvlaWirelessClient
+from rlinf_deploy.services.inference import build_inference_client
 
 from .arbitration import (
     ArbiterCommandSink,
@@ -359,20 +359,11 @@ class ControlService:
 def create_inference_client(config: ControlServiceConfig, timeout_s: float) -> Any:
     """Select the Control-to-Inference client from the static runtime config."""
 
-    if config.inference_transport == "http":
-        token = config.inference_options.get("token")
-        if token is not None and not isinstance(token, str):
-            raise ControlServiceError("inference token must be a string")
-        return VvlaHttpClient(config.inference_endpoint, token=token, timeout_s=timeout_s)
-    comm_config = _option_string(config.inference_options, "comm_config")
-    server_node_id = _option_string(config.inference_options, "server_node_id")
-    token = config.inference_options.get("token")
-    if token is not None and not isinstance(token, str):
-        raise ControlServiceError("inference token must be a string")
-    return VvlaWirelessClient.from_config(
-        comm_config,
-        server_node_id=server_node_id,
-        token=token,
+    return build_inference_client(
+        config.inference_transport,
+        config.inference_endpoint,
+        config.inference_options,
+        backend=config.inference_backend,
         timeout_s=timeout_s,
     )
 
@@ -547,13 +538,6 @@ def _definitions(
     except (KeyError, TypeError):
         raise ControlServiceError(f"robot type {config.robot_kind!r} is not available") from None
     return binding, robot
-
-
-def _option_string(options: Mapping[str, Any], name: str) -> str:
-    value = options.get(name)
-    if not isinstance(value, str) or not value.strip():
-        raise ControlServiceError(f"inference option {name!r} must be non-empty")
-    return value
 
 
 def _shutdown_client(client: Any) -> None:

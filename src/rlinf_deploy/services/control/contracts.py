@@ -36,12 +36,14 @@ class ControlServiceConfig:
     robot_options: Mapping[str, Any]
     inputs: tuple[SensorInput, ...]
     runtime_options: Mapping[str, Any]
+    inference_backend: str = "vvla"
 
     def __post_init__(self) -> None:
         for name in (
             "runtime_id",
             "binding_kind",
             "bind",
+            "inference_backend",
             "inference_transport",
             "inference_endpoint",
             "robot_id",
@@ -65,6 +67,10 @@ class ControlServiceConfig:
         if self.inference_transport not in {"http", "wireless"}:
             raise ControlContractError(
                 "inference transport must be http or wireless"
+            )
+        if self.inference_backend not in {"vvla", "sglang"}:
+            raise ControlContractError(
+                "inference backend must be vvla or sglang"
             )
         for name in ("inference_options", "robot_options", "runtime_options"):
             value = _mapping(getattr(self, name), name)
@@ -91,6 +97,7 @@ class ControlServiceConfig:
                 "binding": self.binding_kind,
                 "server": {"bind": self.bind, "port": self.port},
                 "inference": {
+                    "backend": self.inference_backend,
                     "transport": self.inference_transport,
                     "endpoint": self.inference_endpoint,
                     "options": dict(self.inference_options),
@@ -148,7 +155,7 @@ class ControlServiceConfig:
         _reject_unknown(server, {"bind", "port"}, "control config.server")
         _reject_unknown(
             inference,
-            {"transport", "endpoint", "options"},
+            {"backend", "transport", "endpoint", "options"},
             "control config.inference",
         )
         _reject_unknown(robot, {"id", "type", "options"}, "control config.robot")
@@ -162,6 +169,11 @@ class ControlServiceConfig:
             binding_kind=_string(root, "binding", "control config"),
             bind=_string(server, "bind", "control config.server"),
             port=server.get("port"),
+            inference_backend=(
+                _string(inference, "backend", "control config.inference")
+                if "backend" in inference
+                else "vvla"
+            ),
             inference_transport=_string(
                 inference, "transport", "control config.inference"
             ),

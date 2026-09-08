@@ -183,7 +183,7 @@ def _encode_sign_magnitude(value: int, sign_bit: int) -> int:
 class _FeetechSO101Controller:
     """Minimal STS3215 bus used by the Deploy SO-101 adapter."""
 
-    def __init__(self, config: SO101Config) -> None:
+    def __init__(self, config: SO101Config, *, read_only: bool = False) -> None:
         try:
             import scservo_sdk
         except ImportError as error:
@@ -193,6 +193,7 @@ class _FeetechSO101Controller:
             ) from error
 
         self.config = config
+        self.read_only = read_only
         self.calibration = _load_calibration(config)
         self.sdk = scservo_sdk
         self.port_handler = scservo_sdk.PortHandler(config.port)
@@ -261,6 +262,8 @@ class _FeetechSO101Controller:
         sign_bit: int | None = None,
         retries: int = _READ_RETRIES,
     ) -> None:
+        if self.read_only:
+            raise SO101AdapterError("read-only SO-101 connection cannot write registers")
         address, size = register
         if sign_bit is not None:
             value = _encode_sign_magnitude(value, sign_bit)
@@ -358,7 +361,7 @@ class _FeetechSO101Controller:
             self.port_handler.setPacketTimeoutMillis(1000)
             self._handshake()
             self._calibrated = self._matches_calibration()
-            if self._calibrated:
+            if self._calibrated and not self.read_only:
                 self._configure()
         except BaseException:
             self._close_port()
@@ -420,6 +423,8 @@ class _FeetechSO101Controller:
         return self._read_positions()
 
     def send_action(self, action: Mapping[str, float]) -> None:
+        if self.read_only:
+            raise SO101AdapterError("read-only SO-101 connection cannot send actions")
         if not self.is_connected:
             raise SO101AdapterError("SO-101 is not connected")
         address, size = _GOAL_POSITION
@@ -447,7 +452,7 @@ class _FeetechSO101Controller:
         if not self.is_connected:
             return
         try:
-            if self.config.disable_torque_on_disconnect:
+            if self.config.disable_torque_on_disconnect and not self.read_only:
                 self._set_torque(False)
         finally:
             self._close_port()
@@ -482,11 +487,17 @@ class SO101Adapter(RobotAdapter):
     """Synchronous adapter for one calibrated SO-101 follower arm."""
 
     def __init__(
-        self, config: SO101Config, *, controller: _SO101Controller | None = None
+        self, config: SO101Config, *, controller: _SO101Controller | None = None,
+        read_only: bool = False,
     ) -> None:
+        if not isinstance(read_only, bool):
+            raise TypeError("read_only must be a boolean")
+        if read_only and controller is not None:
+            raise ValueError("read-only capture requires the built-in Feetech controller")
         self.config = config
+        self.read_only = read_only
         self.robot_id = config.robot_id
-        self.controller = controller or _FeetechSO101Controller(config)
+        self.controller = controller or _FeetechSO101Controller(config, read_only=read_only)
 
     def connect(self) -> None:
         if self.controller.is_connected:
@@ -533,6 +544,8 @@ class SO101Adapter(RobotAdapter):
         )
 
     def execute(self, action: RobotAction) -> None:
+        if self.read_only:
+            raise SO101AdapterError("read-only SO-101 connection cannot execute actions")
         declared_space = action.metadata.get("action_space")
         if declared_space is not None and declared_space != SO101_ACTION_SPACE:
             raise SO101AdapterError(
@@ -601,6 +614,8 @@ class SO101Adapter(RobotAdapter):
 
     def stop(self) -> None:
         """Hold the measured pose; SO-101 exposes no separate stop primitive."""
+        if self.read_only:
+            raise SO101AdapterError("read-only SO-101 connection cannot command a hold")
         positions = self._read_positions()
         self.controller.send_action(dict(zip(SO101_POSITION_FEATURES, positions)))
 

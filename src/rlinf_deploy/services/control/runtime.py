@@ -13,7 +13,7 @@ from rlinf_deploy.bindings import BindingMapper
 from rlinf_deploy.robots import RobotAction, RobotAdapter
 from rlinf_deploy.robots.sensors.cameras import CameraFrame
 
-from ..inference import InferenceClient, PolicyResult
+from rlinf_deploy.services.inference import InferenceClient, PolicyResult
 
 
 class ControlRuntimeCancelled(RuntimeError):

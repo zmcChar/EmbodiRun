@@ -1,15 +1,19 @@
 import json
 import logging
+import shlex
+import shutil
 import socket
 import sys
 import tarfile
-from io import BytesIO
+from copy import deepcopy
 from dataclasses import replace
+from io import BytesIO
 from pathlib import Path
 from threading import Barrier, Thread
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from rlinf_deploy.services.control.contracts import TaskResult, error_payload
 from rlinf_deploy.services.host.cli import main
@@ -19,18 +23,25 @@ from rlinf_deploy.services.host.cli.command.init import (
 )
 from rlinf_deploy.services.host.config import ConfigError, load_config
 from rlinf_deploy.services.host.environment import (
+    EnvironmentError,
+    EnvironmentProfile,
     UvEnvironmentManager,
     environment_profiles,
 )
 from rlinf_deploy.services.host.executor import (
     Command,
+    CommandError,
     CommandResult,
     JsonHttpResponse,
     LocalExecutor,
     SshExecutor,
 )
-from rlinf_deploy.services.host.plan import ServiceError, ServiceSpec, build_plan
-from rlinf_deploy.services.host.source import ProjectManager, active_deploy_project
+from rlinf_deploy.services.host.plan import ServiceSpec, build_plan
+from rlinf_deploy.services.host.source import (
+    ProjectManager,
+    SourceError,
+    active_deploy_project,
+)
 from rlinf_deploy.services.host.state import (
     DeploymentState,
     EnvironmentState,
@@ -40,9 +51,213 @@ from rlinf_deploy.services.host.state import (
     StateStore,
 )
 from rlinf_deploy.services.host.supervisor import ServiceSupervisor, SupervisorError
+from rlinf_deploy.services.simulation.contracts import SimulationServiceConfig
 
 ROOT = Path(__file__).parents[1]
-EXAMPLE = ROOT / "configs" / "muti-nodes.example.yaml"
+CONFIGS = ROOT / "configs" / "http-wireless-inference"
+EXAMPLE = CONFIGS / "http.yaml"
+WIRELESS_EXAMPLE = CONFIGS / "wireless.yaml"
+INFERENCE_REVISION = "a" * 40
+
+
+@pytest.fixture(scope="module", autouse=True)
+def service_examples(tmp_path_factory):
+    """Keep lifecycle inputs small without separate copies of the lab YAMLs."""
+    directory = tmp_path_factory.mktemp("service-examples")
+    with pytest.MonkeyPatch.context() as patch:
+        for transport, variable, arm in (
+            ("http", "EXAMPLE", "so101-1"),
+            ("wireless", "WIRELESS_EXAMPLE", "so101-2"),
+        ):
+            document = yaml.safe_load((CONFIGS / f"{transport}.yaml").read_text())
+            runtime = document["runtimes"][f"{arm}-runtime"]
+            robot = document["robots"][arm]
+            sensors = {name: document["sensors"][name] for name in runtime["inputs"].values()}
+            model = document["models"]["pi05-01"]
+            model.pop("server_args")
+            if transport == "http":
+                document["metadata"]["name"] = "thor-so101-pi05"
+                robot.update(node=model["node"], port="/dev/ttyACM0")
+                for sensor in sensors.values():
+                    sensor["node"] = model["node"]
+                model["server"]["bind"] = "127.0.0.1"
+            else:
+                # Exercise explicit transport limits independently of lab defaults.
+                limits = {"max_peer_queued_messages": 16, "max_peer_queued_bytes": 67108864,
+                          "egress_quantum_bytes": 65536, "egress_rate_bytes_per_second": 6250000,
+                          "egress_burst_bytes": 65536}
+                model["transport_options"] = dict(limits)
+                runtime["inference_client"]["transport_options"] = dict(limits)
+            document["nodes"] = {name: node for name, node in document["nodes"].items()
+                                 if name in {model["node"], robot["node"]}}
+            for node in document["nodes"].values():
+                node["connection"].pop("proxy_command")
+            document.update(robots={arm: robot}, sensors=sensors,
+                            runtimes={f"{arm}-runtime": runtime})
+            path = directory / f"{transport}.yaml"
+            path.write_text(yaml.safe_dump(document, sort_keys=False))
+            patch.setattr(sys.modules[__name__], variable, path)
+        yield
+
+
+def simulation_deployment(tmp_path, kind, backend, transport):
+    options = {
+        "vlabench": {"task": "select_fruit"},
+        "libero": {"suite": "libero_spatial", "task_id": 0},
+        "habitat": {
+            "dataset": "/data/episodes.json.gz",
+            "scenes_dir": "/data/scenes",
+            "episode_id": "episode-1",
+        },
+        "isaac": {
+            "task": "navigation",
+            "instruction": "walk to the door",
+            "goal_position": [1, 0, 0],
+        },
+    }
+    navigation = kind in {"habitat", "isaac"}
+    model = {
+        "backend": backend,
+        "transport": transport,
+        "type": "streamvln" if navigation else "pi05",
+        "node": "workstation",
+        "source": "/models/checkpoint",
+        "server": {"bind": "127.0.0.1", "port": 8000},
+    }
+    if backend == "sglang":
+        model["environment_packages"] = ["sglang[diffusion]==0.5.18"]
+    if transport == "wireless":
+        model["server"]["port"] = 9300
+    config_path = tmp_path / "simulation.yaml"
+    config_path.write_text(
+        json.dumps(
+            {
+                "metadata": {
+                    "name": "simulation",
+                    "deploy-commit": "deploy123",
+                },
+                "nodes": {
+                    "workstation": {
+                        "type": "workstation",
+                        "connection": {"type": "local"},
+                    },
+                },
+                "simulators": {
+                    "sim": {"type": kind, "node": "workstation", **options[kind]},
+                },
+                "models": {"policy": model},
+                "runtimes": {
+                    "sim-runtime": {
+                        "simulator": "sim",
+                        "model": "policy",
+                        "binding": (
+                            "unitree.go2.streamvln"
+                            if navigation
+                            else "franka.panda.pi05"
+                        ),
+                        "server": {"bind": "127.0.0.1", "port": 8100},
+                        **(
+                            {"inference_client": {"bind": "127.0.0.1", "port": 9301}}
+                            if transport == "wireless"
+                            else {}
+                        ),
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return load_config(config_path)
+
+
+@pytest.mark.parametrize(
+    "kind,backend,transport",
+    [
+        (kind, "vvla", transport)
+        for kind in ("vlabench", "libero", "habitat", "isaac")
+        for transport in ("http", "wireless")
+    ]
+    + [(kind, "sglang", "http") for kind in ("vlabench", "libero")],
+)
+def test_simulation_plan_preserves_backend_and_environment_boundaries(
+    tmp_path, kind, backend, transport
+) -> None:
+    config = simulation_deployment(tmp_path, kind, backend, transport)
+    profiles = environment_profiles(config)
+    simulation_profile = next(p for p in profiles if p.project == "deploy")
+    model_profile = next(p for p in profiles if p.project == "inference")
+    expected_extras = ("wireless",) if transport == "wireless" else ()
+    assert simulation_profile.group == f"sim-{kind}"
+    assert simulation_profile.extras == model_profile.extras == expected_extras
+    manager = UvEnvironmentManager(RecordingExecutor())
+    command = manager.sync_command(simulation_profile, project_dir="/opt/deploy")
+    assert ("--extra" in command.argv) == (transport == "wireless")
+    if transport == "wireless":
+        assert command.argv[-2:] == ("--extra", "wireless")
+    assert model_profile.install == (
+        "packages" if backend == "sglang" else "project-group"
+    )
+
+    model_service, simulation_service = build_plan(config).services
+    assert model_service.command.argv[0] == (
+        "sglang" if backend == "sglang" else f"vvla-{transport}-serve"
+    )
+    assert simulation_service.command.argv[0] == "rlinf-simulation-serve"
+    runtime = SimulationServiceConfig.from_json(
+        simulation_service.simulation_config_json
+    )
+    assert runtime.inference_backend == backend
+    assert runtime.inference_transport == transport
+    if transport == "wireless":
+        assert runtime.inference_endpoint == "wireless://model.policy"
+        assert runtime.inference_options["comm_config"] == (
+            "simulation-sim-runtime.wireless.json"
+        )
+        server = json.loads(model_service.wireless_config_json)
+        client = json.loads(simulation_service.wireless_config_json)
+        assert server["local"]["port"] == 9300
+        assert client["local"]["port"] == 9301
+        assert client["peers"] == [
+            {key: value for key, value in server["local"].items() if key != "bind_host"}
+        ]
+    else:
+        assert model_service.wireless_config_json is None
+        assert simulation_service.wireless_config_json is None
+
+
+@pytest.mark.parametrize("wireless_first", [False, True])
+def test_simulators_sharing_environment_union_wireless_dependencies(
+    tmp_path, wireless_first
+) -> None:
+    config = simulation_deployment(tmp_path, "habitat", "vvla", "http")
+    other_id = "aaa-wireless" if wireless_first else "zzz-wireless"
+    config = replace(
+        config,
+        simulators={
+            **config.simulators,
+            other_id: replace(config.simulators["sim"], simulator_id=other_id),
+        },
+        models={
+            **config.models,
+            "wireless": replace(
+                config.models["policy"],
+                model_id="wireless",
+                transport="wireless",
+            ),
+        },
+        runtimes={
+            **config.runtimes,
+            "wireless": replace(
+                config.runtimes["sim-runtime"],
+                runtime_id="wireless",
+                simulator=other_id,
+                model="wireless",
+            ),
+        },
+    )
+    profiles = environment_profiles(config)
+    assert len(profiles) == 2
+    assert all(profile.extras == ("wireless",) for profile in profiles)
 
 
 class RecordingExecutor:
@@ -71,7 +286,8 @@ class ResultExecutor:
 
 
 class FakeNodeExecutor:
-    def __init__(self) -> None:
+    def __init__(self, inference_commit=INFERENCE_REVISION) -> None:
+        self.inference_commit = inference_commit
         self.commands = []
         self.files = {}
         self.health_requests = []
@@ -100,6 +316,13 @@ class FakeNodeExecutor:
             return CommandResult(0, f"{repository}\n", "")
         if "rev-parse" in argv and "HEAD" in argv:
             return CommandResult(0, "resolved\nresolved\n", "")
+        if "ls-tree" in argv:
+            entry = (
+                f"160000 commit {self.inference_commit}\tthird_party/vvla\n"
+                if self.inference_commit is not None
+                else ""
+            )
+            return CommandResult(0, entry)
         if len(argv) > 2 and argv[1].endswith("/supervisor.py"):
             return CommandResult(0, "running\t321\n", "")
         return CommandResult(0, "", "")
@@ -333,7 +556,21 @@ def two_node_model_config(tmp_path: Path) -> Path:
     return config_path
 
 
-def test_example_resolves_real_thor_environment_and_runtime() -> None:
+@pytest.mark.parametrize("transport", ["http", "wireless"])
+def test_lab_examples_preserve_shared_model_and_launch_arguments(transport):
+    config = load_config(CONFIGS / f"{transport}.yaml")
+    model, *controls = build_plan(config).services
+    assert model.node == "jetson-agx-thor-232"
+    assert len(controls) == 2
+    assert {control.node for control in controls} == {"jetson-agx-orin-174", "jetson-orin-nx"}
+    assert model.command.argv[-5:] == (
+        "--dtype", "bfloat16", "--num-steps", "10", "--capture-full-loop",
+    )
+    assert all(json.loads(control.control_config_json)["inference"]["transport"] == transport
+               for control in controls)
+
+
+def test_single_node_environment_and_runtime() -> None:
     config = load_config(EXAMPLE)
     profiles = environment_profiles(config)
     plan = build_plan(config)
@@ -388,6 +625,7 @@ def test_example_resolves_real_thor_environment_and_runtime() -> None:
     assert control_config["schema"] == "rlinf.control.config.v1"
     assert control_config["binding"] == "lerobot.so101.pi05"
     assert control_config["inference"] == {
+        "backend": "vvla",
         "transport": "http",
         "endpoint": "http://127.0.0.1:8000",
         "options": {},
@@ -403,12 +641,10 @@ def test_wireless_model_resolves_server_and_control_client_boundaries(
     config_path.write_text(
         EXAMPLE.read_text(encoding="utf-8")
         .replace("transport: http", "transport: wireless")
+        .replace("      port: 8000", "      port: 9300")
         .replace(
-            "    source: /home/user/models/pi05_so101\n",
-            "    source: /home/user/models/pi05_so101\n"
-            "    comm_config: /etc/rlinf/inference-wireless.yaml\n"
-            "    client_comm_config: /etc/rlinf/control-wireless.yaml\n"
-            "    server_node_id: inference-1\n",
+            "    inputs:\n",
+            "    inference_client:\n      bind: 127.0.0.1\n      port: 9301\n    inputs:\n",
         ),
         encoding="utf-8",
     )
@@ -418,21 +654,470 @@ def test_wireless_model_resolves_server_and_control_client_boundaries(
     model_service, control_service = plan.services
     assert model_service.command.argv[-2:] == (
         "--comm-config",
-        "/etc/rlinf/inference-wireless.yaml",
+        "pi05-01.wireless.json",
     )
     assert model_service.command.argv[0] == "vvla-wireless-serve"
     assert model_service.health_endpoint is None
     control_config = json.loads(control_service.control_config_json)
     assert control_config["inference"] == {
+        "backend": "vvla",
         "transport": "wireless",
-        "endpoint": "wireless://inference-1",
+        "endpoint": "wireless://model.pi05-01",
         "options": {
-            "comm_config": "/etc/rlinf/control-wireless.yaml",
-            "server_node_id": "inference-1",
+            "comm_config": "control-so101-1-runtime.wireless.json",
+            "server_node_id": "model.pi05-01",
         },
     }
     profiles = environment_profiles(load_config(config_path))
     assert {profile.extras for profile in profiles} == {("wireless",)}
+
+
+def wireless_document():
+    return yaml.safe_load(WIRELESS_EXAMPLE.read_text(encoding="utf-8"))
+
+
+def load_document(tmp_path, document):
+    path = tmp_path / "deployment.yaml"
+    path.write_text(yaml.safe_dump(document), encoding="utf-8")
+    return load_config(path)
+
+
+def test_wireless_example_generates_complementary_endpoints() -> None:
+    model, control = build_plan(load_config(WIRELESS_EXAMPLE)).services
+    server = json.loads(model.wireless_config_json)
+    client = json.loads(control.wireless_config_json)
+    assert server["local"] == {
+        "node_id": "model.pi05-01",
+        "host": "192.168.2.232",
+        "bind_host": "0.0.0.0",
+        "port": 9300,
+    }
+    assert client["local"] == {
+        "node_id": "runtime.so101-2-runtime",
+        "host": "192.168.2.148",
+        "bind_host": "0.0.0.0",
+        "port": 9300,
+    }
+    assert server["peers"] == [
+        {key: value for key, value in client["local"].items() if key != "bind_host"}
+    ]
+    assert client["peers"] == [
+        {key: value for key, value in server["local"].items() if key != "bind_host"}
+    ]
+    assert (
+        server["comm"]
+        == client["comm"]
+        == {
+            "max_peer_queued_messages": 16,
+            "max_peer_queued_bytes": 67108864,
+            "egress_quantum_bytes": 65536,
+            "egress_rate_bytes_per_second": 6250000,
+            "egress_burst_bytes": 65536,
+        }
+    )
+
+
+def test_wireless_shared_model_has_distinct_runtime_peers(tmp_path) -> None:
+    document = wireless_document()
+    robot = deepcopy(document["robots"]["so101-2"])
+    robot["port"] = "/dev/second-arm"
+    document["robots"]["second-arm"] = robot
+    runtime = deepcopy(document["runtimes"]["so101-2-runtime"])
+    runtime["robot"] = "second-arm"
+    runtime["server"]["port"] = 8101
+    runtime["inference_client"]["port"] = 9301
+    runtime["inference_client"]["transport_options"]["egress_rate_bytes_per_second"] = (
+        1000000
+    )
+    document["runtimes"]["second-runtime"] = runtime
+    plan = build_plan(load_document(tmp_path, document))
+    assert plan == build_plan(load_document(tmp_path, document))
+    server = json.loads(plan.services[0].wireless_config_json)
+    assert {peer["node_id"] for peer in server["peers"]} == {
+        "runtime.second-runtime",
+        "runtime.so101-2-runtime",
+    }
+    assert {peer["port"] for peer in server["peers"]} == {9300, 9301}
+    clients = {
+        service.service_id: json.loads(service.wireless_config_json)
+        for service in plan.services[1:]
+    }
+    for client in clients.values():
+        assert [peer["node_id"] for peer in client["peers"]] == ["model.pi05-01"]
+    assert (
+        clients["control-second-runtime"]["comm"]["egress_rate_bytes_per_second"]
+        == 1000000
+    )
+    assert (
+        clients["control-so101-2-runtime"]["comm"]["egress_rate_bytes_per_second"]
+        == 6250000
+    )
+
+
+@pytest.mark.parametrize("transport", ["http", "wireless"])
+def test_data_addresses_override_ssh_hosts(tmp_path, transport) -> None:
+    document = wireless_document()
+    for index, node in enumerate(document["nodes"].values()):
+        node["connection"]["host"] = "127.0.0.1"  # SSH forwarded through Host.
+        node["address"] = f"192.168.8.{index + 1}"
+    document["models"]["pi05-01"]["transport"] = transport
+    if transport == "http":
+        del document["models"]["pi05-01"]["transport_options"]
+        del document["runtimes"]["so101-2-runtime"]["inference_client"]
+    model, control = build_plan(load_document(tmp_path, document)).services
+    if transport == "http":
+        assert (
+            json.loads(control.control_config_json)["inference"]["endpoint"]
+            == "http://192.168.8.1:9300"
+        )
+    else:
+        server = json.loads(model.wireless_config_json)
+        client = json.loads(control.wireless_config_json)
+        assert server["local"]["host"] == client["peers"][0]["host"] == "192.168.8.1"
+        assert client["local"]["host"] == server["peers"][0]["host"] == "192.168.8.2"
+
+
+def test_wireless_multiple_models_keep_their_peers_separate(tmp_path) -> None:
+    config = simulation_deployment(tmp_path, "habitat", "vvla", "wireless")
+    document = json.loads(config.path.read_text(encoding="utf-8"))
+    document["models"]["second-model"] = deepcopy(document["models"]["policy"])
+    document["models"]["second-model"]["server"]["port"] = 9400
+    runtime = deepcopy(document["runtimes"]["sim-runtime"])
+    runtime["model"] = "second-model"
+    runtime["server"]["port"] = 8101
+    runtime["inference_client"]["port"] = 9401
+    document["runtimes"]["second-runtime"] = runtime
+    services = build_plan(load_document(tmp_path, document)).services
+    endpoints = {
+        service.service_id: json.loads(service.wireless_config_json)
+        for service in services
+    }
+    assert [peer["node_id"] for peer in endpoints["policy"]["peers"]] == [
+        "runtime.sim-runtime"
+    ]
+    assert [peer["node_id"] for peer in endpoints["second-model"]["peers"]] == [
+        "runtime.second-runtime"
+    ]
+    client = endpoints["simulation-second-runtime"]
+    assert [peer["node_id"] for peer in client["peers"]] == ["model.second-model"]
+    assert len({endpoint["local"]["port"] for endpoint in endpoints.values()}) == 4
+
+
+def test_generated_endpoint_files_cannot_overwrite_another_service(tmp_path) -> None:
+    config = simulation_deployment(tmp_path, "habitat", "vvla", "wireless")
+    document = json.loads(config.path.read_text(encoding="utf-8"))
+    document["models"]["simulation-sim-runtime"] = document["models"].pop("policy")
+    document["runtimes"]["sim-runtime"]["model"] = "simulation-sim-runtime"
+    with pytest.raises(ValueError, match="model IDs must not collide"):
+        build_plan(load_document(tmp_path, document))
+
+
+@pytest.mark.parametrize(
+    "path,value,match",
+    [
+        (
+            ("runtimes", "so101-2-runtime", "inference_client"),
+            None,
+            "inference_client is required",
+        ),
+        (
+            ("runtimes", "so101-2-runtime", "inference_client", "port"),
+            8100,
+            "share port",
+        ),
+        (
+            ("runtimes", "so101-2-runtime", "inference_client", "port"),
+            True,
+            "must be an integer",
+        ),
+        (
+            ("runtimes", "so101-2-runtime", "inference_client", "port"),
+            65536,
+            "between 1 and 65535",
+        ),
+        (
+            ("runtimes", "so101-2-runtime", "inference_client", "unknown"),
+            1,
+            "unknown fields",
+        ),
+        (("models", "pi05-01", "comm_config"), "old.yaml", "generated by Host"),
+        (("models", "pi05-01", "client_comm_config"), "old.yaml", "generated by Host"),
+        (("models", "pi05-01", "server_node_id"), "old-id", "generated by Host"),
+        (("models", "pi05-01", "transport_options"), [], "must be a mapping"),
+        (
+            ("runtimes", "so101-2-runtime", "inference_client", "transport_options"),
+            [],
+            "must be a mapping",
+        ),
+        (
+            ("models", "pi05-01", "transport_options", "egress_burst_bytes"),
+            float("inf"),
+            "JSON-compatible",
+        ),
+        (("models", "pi05-01", "server", "bind"), "127.0.0.2", "cannot advertise"),
+        (
+            ("runtimes", "so101-2-runtime", "inference_client", "bind"),
+            "localhost",
+            "cannot advertise",
+        ),
+        (("nodes", "jetson-orin-nx", "address"), "0.0.0.0", "cannot advertise"),
+        (("nodes", "jetson-orin-nx", "address"), "127.0.0.1", "cannot advertise"),
+        (
+            ("nodes", "jetson-orin-nx", "address"),
+            "http://192.168.8.2:9300",
+            "without URL or port",
+        ),
+        (
+            ("nodes", "jetson-orin-nx", "connection"),
+            {"type": "local"},
+            "no advertised address",
+        ),
+    ],
+)
+def test_invalid_wireless_configuration_fails_before_execution(
+    tmp_path, path, value, match
+) -> None:
+    document = wireless_document()
+    target = document
+    for key in path[:-1]:
+        target = target[key]
+    if value is None:
+        del target[path[-1]]
+    else:
+        target[path[-1]] = value
+    with pytest.raises(ConfigError, match=match):
+        build_plan(load_document(tmp_path, document))
+
+
+@pytest.mark.parametrize("field", ["inference_client", "transport_options"])
+def test_http_rejects_wireless_only_fields(tmp_path, field) -> None:
+    document = wireless_document()
+    document["models"]["pi05-01"]["transport"] = "http"
+    if field == "inference_client":
+        del document["models"]["pi05-01"]["transport_options"]
+    with pytest.raises(ConfigError, match=rf"{field} requires wireless"):
+        load_document(tmp_path, document)
+
+
+@pytest.mark.parametrize("collision", ["model", "client", "runtime"])
+def test_wireless_listeners_conflict_on_same_node(tmp_path, collision) -> None:
+    config = simulation_deployment(tmp_path, "libero", "vvla", "wireless")
+    document = json.loads(config.path.read_text(encoding="utf-8"))
+    runtime = document["runtimes"]["sim-runtime"]
+    if collision == "model":
+        runtime["inference_client"]["port"] = 9300
+    else:
+        second = deepcopy(runtime)
+        second["server"]["port"] = 8101
+        second["inference_client"]["port"] = 9301 if collision == "client" else 9302
+        if collision == "runtime":
+            second["server"]["port"] = 9301
+        document["runtimes"]["second"] = second
+    with pytest.raises(ConfigError, match="share port"):
+        load_document(tmp_path, document)
+
+
+@pytest.mark.parametrize("target", ["robot", "simulator"])
+def test_wireless_up_writes_native_configs_and_absolute_references(
+    tmp_path, capsys, target
+) -> None:
+    config = (
+        load_config(WIRELESS_EXAMPLE)
+        if target == "robot"
+        else simulation_deployment(tmp_path, "habitat", "vvla", "wireless")
+    )
+    executors = []
+
+    def factory(_node):
+        executor = FakeNodeExecutor()
+        executors.append(executor)
+        return executor
+
+    args = ("--config", str(config.path), "--state-dir", str(tmp_path / "state"))
+    assert main((*args, "init"), executor_factory=factory) == 0
+    executors.clear()
+    assert main((*args, "up"), executor_factory=factory) == 0
+    assert capsys.readouterr().err == ""
+    files = {
+        path: content
+        for executor in executors
+        for path, (content, mode) in executor.files.items()
+    }
+    wireless_files = {
+        path: json.loads(content)
+        for path, content in files.items()
+        if path.endswith(".wireless.json")
+    }
+    assert len(wireless_files) == 2
+    assert all("/generated/" in path for path in wireless_files)
+    assert all(
+        mode == 0o600
+        for executor in executors
+        for path, (_, mode) in executor.files.items()
+        if path in wireless_files
+    )
+    service_configs = [
+        json.loads(content)
+        for path, content in files.items()
+        if path.endswith((".control.json", ".simulation.json"))
+    ]
+    assert len(service_configs) == 1
+    options = service_configs[0]["inference"]["options"]
+    client = wireless_files[options["comm_config"]]
+    assert client["peers"][0]["node_id"] == options["server_node_id"]
+    start_commands = [
+        command
+        for executor in executors
+        for command, _ in executor.commands
+        if len(command.argv) > 2
+        and command.argv[1].endswith("/supervisor.py")
+        and command.argv[2] == "start"
+    ]
+    start_requests = [json.loads(command.stdin) for command in start_commands]
+    model_argv = next(
+        request["argv"]
+        for request in start_requests
+        if "--comm-config" in request["argv"]
+    )
+    path = model_argv[model_argv.index("--comm-config") + 1]
+    assert wireless_files[path]["local"]["node_id"] == options["server_node_id"]
+
+
+def test_sglang_plan_renders_an_external_pipeline_contract(tmp_path) -> None:
+    """Rendering an external pipeline name does not prove SGLang model support."""
+    config_path = tmp_path / "sglang-habitat.yaml"
+    config_path.write_text(
+        """
+metadata:
+  name: sglang-habitat-streamvln
+  deploy-commit: deploy123
+nodes:
+  workstation:
+    type: workstation
+    connection:
+      type: local
+simulators:
+  habitat-demo:
+    type: habitat
+    node: workstation
+    dataset: /data/episodes.json.gz
+    scenes_dir: /data/scenes
+    episode_id: episode-1
+models:
+  streamvln:
+    backend: sglang
+    transport: http
+    type: streamvln
+    node: workstation
+    environment_packages:
+      - sglang[diffusion]==0.5.18
+    source: /models/streamvln
+    pipeline: StreamVLNPipeline
+    pipeline_config: configs/streamvln-sglang.json
+    gpu: cuda:1
+    server_args: [--tp-size, "1"]
+    server:
+      bind: 127.0.0.1
+      port: 30000
+runtimes:
+  habitat-streamvln:
+    simulator: habitat-demo
+    model: streamvln
+    binding: unitree.go2.streamvln
+    server:
+      bind: 127.0.0.1
+      port: 31000
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+    profiles = environment_profiles(config)
+    plan = build_plan(config)
+
+    identities = {
+        (profile.project, profile.group, profile.install) for profile in profiles
+    }
+    assert identities == {
+        ("deploy", "sim-habitat", "project-group"),
+        ("inference", "sglang", "packages"),
+    }
+    model_service, simulation_service = plan.services
+    assert model_service.command.argv == (
+        "sglang",
+        "serve",
+        "/models/streamvln",
+        "--model-type",
+        "diffusion",
+        "--pipeline-class-name",
+        "StreamVLNPipeline",
+        "--pipeline-config-path",
+        "configs/streamvln-sglang.json",
+        "--tp-size",
+        "1",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "30000",
+    )
+    assert model_service.command.environment == {"CUDA_VISIBLE_DEVICES": "1"}
+    assert model_service.health_endpoint == "http://127.0.0.1:30000/health"
+    assert model_service.adapter_config_json is None
+    simulation_config = json.loads(simulation_service.simulation_config_json)
+    assert simulation_config["inference"] == {
+        "backend": "sglang",
+        "transport": "http",
+        "endpoint": "http://127.0.0.1:30000",
+        "options": {
+            "image_keys": {"observation.images.rgb": "rgb"},
+            "parameters": {"action_horizon": 4},
+            "runtime": {},
+        },
+    }
+
+
+def test_sglang_pi05_reuses_existing_so101_binding(tmp_path) -> None:
+    config_path = tmp_path / "sglang-so101.yaml"
+    config_path.write_text(
+        EXAMPLE.read_text(encoding="utf-8")
+        .replace("backend: vvla", "backend: sglang")
+        .replace(
+            "    source: /home/user/models/pi05_so101\n",
+            '    environment_packages: ["sglang[diffusion]==0.5.18"]\n'
+            "    source: /home/user/models/pi05_so101\n",
+        ),
+        encoding="utf-8",
+    )
+
+    model_service, control_service = build_plan(load_config(config_path)).services
+
+    assert model_service.command.argv[:5] == (
+        "sglang",
+        "serve",
+        "/home/user/models/pi05_so101",
+        "--model-type",
+        "diffusion",
+    )
+    control_config = json.loads(control_service.control_config_json)
+    assert control_config["inference"]["backend"] == "sglang"
+    assert control_config["inference"]["options"] == {
+        "action_feature_names": [
+            "shoulder_pan.pos",
+            "shoulder_lift.pos",
+            "elbow_flex.pos",
+            "wrist_flex.pos",
+            "wrist_roll.pos",
+            "gripper.pos",
+        ],
+        "image_keys": {
+            "observation.images.front": "front",
+            "observation.images.wrist": "wrist",
+        },
+        "parameters": {"action_horizon": 50},
+        "runtime": {},
+        "state_fields": ["joint_positions_deg", "gripper_position"],
+    }
 
 
 def test_uv_environment_manager_uses_only_the_selected_group() -> None:
@@ -498,6 +1183,150 @@ def test_uv_environment_manager_applies_configured_package_overlay() -> None:
     assert command.timeout_s == 1800.0
 
 
+@pytest.fixture
+def standalone_environment_profile() -> EnvironmentProfile:
+    return EnvironmentProfile(
+        environment_id="node:inference:sglang:.venv-sglang",
+        node="node",
+        project="inference",
+        group="sglang",
+        path=".venv-sglang",
+        python="3.12",
+        packages=("sglang[diffusion]==0.5.18",),
+        install="packages",
+    )
+
+
+def test_uv_environment_manager_creates_standalone_sglang_environment(
+    standalone_environment_profile,
+) -> None:
+    executor = ResultExecutor(CommandResult(1), CommandResult(0), CommandResult(0))
+
+    UvEnvironmentManager(executor).prepare(
+        standalone_environment_profile,
+        project_dir="/opt/rlinf-inference",
+    )
+
+    assert [command.argv for command in executor.commands] == [
+        ("test", "-f", "/opt/rlinf-inference/.venv-sglang/pyvenv.cfg"),
+        ("uv", "venv", "--python", "3.12", ".venv-sglang"),
+        (
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            "/opt/rlinf-inference/.venv-sglang/bin/python",
+            "sglang[diffusion]==0.5.18",
+        ),
+    ]
+
+
+@pytest.mark.parametrize(
+    "python_request,install_fails",
+    [
+        (None, False),
+        ("version", False),
+        ("range", False),
+        ("path", False),
+        ("version", True),
+    ],
+)
+def test_standalone_environment_init_is_repeatable(
+    tmp_path, standalone_environment_profile, python_request, install_fails
+) -> None:
+    uv = shutil.which("uv")
+    if uv is None:
+        pytest.skip("environment lifecycle regression requires uv")
+    major, minor = sys.version_info[:2]
+    requests = {
+        "version": f"{major}.{minor}",
+        "range": f">={major}.{minor},<{major}.{minor + 1}",
+        "path": sys.executable,
+    }
+    profile = replace(standalone_environment_profile, python=sys.executable)
+
+    class PackageExecutor(LocalExecutor):
+        def __init__(self):
+            self.commands = []
+            self.install_attempts = 0
+
+        def run(self, command, *, check=True):
+            self.commands.append(command)
+            # Exercise real uv creation/discovery without downloading SGLang.
+            if command.argv[1:3] == ("pip", "install"):
+                self.install_attempts += 1
+                if install_fails and self.install_attempts == 1:
+                    raise CommandError(1, "simulated package download failure")
+                return CommandResult(0, "packages ready\n")
+            return super().run(command, check=check)
+
+    executor = PackageExecutor()
+    manager = UvEnvironmentManager(executor, uv_executable=uv)
+    if install_fails:
+        with pytest.raises(CommandError, match="simulated package download failure"):
+            manager.prepare(profile, project_dir=str(tmp_path))
+    else:
+        manager.prepare(profile, project_dir=str(tmp_path))
+    environment_path = tmp_path / profile.path
+    config_stat = (environment_path / "pyvenv.cfg").stat()
+    installed_module = (
+        environment_path / f"lib/python{major}.{minor}/site-packages/env_probe.py"
+    )
+    installed_module.write_text("VALUE = 'preserved'\n", encoding="utf-8")
+
+    result = manager.prepare(
+        replace(profile, python=requests.get(python_request)),
+        project_dir=str(tmp_path),
+    )
+
+    assert result.stdout == "packages ready\n"
+    assert executor.install_attempts == 2
+    assert sum(command.argv[1] == "venv" for command in executor.commands) == 1
+    assert (
+        environment_path / "pyvenv.cfg"
+    ).stat().st_mtime_ns == config_stat.st_mtime_ns
+    probe = executor.run(
+        Command(
+            (
+                str(environment_path / "bin/python"),
+                "-c",
+                "import env_probe; print(env_probe.VALUE)",
+            )
+        )
+    )
+    assert probe.stdout == "preserved\n"
+
+
+@pytest.mark.parametrize(
+    "actual,requested",
+    [
+        (CommandResult(1, stderr="broken interpreter"), None),
+        (
+            CommandResult(0, "/usr/bin/python3.11\n"),
+            CommandResult(0, "/usr/bin/python3.12\n"),
+        ),
+        (
+            CommandResult(0, "/usr/bin/python3.11\n"),
+            CommandResult(1, stderr="Python not found"),
+        ),
+    ],
+)
+def test_standalone_environment_rejects_broken_or_incompatible_python(
+    standalone_environment_profile, actual, requested
+) -> None:
+    results = [CommandResult(0), actual]
+    if requested is not None:
+        results.append(requested)
+    executor = ResultExecutor(*results)
+    with pytest.raises(EnvironmentError, match="environment.*choose a different"):
+        UvEnvironmentManager(executor).prepare(
+            standalone_environment_profile,
+            project_dir="/opt/rlinf-inference",
+        )
+    assert not executor.results
+    assert not any(command.argv[1] in {"venv", "pip"} for command in executor.commands)
+
+
 def test_project_manager_clones_and_fetches_only_when_missing() -> None:
     repository = "https://example.com/project.git"
     executor = ResultExecutor(
@@ -520,6 +1349,72 @@ def test_project_manager_clones_and_fetches_only_when_missing() -> None:
     argv = [command.argv for command in executor.commands]
     assert ("git", "clone", "--no-checkout", repository, "/opt/project") in argv
     assert ("git", "-C", "/opt/project", "fetch", "origin", "abc1234") in argv
+
+
+def test_project_manager_reads_gitlink_from_requested_commit(tmp_path) -> None:
+    executor = LocalExecutor()
+    project = str(tmp_path / "deploy")
+
+    def git(*arguments):
+        return executor.run(Command(("git", "-C", project, *arguments)))
+
+    executor.run(Command(("git", "init", project)))
+    for revision in (INFERENCE_REVISION, "b" * 40):
+        git(
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            f"160000,{revision},third_party/vvla",
+        )
+        git(
+            "-c",
+            "user.name=Deploy test",
+            "-c",
+            "user.email=deploy@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "commit",
+            "-m",
+            "Pin inference",
+        )
+        if revision == INFERENCE_REVISION:
+            deploy_commit = git("rev-parse", "HEAD").stdout.strip()
+
+    manager = ProjectManager(executor)
+    assert (
+        manager.submodule_revision(
+            project_dir=project, revision=deploy_commit, path="third_party/vvla"
+        )
+        == INFERENCE_REVISION
+    )
+    assert (
+        manager.submodule_revision(
+            project_dir=project, revision="HEAD", path="third_party/vvla"
+        )
+        == "b" * 40
+    )
+    assert not (tmp_path / "deploy/third_party/vvla").exists()
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "",
+        f"100644 blob {INFERENCE_REVISION}\tthird_party/vvla\n",
+        f"040000 tree {INFERENCE_REVISION}\tthird_party/vvla\n",
+        f"160000 commit {INFERENCE_REVISION}\tother/path\n",
+        "160000 commit main\tthird_party/vvla\n",
+    ],
+)
+def test_project_manager_rejects_missing_or_invalid_gitlink(entry) -> None:
+    executor = ResultExecutor(CommandResult(0, entry))
+    with pytest.raises(SourceError, match="does not pin a valid submodule"):
+        ProjectManager(executor).submodule_revision(
+            project_dir="/opt/deploy", revision="deploy123", path="third_party/vvla"
+        )
+    assert len(executor.commands) == 1
 
 
 def test_local_executor_preserves_cwd_argv_environment_and_stdin(tmp_path) -> None:
@@ -746,6 +1641,45 @@ def test_ssh_executor_normalizes_health_channel_failure() -> None:
         )
 
 
+@pytest.mark.parametrize("fail", [False, True])
+def test_ssh_proxy_substitutes_endpoint_and_closes_on_failure(monkeypatch, fail):
+    from rlinf_deploy.services.host.config.connection import ConnectionConfig
+
+    events = []
+    proxy = SimpleNamespace(close=lambda: events.append("proxy-closed"))
+
+    def connect(**kwargs):
+        assert kwargs["sock"] is proxy
+        assert kwargs["hostname"] == "lab-node" and kwargs["port"] == 2222
+        if fail:
+            raise OSError("fixture connection failure")
+
+    client = SimpleNamespace(
+        load_system_host_keys=lambda: None, set_log_channel=lambda _: None,
+        connect=connect, close=lambda: events.append("client-closed"),
+    )
+
+    def proxy_factory(command):
+        assert shlex.split(command) == ["nc", "-X", "5", "-x", "127.0.0.1:1080", "lab-node", "2222"]
+        return proxy
+
+    monkeypatch.setitem(sys.modules, "paramiko", SimpleNamespace(
+        SSHClient=lambda: client, ProxyCommand=proxy_factory,
+    ))
+    executor = SshExecutor(ConnectionConfig(
+        kind="ssh", host="lab-node", port=2222, username="user",
+        proxy_command="nc -X 5 -x 127.0.0.1:1080 %h %p",
+    ))
+    if fail:
+        with pytest.raises(RuntimeError, match="fixture connection failure"):
+            executor._connect()
+        assert events == ["client-closed", "proxy-closed"]
+    else:
+        assert executor._connect() is client
+        executor.close()
+        assert events == ["client-closed"]
+
+
 def test_ssh_executor_does_not_leak_paramiko_transport_logs(
     monkeypatch,
     capsys,
@@ -812,6 +1746,33 @@ def test_service_supervisor_uses_identity_checked_pid_lifecycle() -> None:
     assert executor.commands[-1].timeout_s == 10.0
 
 
+def test_service_environment_activates_venv_using_the_node_path(monkeypatch) -> None:
+    import io
+    from types import SimpleNamespace
+
+    from rlinf_deploy.services.host import supervisor
+
+    monkeypatch.setenv("PATH", "/node/bin:/usr/bin")
+    monkeypatch.setenv("PYTHONHOME", "/unrelated/python")
+    payload = {
+        "argv": ["/env/sglang/bin/sglang"],
+        "cwd": "/project",
+        "environment": {
+            "RLINF_DEPLOY_SERVICE_ID": "model",
+            "VIRTUAL_ENV": "/env/sglang",
+        },
+    }
+    monkeypatch.setattr(
+        supervisor.sys,
+        "stdin",
+        SimpleNamespace(buffer=io.BytesIO(json.dumps(payload).encode())),
+    )
+    _, _, environment = supervisor._read_start_request("model")
+    assert environment["PATH"] == "/env/sglang/bin:/node/bin:/usr/bin"
+    assert environment["VIRTUAL_ENV"] == "/env/sglang"
+    assert "PYTHONHOME" not in environment
+
+
 def test_service_supervisor_rejects_unsafe_service_id() -> None:
     supervisor = ServiceSupervisor(
         ResultExecutor(),
@@ -863,12 +1824,23 @@ def test_duplicate_yaml_keys_are_rejected(tmp_path) -> None:
         "  name: one\n"
         "  name: two\n"
         "  deploy-commit: abc\n"
-        "  inference-commit: def\n"
         "nodes: {}\n",
         encoding="utf-8",
     )
 
     with pytest.raises(ConfigError, match="duplicate YAML key"):
+        load_config(config_path)
+
+
+def test_metadata_rejects_independent_inference_revision(tmp_path) -> None:
+    config_path = tmp_path / "obsolete.yaml"
+    config_path.write_text(
+        EXAMPLE.read_text(encoding="utf-8").replace(
+            "metadata:\n", "metadata:\n  inference-commit: obsolete\n", 1
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="inference-commit"):
         load_config(config_path)
 
 
@@ -921,6 +1893,72 @@ def test_control_and_model_ports_on_one_node_must_be_distinct(tmp_path) -> None:
         load_config(config_path)
 
 
+def test_cli_init_rejects_deploy_without_inference_gitlink(tmp_path, capsys) -> None:
+    executor = FakeNodeExecutor(inference_commit=None)
+    exit_code = main(
+        ("--config", str(EXAMPLE), "--state-dir", str(tmp_path), "init"),
+        executor_factory=lambda _node: executor,
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "does not pin a valid submodule" in captured.err
+    assert "third_party/vvla" in captured.err
+    commands = [command.argv for command, _check in executor.commands]
+    assert not any("--group" in argv for argv in commands)
+    assert not any(
+        "-C" in argv and argv[2].endswith("/sources/inference") for argv in commands
+    )
+    state = StateStore(tmp_path / "thor-so101-pi05.json").load()
+    assert state is not None
+    assert state.inference_commit is None
+    assert not state.nodes
+    assert not state.environments
+
+
+def test_cli_init_rejects_inconsistent_inference_gitlinks(tmp_path, capsys) -> None:
+    config_path = two_node_model_config(tmp_path)
+
+    def factory(node):
+        return FakeNodeExecutor(
+            inference_commit=(
+                INFERENCE_REVISION if node.node_id == "jetson-worker" else "b" * 40
+            )
+        )
+
+    exit_code = main(
+        ("--config", str(config_path), "--state-dir", str(tmp_path), "init"),
+        executor_factory=factory,
+    )
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "different Inference revisions" in captured.err
+    assert StateStore(tmp_path / "thor-so101-pi05.json").load() is None
+
+
+def test_cli_init_preserves_resolved_revision_after_partial_failure(
+    tmp_path, capsys
+) -> None:
+    config_path = two_node_model_config(tmp_path)
+
+    def factory(node):
+        return (
+            FailingExecutor() if node.node_id == "jetson-worker" else FakeNodeExecutor()
+        )
+
+    exit_code = main(
+        ("--config", str(config_path), "--state-dir", str(tmp_path), "init"),
+        executor_factory=factory,
+    )
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "connection refused" in captured.err
+    state = StateStore(tmp_path / "thor-so101-pi05.json").load()
+    assert state is not None
+    assert state.inference_commit == INFERENCE_REVISION
+    assert set(state.nodes) == {"jetson-agx-thor-232"}
+
+
 def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> None:
     executors = []
 
@@ -944,11 +1982,31 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
     assert "2 environments ready" in init_output.out
     initialized = StateStore(tmp_path / "thor-so101-pi05.json").load()
     assert initialized is not None
+    assert initialized.inference_commit == INFERENCE_REVISION
     assert {item.group for item in initialized.environments.values()} == {
         "pi05",
         "robot-so101",
     }
     init_argv = [command.argv for command, _check in executors[0].commands]
+    deploy_project = initialized.nodes["jetson-agx-thor-232"].deploy_project
+    inference_project = initialized.nodes["jetson-agx-thor-232"].inference_project
+    assert (
+        "/usr/bin/git",
+        "-C",
+        deploy_project,
+        "ls-tree",
+        load_config(EXAMPLE).metadata.deploy_commit,
+        "--",
+        "third_party/vvla",
+    ) in init_argv
+    assert (
+        "/usr/bin/git",
+        "-C",
+        inference_project,
+        "checkout",
+        "--detach",
+        INFERENCE_REVISION,
+    ) in init_argv
     assert any(argv[-2:] == ("--group", "pi05") for argv in init_argv)
     assert any(argv[-2:] == ("--group", "robot-so101") for argv in init_argv)
     assert executors[0].closed is True
@@ -1440,8 +2498,8 @@ def test_cli_rejects_chunk_steps_above_binding_maximum(capsys) -> None:
     assert "maximum 50" in captured.err
 
 
-def test_runtime_inputs_must_match_binding_image_fields(tmp_path) -> None:
-    config_path = tmp_path / "wrong-binding-input.yaml"
+def test_runtime_inputs_define_model_image_fields(tmp_path) -> None:
+    config_path = tmp_path / "custom-runtime-input.yaml"
     config_path.write_text(
         EXAMPLE.read_text(encoding="utf-8").replace(
             "      observation.images.front: front-camera",
@@ -1450,8 +2508,35 @@ def test_runtime_inputs_must_match_binding_image_fields(tmp_path) -> None:
         encoding="utf-8",
     )
 
-    with pytest.raises(ServiceError, match="image fields"):
-        build_plan(load_config(config_path))
+    plan = build_plan(load_config(config_path))
+
+    adapter_config = json.loads(plan.services[0].adapter_config_json)
+    assert adapter_config["image_fields"] == [
+        "observation.images.overhead",
+        "observation.images.wrist",
+    ]
+
+
+def test_vvla_model_image_keys_are_forwarded_to_the_policy_adapter(tmp_path) -> None:
+    config_path = tmp_path / "vvla-image-keys.yaml"
+    config_path.write_text(
+        EXAMPLE.read_text(encoding="utf-8").replace(
+            "    source: /home/user/models/pi05_so101\n",
+            "    source: /home/user/models/pi05_so101\n"
+            "    image_keys:\n"
+            "      observation.images.front: observation.images.base_0_rgb\n"
+            "      observation.images.wrist: observation.images.left_wrist_0_rgb\n",
+        ),
+        encoding="utf-8",
+    )
+
+    plan = build_plan(load_config(config_path))
+
+    adapter_config = json.loads(plan.services[0].adapter_config_json)
+    assert adapter_config["image_keys"] == {
+        "observation.images.front": "observation.images.base_0_rgb",
+        "observation.images.wrist": "observation.images.left_wrist_0_rgb",
+    }
 
 
 def test_cli_runtime_surfaces_remote_binding_error(tmp_path, capsys) -> None:
@@ -1757,13 +2842,16 @@ def test_cli_up_rejects_config_changed_after_init(tmp_path, capsys) -> None:
     assert "configuration changed since init" in captured.err
 
 
-def test_state_store_round_trip_is_atomic_and_secret_free(tmp_path) -> None:
+@pytest.mark.parametrize("inference_commit", ["def", None])
+def test_state_store_round_trip_is_atomic_and_secret_free(
+    tmp_path, inference_commit
+) -> None:
     state_path = tmp_path / "state" / "deployment.json"
     state = DeploymentState(
         name="lab",
         config_digest="1234",
         deploy_commit="abc",
-        inference_commit="def",
+        inference_commit=inference_commit,
         nodes={
             "node": NodeState(
                 node_id="node",
