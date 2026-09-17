@@ -1,17 +1,25 @@
-"""Public deployment configuration API."""
+"""Compatibility exports for :mod:`embodirun.deployment.config`.
 
-from .connection import ConnectionConfig
-from .loader import DeploymentConfig, config_digest, load_config
-from .meta import MetadataConfig
-from .model import ModelConfig
-from .node import NodeConfig
-from .robot import RobotConfig
-from .runtime import RuntimeConfig
-from .sensor import SensorConfig
-from .server import ServerConfig
-from .simulator import SimulatorConfig
-from .transport import InferenceClientConfig
-from .validation import ConfigError
+This package keeps its historical path so imports of ``services.host.config.*``
+remain valid while each leaf module resolves to the canonical implementation.
+"""
+
+from embodirun.deployment.config import (
+    ConfigError,
+    ConnectionConfig,
+    DeploymentConfig,
+    InferenceClientConfig,
+    MetadataConfig,
+    ModelConfig,
+    NodeConfig,
+    RobotConfig,
+    RuntimeConfig,
+    SensorConfig,
+    ServerConfig,
+    SimulatorConfig,
+    config_digest,
+    load_config,
+)
 
 __all__ = [
     "ConfigError",

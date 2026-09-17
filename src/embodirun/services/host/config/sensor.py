@@ -1,33 +1,7 @@
-"""Sensor instance configuration and parsing."""
+"""Compatibility alias for :mod:`embodirun.deployment.config.sensor`."""
 
-from __future__ import annotations
+from importlib import import_module as _import_module
+import sys as _sys
 
-from dataclasses import dataclass, field
-from typing import Any
-
-from .validation import string
-
-
-@dataclass(frozen=True, slots=True)
-class SensorConfig:
-    sensor_id: str
-    kind: str
-    node: str
-    options: dict[str, Any] = field(default_factory=dict, repr=False)
-
-
-def parse_sensor(sensor_id: str, value: dict[str, Any]) -> SensorConfig:
-    context = f"sensors.{sensor_id}"
-    return SensorConfig(
-        sensor_id=sensor_id,
-        kind=string(value, "type", context),
-        node=string(value, "node", context),
-        options={
-            name: option
-            for name, option in value.items()
-            if name not in {"type", "node"}
-        },
-    )
-
-
-__all__ = ["SensorConfig"]
+_canonical = _import_module("embodirun.deployment.config.sensor")
+_sys.modules[__name__] = _canonical

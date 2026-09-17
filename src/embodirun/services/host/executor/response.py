@@ -1,15 +1,7 @@
-"""Transport-independent HTTP response values."""
+"""Compatibility alias for :mod:`embodirun.deployment.executor.response`."""
 
-from __future__ import annotations
+from importlib import import_module as _import_module
+import sys as _sys
 
-from dataclasses import dataclass
-from typing import Any
-
-
-@dataclass(frozen=True, slots=True)
-class JsonHttpResponse:
-    status: int
-    payload: Any
-
-
-__all__ = ["JsonHttpResponse"]
+_canonical = _import_module("embodirun.deployment.executor.response")
+_sys.modules[__name__] = _canonical

@@ -36,12 +36,11 @@ from embodirun.services.host.executor import (
     LocalExecutor,
     SshExecutor,
 )
-from embodirun.services.host.plan import ServiceSpec, build_plan
+from embodirun.services.host.plan import ServiceError, ServiceSpec, build_plan
 from embodirun.services.host.source import (
     ProjectManager,
     SourceError,
     active_deploy_project,
-    supervisor_path,
 )
 from embodirun.services.host.state import (
     DeploymentState,
@@ -203,7 +202,7 @@ def test_simulation_plan_preserves_backend_and_environment_boundaries(
     assert model_service.command.argv[0] == (
         "sglang" if backend == "sglang" else f"vvla-{transport}-serve"
     )
-    assert simulation_service.command.argv[0] == "embodirun-simulation-serve"
+    assert simulation_service.command.argv[0] == "rlinf-simulation-serve"
     runtime = SimulationServiceConfig.from_json(
         simulation_service.simulation_config_json
     )
@@ -287,15 +286,8 @@ class ResultExecutor:
 
 
 class FakeNodeExecutor:
-    def __init__(
-        self,
-        inference_commit=INFERENCE_REVISION,
-        inference_path="third_party/embodiinfer",
-        deploy_package="embodirun",
-    ) -> None:
+    def __init__(self, inference_commit=INFERENCE_REVISION) -> None:
         self.inference_commit = inference_commit
-        self.inference_path = inference_path
-        self.deploy_package = deploy_package
         self.commands = []
         self.files = {}
         self.health_requests = []
@@ -305,14 +297,6 @@ class FakeNodeExecutor:
     def run(self, command, *, check=True):
         self.commands.append((command, check))
         argv = command.argv
-        if argv[:2] == ("test", "-f") and argv[-1].endswith("/services/host/supervisor.py"):
-            return CommandResult(0 if f"/src/{self.deploy_package}/" in argv[-1] else 1)
-        if (
-            argv[:2] == ("test", "-x")
-            and self.deploy_package == "rlinf_deploy"
-            and Path(argv[-1]).name.startswith("embodirun-")
-        ):
-            return CommandResult(1)
         if argv == ("printenv", "HOME"):
             return CommandResult(0, "/home/user\n")
         if argv == ("printenv", "PATH"):
@@ -334,8 +318,8 @@ class FakeNodeExecutor:
             return CommandResult(0, "resolved\nresolved\n", "")
         if "ls-tree" in argv:
             entry = (
-                f"160000 commit {self.inference_commit}\t{self.inference_path}\n"
-                if self.inference_commit is not None and argv[-1] == self.inference_path
+                f"160000 commit {self.inference_commit}\tthird_party/embodiinfer\n"
+                if self.inference_commit is not None
                 else ""
             )
             return CommandResult(0, entry)
@@ -385,10 +369,6 @@ class ServiceReadinessExecutor:
     def run(self, command, *, check=True):
         self.commands.append((command, check))
         if command.argv[:2] == ("test", "-x"):
-            return CommandResult(0)
-        if command.argv[:2] == ("test", "-f") and command.argv[-1].endswith(
-            "/services/host/supervisor.py"
-        ):
             return CommandResult(0)
         if len(command.argv) > 2 and command.argv[1].endswith("/supervisor.py"):
             if command.argv[2] == "start":
@@ -487,19 +467,12 @@ class SyncExecutor:
 
 
 class DownExecutor:
-    def __init__(self, deploy_package="embodirun") -> None:
+    def __init__(self) -> None:
         self.commands = []
         self.closed = False
-        self.deploy_package = deploy_package
 
     def run(self, command, *, check=True):
         self.commands.append((command, check))
-        if command.argv[:2] == ("test", "-f") and command.argv[-1].endswith(
-            "/services/host/supervisor.py"
-        ):
-            return CommandResult(
-                0 if f"/src/{self.deploy_package}/" in command.argv[-1] else 1
-            )
         if (
             len(command.argv) > 2
             and command.argv[1].endswith("/supervisor.py")
@@ -646,7 +619,7 @@ def test_single_node_environment_and_runtime() -> None:
         "http://127.0.0.1:8000"
     }
     assert control_service.service_id == "control-so101-1-runtime"
-    assert control_service.command.argv == ("embodirun-control-serve",)
+    assert control_service.command.argv == ("rlinf-control-serve",)
     assert control_service.health_endpoint == "http://127.0.0.1:8100/healthz"
     control_config = json.loads(control_service.control_config_json)
     assert control_config["schema"] == "rlinf.control.config.v1"
@@ -749,8 +722,18 @@ def test_wireless_shared_model_has_distinct_runtime_peers(tmp_path) -> None:
     robot = deepcopy(document["robots"]["so101-2"])
     robot["port"] = "/dev/second-arm"
     document["robots"]["second-arm"] = robot
+    front = deepcopy(document["sensors"]["front-camera-2"])
+    front["device"] = "/dev/second-front-camera"
+    wrist = deepcopy(document["sensors"]["wrist-camera-2"])
+    wrist["device"] = "/dev/second-wrist-camera"
+    document["sensors"]["second-front-camera"] = front
+    document["sensors"]["second-wrist-camera"] = wrist
     runtime = deepcopy(document["runtimes"]["so101-2-runtime"])
     runtime["robot"] = "second-arm"
+    runtime["inputs"] = {
+        "observation.images.front": "second-front-camera",
+        "observation.images.wrist": "second-wrist-camera",
+    }
     runtime["server"]["port"] = 8101
     runtime["inference_client"]["port"] = 9301
     runtime["inference_client"]["transport_options"]["egress_rate_bytes_per_second"] = (
@@ -779,6 +762,22 @@ def test_wireless_shared_model_has_distinct_runtime_peers(tmp_path) -> None:
         clients["control-so101-2-runtime"]["comm"]["egress_rate_bytes_per_second"]
         == 6250000
     )
+
+
+def test_wireless_plan_rejects_cross_robot_shared_camera(tmp_path) -> None:
+    document = wireless_document()
+    robot = deepcopy(document["robots"]["so101-2"])
+    robot["port"] = "/dev/second-arm"
+    document["robots"]["second-arm"] = robot
+    runtime = deepcopy(document["runtimes"]["so101-2-runtime"])
+    runtime["robot"] = "second-arm"
+    runtime["server"]["port"] = 8101
+    runtime["inference_client"]["port"] = 9301
+    # Keep both logical sensor IDs on the same physical node/path to prove
+    # startup rejects the unsupported topology before a service is spawned.
+    document["runtimes"]["second-runtime"] = runtime
+    with pytest.raises(ServiceError, match="sensor resource"):
+        build_plan(load_document(tmp_path, document))
 
 
 @pytest.mark.parametrize("transport", ["http", "wireless"])
@@ -1378,58 +1377,6 @@ def test_project_manager_clones_and_fetches_only_when_missing() -> None:
     assert ("git", "-C", "/opt/project", "fetch", "origin", "abc1234") in argv
 
 
-@pytest.mark.parametrize(
-    ("old_name", "new_name"),
-    [("RLinf-deploy", "EmbodiRun"), ("RLinf-inference", "EmbodiInfer")],
-)
-@pytest.mark.parametrize("reverse", [False, True])
-def test_project_manager_reuses_renamed_repository(old_name, new_name, reverse) -> None:
-    origin = f"git@github.com:BUAA-CI-LAB/{old_name}.git"
-    repository = f"https://github.com/BUAA-CI-LAB/{new_name}.git"
-    if reverse:
-        origin, repository = repository, origin
-    executor = ResultExecutor(
-        CommandResult(0),
-        CommandResult(0),
-        CommandResult(0, f"{origin}\n"),
-        CommandResult(0),
-        CommandResult(0),
-        CommandResult(0, "resolved\nresolved\n"),
-    )
-
-    ProjectManager(executor).prepare(
-        repository=repository, revision="abc1234", project_dir="/opt/existing"
-    )
-
-    assert not executor.results
-    assert not any(
-        {"clone", "fetch", "set-url"}.intersection(command.argv)
-        for command in executor.commands
-    )
-
-
-@pytest.mark.parametrize(
-    "origin",
-    [
-        "git@github.com:other-org/EmbodiRun.git",
-        "git@github.com:BUAA-CI-LAB/EmbodiInfer.git",
-        "git@github.com:BUAA-CI-LAB/EmbodiRun-fork.git",
-        "https://github.com.evil.example/BUAA-CI-LAB/EmbodiRun.git",
-    ],
-)
-def test_project_manager_rejects_unrelated_repository_after_rename(origin) -> None:
-    executor = ResultExecutor(
-        CommandResult(0), CommandResult(0), CommandResult(0, f"{origin}\n")
-    )
-    with pytest.raises(SourceError, match="unexpected origin"):
-        ProjectManager(executor).prepare(
-            repository="git@github.com:BUAA-CI-LAB/EmbodiRun.git",
-            revision="abc1234",
-            project_dir="/opt/existing",
-        )
-    assert not executor.results
-
-
 def test_project_manager_reads_gitlink_from_requested_commit(tmp_path) -> None:
     executor = LocalExecutor()
     project = str(tmp_path / "deploy")
@@ -1438,17 +1385,12 @@ def test_project_manager_reads_gitlink_from_requested_commit(tmp_path) -> None:
         return executor.run(Command(("git", "-C", project, *arguments)))
 
     executor.run(Command(("git", "init", project)))
-    for revision, path in (
-        (INFERENCE_REVISION, "third_party/vvla"),
-        ("b" * 40, "third_party/embodiinfer"),
-    ):
-        if path == "third_party/embodiinfer":
-            git("update-index", "--force-remove", "third_party/vvla")
+    for revision in (INFERENCE_REVISION, "b" * 40):
         git(
             "update-index",
             "--add",
             "--cacheinfo",
-            f"160000,{revision},{path}",
+            f"160000,{revision},third_party/embodiinfer",
         )
         git(
             "-c",
@@ -1469,72 +1411,34 @@ def test_project_manager_reads_gitlink_from_requested_commit(tmp_path) -> None:
     manager = ProjectManager(executor)
     assert (
         manager.submodule_revision(
-            project_dir=project,
-            revision=deploy_commit,
-            path="third_party/embodiinfer",
-            legacy_path="third_party/vvla",
+            project_dir=project, revision=deploy_commit, path="third_party/embodiinfer"
         )
         == INFERENCE_REVISION
     )
     assert (
         manager.submodule_revision(
-            project_dir=project,
-            revision="HEAD",
-            path="third_party/embodiinfer",
-            legacy_path="third_party/vvla",
+            project_dir=project, revision="HEAD", path="third_party/embodiinfer"
         )
         == "b" * 40
     )
-    assert not (tmp_path / "deploy/third_party/vvla").exists()
     assert not (tmp_path / "deploy/third_party/embodiinfer").exists()
-
-
-def test_project_manager_does_not_mask_invalid_renamed_gitlink() -> None:
-    executor = ResultExecutor(
-        CommandResult(0, f"100644 blob {INFERENCE_REVISION}\tthird_party/embodiinfer\n")
-    )
-    with pytest.raises(SourceError, match="does not pin a valid submodule"):
-        ProjectManager(executor).submodule_revision(
-            project_dir="/opt/deploy",
-            revision="deploy123",
-            path="third_party/embodiinfer",
-            legacy_path="third_party/vvla",
-        )
-    assert len(executor.commands) == 1
-
-
-@pytest.mark.parametrize("package", ["embodirun", "rlinf_deploy"])
-def test_supervisor_path_supports_new_and_historical_source_trees(tmp_path, package) -> None:
-    path = tmp_path / "src" / package / "services/host/supervisor.py"
-    path.parent.mkdir(parents=True)
-    path.touch()
-    assert supervisor_path(LocalExecutor(), str(tmp_path)) == str(path)
-
-
-def test_supervisor_path_rejects_missing_source_and_probe_errors(tmp_path) -> None:
-    with pytest.raises(SourceError, match="no deployment supervisor"):
-        supervisor_path(LocalExecutor(), str(tmp_path))
-    executor = ResultExecutor(CommandResult(2, stderr="probe failed"))
-    with pytest.raises(SourceError, match="could not inspect supervisor"):
-        supervisor_path(executor, str(tmp_path))
-    assert len(executor.commands) == 1
 
 
 @pytest.mark.parametrize(
     "entry",
     [
         "",
-        f"100644 blob {INFERENCE_REVISION}\tthird_party/vvla\n",
-        f"040000 tree {INFERENCE_REVISION}\tthird_party/vvla\n",
+        f"100644 blob {INFERENCE_REVISION}\tthird_party/embodiinfer\n",
+        f"040000 tree {INFERENCE_REVISION}\tthird_party/embodiinfer\n",
         f"160000 commit {INFERENCE_REVISION}\tother/path\n",
-        "160000 commit main\tthird_party/vvla\n",
+        "160000 commit main\tthird_party/embodiinfer\n",
     ],
 )
 def test_project_manager_rejects_missing_or_invalid_gitlink(entry) -> None:
     executor = ResultExecutor(CommandResult(0, entry))
     with pytest.raises(SourceError, match="does not pin a valid submodule"):
         ProjectManager(executor).submodule_revision(
-            project_dir="/opt/deploy", revision="deploy123", path="third_party/vvla"
+            project_dir="/opt/deploy", revision="deploy123", path="third_party/embodiinfer"
         )
     assert len(executor.commands) == 1
 
@@ -2025,7 +1929,7 @@ def test_cli_init_rejects_deploy_without_inference_gitlink(tmp_path, capsys) -> 
     captured = capsys.readouterr()
     assert exit_code == 1
     assert "does not pin a valid submodule" in captured.err
-    assert "third_party/vvla" in captured.err
+    assert "third_party/embodiinfer" in captured.err
     commands = [command.argv for command, _check in executor.commands]
     assert not any("--group" in argv for argv in commands)
     assert not any(
@@ -2081,17 +1985,11 @@ def test_cli_init_preserves_resolved_revision_after_partial_failure(
     assert set(state.nodes) == {"jetson-agx-thor-232"}
 
 
-@pytest.mark.parametrize("inference_path", ["third_party/embodiinfer", "third_party/vvla"])
-@pytest.mark.parametrize("deploy_package", ["embodirun", "rlinf_deploy"])
-def test_cli_init_then_up_uses_persisted_initialized_state(
-    tmp_path, capsys, inference_path, deploy_package
-) -> None:
+def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> None:
     executors = []
 
     def factory(_node):
-        executor = FakeNodeExecutor(
-            inference_path=inference_path, deploy_package=deploy_package
-        )
+        executor = FakeNodeExecutor()
         executors.append(executor)
         return executor
 
@@ -2125,7 +2023,7 @@ def test_cli_init_then_up_uses_persisted_initialized_state(
         "ls-tree",
         load_config(EXAMPLE).metadata.deploy_commit,
         "--",
-        inference_path,
+        "third_party/embodiinfer",
     ) in init_argv
     assert (
         "/usr/bin/git",
@@ -2180,7 +2078,7 @@ def test_cli_init_then_up_uses_persisted_initialized_state(
     ]
     assert len(start_commands) == 2
     assert all(
-        command.argv[1] == f"{active_source}/src/{deploy_package}/services/host/supervisor.py"
+        command.argv[1].startswith(f"{active_source}/")
         for command in start_commands
     )
     start_requests = [json.loads(command.stdin) for command in start_commands]
@@ -2199,9 +2097,7 @@ def test_cli_init_then_up_uses_persisted_initialized_state(
     control_request = next(
         request
         for request in start_requests
-        if request["argv"][0].endswith(
-            "embodirun-control-serve" if deploy_package == "embodirun" else "rlinf-control-serve"
-        )
+        if request["argv"][0].endswith("rlinf-control-serve")
     )
     assert control_request["cwd"] == active_source
     assert control_request["environment"]["PYTHONPATH"].endswith(
@@ -2336,8 +2232,8 @@ def test_cli_sync_uploads_deploy_overlay_without_touching_inference(
     with tarfile.open(fileobj=BytesIO(uploaded), mode="r:gz") as archive:
         names = set(archive.getnames())
     assert "src/embodirun/services/control/server.py" in names
-    assert "src/rlinf_deploy.py" in names
     assert {"pyproject.toml", "uv.lock", "README.md"} <= names
+    assert "integrations/sglang_pi05/pyproject.toml" in names
     assert executor.closed is True
 
 
@@ -2411,9 +2307,8 @@ def test_cli_sync_has_no_obsolete_binding_worker_probe(tmp_path, capsys) -> None
     assert executor.closed is True
 
 
-@pytest.mark.parametrize("deploy_package", ["embodirun", "rlinf_deploy"])
 def test_cli_down_can_stop_control_without_stopping_inference(
-    tmp_path, capsys, deploy_package
+    tmp_path, capsys
 ) -> None:
     state_dir = tmp_path / "state"
     base_args = (
@@ -2435,7 +2330,7 @@ def test_cli_down_can_stop_control_without_stopping_inference(
         == 0
     )
     capsys.readouterr()
-    executor = DownExecutor(deploy_package=deploy_package)
+    executor = DownExecutor()
 
     exit_code = main(
         (*base_args, "down", "--target", "control"),
@@ -2449,9 +2344,7 @@ def test_cli_down_can_stop_control_without_stopping_inference(
     assert state is not None
     assert state.services["control-so101-1-runtime"].status == "stopped"
     assert state.services["pi05-01"].status == "running"
-    stops = [command for command, _ in executor.commands if command.argv[2] == "stop"]
-    assert len(stops) == 1
-    assert stops[0].argv[1].endswith(f"/src/{deploy_package}/services/host/supervisor.py")
+    assert len(executor.commands) == 1
 
 
 def test_cli_sync_requires_control_services_to_be_stopped(tmp_path, capsys) -> None:
@@ -2945,9 +2838,7 @@ def test_cli_down_stops_services_after_configuration_changes(tmp_path, capsys) -
     assert stopped is not None
     assert stopped.services["pi05-01"].status == "stopped"
     assert stopped.services["control-so101-1-runtime"].status == "stopped"
-    stop_command = next(
-        command for command, _check in executor.commands if command.argv[2] == "stop"
-    )
+    stop_command = executor.commands[0][0]
     assert stop_command.argv[2] == "stop"
     assert stop_command.stdin is None
     assert executor.closed is True

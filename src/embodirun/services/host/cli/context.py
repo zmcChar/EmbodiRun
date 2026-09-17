@@ -7,9 +7,9 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..config import DeploymentConfig, NodeConfig
-from ..executor import Executor
-from ..plan import DeploymentPlan
+from embodirun.deployment.config import DeploymentConfig, NodeConfig
+from embodirun.deployment.executor import Executor
+from embodirun.deployment.plan import DeploymentPlan
 from .progress import ProgressReporter
 
 

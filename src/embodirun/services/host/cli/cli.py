@@ -7,17 +7,17 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from ..config import ConfigError, NodeConfig, load_config
-from ..environment import EnvironmentError
-from ..executor import Executor, executor_for
-from ..plan import ServiceError, build_plan
-from .command import down, init, probe, run, sync, up, validate
+from embodirun.deployment.config import ConfigError, NodeConfig, load_config
+from embodirun.deployment.environment import EnvironmentError
+from embodirun.deployment.executor import Executor, executor_for
+from embodirun.deployment.plan import ServiceError, build_plan
+from .command import control, down, init, probe, run, sync, up, validate
 from .context import CommandContext, state_path
 from .progress import ConsoleProgressReporter
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="embodirun")
+    parser = argparse.ArgumentParser(prog="rlinf-deploy")
     parser.add_argument("--config", required=True, help="deployment YAML path")
     parser.add_argument(
         "--state-dir",
@@ -32,6 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     up.register(commands)
     down.register(commands)
     run.register(commands)
+    control.register(commands)
     return parser
 
 
@@ -46,7 +47,7 @@ def main(
         config = load_config(args.config)
         deployment = build_plan(config)
     except (ConfigError, EnvironmentError, ServiceError, RuntimeError) as error:
-        print(f"embodirun: error: {error}", file=sys.stderr)
+        print(f"rlinf-deploy: error: {error}", file=sys.stderr)
         return 2
 
     context = CommandContext(
@@ -59,7 +60,7 @@ def main(
     try:
         return args.command_handler(args, context)
     except (OSError, RuntimeError, ValueError) as error:
-        print(f"embodirun: error: {error}", file=sys.stderr)
+        print(f"rlinf-deploy: error: {error}", file=sys.stderr)
         return 1
 
 

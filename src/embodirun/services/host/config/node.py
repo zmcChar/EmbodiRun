@@ -1,34 +1,7 @@
-"""Deployment node configuration and parsing."""
+"""Compatibility alias for :mod:`embodirun.deployment.config.node`."""
 
-from __future__ import annotations
+from importlib import import_module as _import_module
+import sys as _sys
 
-from dataclasses import dataclass, field
-from typing import Any
-
-from .connection import ConnectionConfig, parse_connection
-from .validation import mapping, optional_string, string
-
-
-@dataclass(frozen=True, slots=True)
-class NodeConfig:
-    node_id: str
-    kind: str
-    connection: ConnectionConfig
-    options: dict[str, Any] = field(default_factory=dict, repr=False)
-    address: str | None = None
-
-
-def parse_node(node_id: str, value: dict[str, Any]) -> NodeConfig:
-    connection = parse_connection(
-        mapping(value.get("connection"), f"nodes.{node_id}.connection")
-    )
-    return NodeConfig(
-        node_id=node_id,
-        kind=string(value, "type", f"nodes.{node_id}"),
-        connection=connection,
-        options=dict(value),
-        address=optional_string(value, "address", f"nodes.{node_id}"),
-    )
-
-
-__all__ = ["NodeConfig"]
+_canonical = _import_module("embodirun.deployment.config.node")
+_sys.modules[__name__] = _canonical

@@ -11,10 +11,10 @@ from embodirun.bindings import binding_definition
 from embodirun.services.control.contracts import TaskRequest
 from embodirun.services.simulation.contracts import EpisodeRequest
 
-from ...config import config_digest
-from ...control import ControlClient
-from ...simulation import SimulationClient
-from ...state import StateStore
+from embodirun.deployment.config import config_digest
+from embodirun.deployment.control import ControlClient
+from embodirun.deployment.simulation import SimulationClient
+from embodirun.deployment.state import StateStore
 from ..context import CommandContext
 
 
@@ -97,6 +97,11 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
             f"unknown runtime {args.runtime!r}; available runtimes: "
             f"{available or 'none'}"
         )
+    if runtime.model is None:
+        raise RunError(
+            f"runtime {runtime.runtime_id!r} is device-only and has no inference "
+            "model; use the control service observe/describe operations"
+        )
     if runtime.target_kind == "robot" and args.prompt is None:
         raise RunError("--prompt is required for robot runtimes")
     if runtime.target_kind == "robot" and (
@@ -124,7 +129,7 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
         )
         state = StateStore(context.state_path).load()
         if state is None:
-            raise RunError("deployment is not initialized; run `embodirun ... init`")
+            raise RunError("deployment is not initialized; run `rlinf-deploy ... init`")
         if state.config_digest != config_digest(context.config):
             raise RunError("configuration changed since init; run init again")
         if state.deploy_commit != context.deployment.deploy_commit:
@@ -138,7 +143,7 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
         if service is None or service.status != "running":
             raise RunError(
                 f"{runtime.target_kind} service {runtime.service_id!r} is not running; "
-                "run `embodirun ... up`"
+                "run `rlinf-deploy ... up`"
             )
         if service.node != runtime.node or service.endpoint != runtime.service_endpoint:
             raise RunError(

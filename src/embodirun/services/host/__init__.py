@@ -1,20 +1,22 @@
-"""Host-side configuration, provisioning, lifecycle, and command services."""
+"""Compatibility facade for the canonical :mod:`embodirun.deployment` API."""
 
-from .config import ConfigError, DeploymentConfig, load_config
-from .environment import (
+from embodirun.deployment import (
+    ConfigError,
+    DeploymentConfig,
+    DeploymentPlan,
     EnvironmentError,
     EnvironmentProfile,
-    UvEnvironmentManager,
-    environment_profiles,
-)
-from .plan import (
-    DeploymentPlan,
+    ProcessStatus,
     RuntimeSpec,
     ServiceError,
     ServiceSpec,
+    ServiceSupervisor,
+    SupervisorError,
+    UvEnvironmentManager,
     build_plan,
+    environment_profiles,
+    load_config,
 )
-from .supervisor import ProcessStatus, ServiceSupervisor, SupervisorError
 
 __all__ = [
     "ConfigError",

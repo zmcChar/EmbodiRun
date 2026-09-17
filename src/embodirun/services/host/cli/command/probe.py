@@ -7,8 +7,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from ...config import NodeConfig
-from ...probe import probe_node
+from embodirun.deployment.config import NodeConfig
+from embodirun.deployment.probe import probe_node
 from ..context import CommandContext
 from ..parallel import run_on_nodes
 

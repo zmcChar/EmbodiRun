@@ -1,72 +1,7 @@
-"""Host-side client for task submission to a loopback control service over SSH."""
+"""Compatibility alias for :mod:`embodirun.deployment.control`."""
 
-from __future__ import annotations
+from importlib import import_module as _import_module
+import sys as _sys
 
-from urllib.parse import urlsplit
-
-from embodirun.services.control.contracts import (
-    TaskRequest,
-    TaskResult,
-    error_message,
-)
-
-from .executor import Executor
-
-
-class ControlClientError(RuntimeError):
-    """A Host-to-Control task request failed or returned an invalid response."""
-
-
-class ControlClient:
-    """Submit versioned tasks through the node executor's authenticated channel."""
-
-    def __init__(self, executor: Executor, endpoint: str) -> None:
-        parsed = urlsplit(endpoint)
-        if (
-            parsed.scheme != "http"
-            or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.path not in {"", "/"}
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise ValueError(
-                "control endpoint must be a credential-free loopback HTTP URL"
-            )
-        try:
-            if parsed.port is None:
-                raise ValueError("control endpoint must include a port")
-        except ValueError as error:
-            raise ValueError("control endpoint must include a valid port") from error
-        self.executor = executor
-        self.endpoint = endpoint.rstrip("/")
-
-    def run(self, request: TaskRequest, *, timeout_s: float) -> TaskResult:
-        """Wait for one control task and validate its correlated result."""
-
-        response = self.executor.request_json(
-            "POST",
-            f"{self.endpoint}/v1/tasks",
-            request.to_payload(),
-            timeout_s=timeout_s,
-        )
-        if response.status != 200:
-            detail = error_message(response.payload) or "invalid error response"
-            raise ControlClientError(
-                f"control service returned HTTP {response.status}: {detail}"
-            )
-        try:
-            result = TaskResult.from_payload(response.payload)
-        except ValueError as error:
-            raise ControlClientError(
-                f"control service response is invalid: {error}"
-            ) from error
-        if result.request_id != request.request_id:
-            raise ControlClientError("control response request_id does not match")
-        if result.runtime_id != request.runtime_id:
-            raise ControlClientError("control response runtime_id does not match")
-        return result
-
-
-__all__ = ["ControlClient", "ControlClientError"]
+_canonical = _import_module("embodirun.deployment.control")
+_sys.modules[__name__] = _canonical
