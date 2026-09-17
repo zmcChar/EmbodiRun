@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import http.client
+import json
 import socket
+import time
 from dataclasses import replace
 from threading import Thread
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 
 import pytest
 
+from embodirun.robots import RobotObservation
 from embodirun.robots.sensors import SensorInput
+from embodirun.robots.sensors.cameras import CameraFrame
 from embodirun.services.control.contracts import (
     ControlContractError,
     ControlServiceConfig,
@@ -21,6 +26,7 @@ from embodirun.services.control.server import (
     ControlService,
     ControlServiceError,
 )
+from embodirun.services.control.devices import DeviceManager
 from embodirun.services.host.control import ControlClient
 from embodirun.services.host.executor import LocalExecutor
 from embodirun.services.inference import VvlaWirelessClient
@@ -107,7 +113,9 @@ def test_host_client_rejects_non_loopback_control_endpoint() -> None:
         ControlClient(LocalExecutor(), "http://192.168.2.232:8100")
 
 
-def test_control_service_executes_chunks_and_releases_resources(monkeypatch) -> None:
+def test_control_service_executes_chunks_and_releases_resources(
+    monkeypatch, tmp_path
+) -> None:
     events: list[object] = []
 
     class Client:
@@ -120,7 +128,17 @@ def test_control_service_executes_chunks_and_releases_resources(monkeypatch) -> 
     class Cameras:
         def capture(self):
             events.append("camera.capture")
-            return ()
+            captured = time.monotonic_ns()
+            return (
+                CameraFrame(
+                    "observation.images.front",
+                    "image/jpeg",
+                    b"frame",
+                    captured_timestamp_ns=captured,
+                    received_timestamp_ns=captured,
+                    clock_domain="host_monotonic_ns",
+                ),
+            )
 
         def close(self):
             events.append("camera.close")
@@ -133,6 +151,17 @@ def test_control_service_executes_chunks_and_releases_resources(monkeypatch) -> 
 
         def connect(self):
             events.append("robot.connect")
+
+        def observe(self):
+            captured = time.monotonic_ns()
+            return RobotObservation(
+                1.0,
+                {"state": 1},
+                metadata={
+                    "captured_timestamp_ns": captured,
+                    "clock_domain": "host_monotonic_ns",
+                },
+            )
 
         def close(self):
             events.append("robot.close")
@@ -160,7 +189,7 @@ def test_control_service_executes_chunks_and_releases_resources(monkeypatch) -> 
         adapter_type=Robot,
     )
     monkeypatch.setattr(
-        "embodirun.services.control.server._definitions",
+        "embodirun.application.control_service._definitions",
         lambda _config: (binding, robot),
     )
     service = ControlService(
@@ -168,20 +197,31 @@ def test_control_service_executes_chunks_and_releases_resources(monkeypatch) -> 
         camera_factory=lambda _inputs: Cameras(),
         client_factory=lambda _config, _timeout: Client(),
         runtime_factory=Runtime,
+        device_manager=DeviceManager("node-test", lock_dir=tmp_path / "locks"),
     )
 
-    result = service.execute(task_request())
+    try:
+        result = service.execute(task_request())
 
-    assert result == TaskResult("task-1", "so101-runtime", 2)
-    assert events.count("camera.capture") == 2
-    assert events[-3:] == [
-        "runtime.close",
-        "camera.close",
-        "client.shutdown",
-    ]
-    assert "robot.close" not in events
-    service.close()
-    assert events[-2:] == ["robot.stop", "robot.close"]
+        assert result == TaskResult("task-1", "so101-runtime", 2)
+        assert events.count("camera.capture") >= 2
+        runtime_steps = [
+            item
+            for item in events
+            if isinstance(item, tuple) and item[0] == "runtime.step"
+        ]
+        assert len(runtime_steps) == 2
+        assert all(frames and frames[0].data == b"frame" for _, frames in runtime_steps)
+        assert events[-2:] == [
+            "runtime.close",
+            "client.shutdown",
+        ]
+        assert "robot.close" not in events
+    finally:
+        service.close()
+    assert events.count("camera.close") == 1
+    assert "robot.stop" in events
+    assert events[-1] == "robot.close"
     runtime_options = next(
         value
         for item in events
@@ -333,7 +373,7 @@ def test_simulation_keeps_wireless_connection_until_service_close(
                 self.client.close(self.session.session_id)
 
     monkeypatch.setattr(
-        "embodirun.services.simulation.server.simulator_definition",
+        "embodirun.application.simulation.service.simulator_definition",
         lambda _kind: SimpleNamespace(
             embodiment_kind="franka.panda.eef",
             config_factory=lambda _id, options: options,
@@ -377,6 +417,47 @@ def test_simulation_keeps_wireless_connection_until_service_close(
         service.close()
     service.close()
     assert events.count("transport.shutdown") == 1
+
+
+def test_public_observe_serializes_nested_immutable_robot_metadata() -> None:
+    port = _unused_loopback_port()
+    config = control_config(port=port)
+
+    class Service:
+        def __init__(self):
+            self.config = config
+
+        def observe(self):
+            return {
+                "status": "ok",
+                "robot": {
+                    "metadata": MappingProxyType(
+                        {
+                            "raw_fields": MappingProxyType({"owner_present": False}),
+                            "errors": (),
+                        }
+                    )
+                },
+            }
+
+    service = Service()
+    server = ControlHttpServer(service)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+        connection.request("GET", "/v1/observe")
+        response = connection.getresponse()
+        payload = json.loads(response.read().decode())
+        connection.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert response.status == 200
+    assert payload["robot"]["metadata"]["raw_fields"]["owner_present"] is False
+    assert payload["robot"]["metadata"]["errors"] == []
 
 
 def _unused_loopback_port() -> int:

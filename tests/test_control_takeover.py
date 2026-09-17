@@ -1,13 +1,16 @@
 """Service-level cancellation and resource ownership, without physical devices."""
 
 import threading
+import time
 from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 
 from embodirun.robots import RobotAction, RobotObservation
+from embodirun.robots.sensors.cameras import CameraFrame
 from embodirun.services.control.arbitration import CommandCancelled
+from embodirun.services.control.devices import DeviceManager
 from embodirun.services.control.server import ControlService, ControlTaskRejected
 from embodirun.services.control.server import ControlHttpServer
 from embodirun.services.control.teleop import ControlHttpTeleopClient
@@ -15,7 +18,7 @@ from test_control_services import _unused_loopback_port, control_config, task_re
 
 
 @pytest.fixture
-def controlled_service(monkeypatch):
+def controlled_service(monkeypatch, tmp_path):
     started, release, moved = threading.Event(), threading.Event(), threading.Event()
     actions, stops, closed = [], [], []
 
@@ -29,7 +32,15 @@ def controlled_service(monkeypatch):
             pass
 
         def observe(self):
-            return RobotObservation(0, {})
+            captured = time.monotonic_ns()
+            return RobotObservation(
+                0,
+                {},
+                metadata={
+                    "captured_timestamp_ns": captured,
+                    "clock_domain": "host_monotonic_ns",
+                },
+            )
 
         def execute(self, action):
             if action.values.get("fail"):
@@ -63,11 +74,11 @@ def controlled_service(monkeypatch):
 
     mapper = SimpleNamespace(
         policy_action_space="test",
-        map_observation=lambda *args, **kwargs: object(),
+        map_observation=lambda *args, **kwargs: SimpleNamespace(metadata={}),
         map_result=lambda result: (RobotAction(0, {"model": True}),),
     )
     monkeypatch.setattr(
-        "embodirun.services.control.server._definitions",
+        "embodirun.application.control_service._definitions",
         lambda config: (
             SimpleNamespace(maximum_chunk_steps=1, mapper_factory=lambda: mapper),
             SimpleNamespace(config_factory=lambda *args: None, adapter_type=Robot),
@@ -75,8 +86,21 @@ def controlled_service(monkeypatch):
     )
     service = ControlService(
         control_config(),
-        camera_factory=lambda inputs: SimpleNamespace(capture=lambda: (), close=lambda: None),
+        camera_factory=lambda inputs: SimpleNamespace(
+            capture=lambda: (
+                CameraFrame(
+                    "observation.images.front",
+                    "image/jpeg",
+                    b"takeover-frame",
+                    captured_timestamp_ns=time.monotonic_ns(),
+                    received_timestamp_ns=time.monotonic_ns(),
+                    clock_domain="host_monotonic_ns",
+                ),
+            ),
+            close=lambda: None,
+        ),
         client_factory=lambda *args: Client(),
+        device_manager=DeviceManager("node-takeover", lock_dir=tmp_path / "locks"),
     )
     yield service, started, release, moved, actions, stops, closed
     release.set()
@@ -114,7 +138,9 @@ def test_takeover_cancels_late_inference_and_task_cleanup_keeps_robot(
         assert service.control_snapshot()["authority"] == "manual"
 
 
-def test_idle_estop_blocks_tasks_and_reset_does_not_resurrect_old_work(controlled_service):
+def test_idle_estop_blocks_tasks_and_reset_does_not_resurrect_old_work(
+    controlled_service,
+):
     service, _, _, _, actions, _, _ = controlled_service
     assert service.emergency_stop()["authority"] == "estop_latched"
     with pytest.raises(ControlTaskRejected, match="latched"):

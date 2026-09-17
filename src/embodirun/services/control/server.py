@@ -1,371 +1,64 @@
-"""Serve Host tasks on a control node and execute its configured robot runtime."""
+"""HTTP listener, request handler, and CLI assembly for Control.
+
+The application service, authorization, job lifecycle, and device coordination
+live in ``embodirun.application``. This module owns only HTTP transport and
+startup/shutdown wiring while re-exporting the historical service symbols for
+compatibility.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import socket
-import threading
-import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from embodirun.bindings import BindingDefinition, binding_definition
-from embodirun.robots import RobotAction, RobotDefinition, robot_definition
-from embodirun.robots.sensors import SensorInput
-from embodirun.robots.sensors.cameras import CameraSource, create_camera_source
-from embodirun.services.inference import build_inference_client
-
-from .arbitration import (
-    ArbiterCommandSink,
-    AuthorityState,
-    CommandCancelled,
-    CommandRejected,
-    EmergencyStopPolicy,
-    RobotAdapterCommandPort,
-    RobotControlArbiter,
+from embodirun.application import control_service as _control_service
+from embodirun.application.api import ControlApplication
+from embodirun.application.auth import (
+    AuthPolicy,
+    AuthenticationError,
+    AuthorizationError,
+    Role,
 )
-from .contracts import (
+from embodirun.application.contracts import (
     ControlContractError,
     ControlServiceConfig,
     TaskRequest,
-    TaskResult,
     error_payload,
 )
-from .runtime import ControlRuntime, ControlRuntimeCancelled
-from .teleop import resolve_teleop_action
+from embodirun.application.control_service import (
+    ControlService,
+    ControlServiceError,
+    ControlTaskRejected,
+    _configured_recorder,
+    _control_job_database,
+    _json_safe,
+    _load_auth_policy,
+    _payload_mapping,
+    create_inference_client,
+)
+from embodirun.application.jobs import JobRegistry
+from embodirun.application.model_loop import ControlRuntimeCancelled
+from embodirun.devices.execution.arbitration import (
+    CommandCancelled,
+    CommandRejected,
+)
+
+from .http_api import ControlHTTPAPI, _headers, _token
+
+_sensor_identity = _control_service._sensor_identity
 
 _MAX_CONFIG_BYTES = 1024 * 1024
+
 _MAX_REQUEST_BYTES = 64 * 1024
 
-
-class ControlServiceError(RuntimeError):
-    """A configured control service cannot execute a task safely."""
-
-
-class ControlTaskRejected(ControlServiceError):
-    """A valid task conflicts with this runtime or its current state."""
-
-
-class ControlService:
-    """Validate, serialize, and execute tasks for exactly one robot runtime."""
-
-    def __init__(
-        self,
-        config: ControlServiceConfig,
-        *,
-        camera_factory: Callable[[Sequence[SensorInput]], CameraSource] = (create_camera_source),
-        client_factory: Callable[[ControlServiceConfig, float], Any] | None = None,
-        runtime_factory: Callable[..., Any] = ControlRuntime,
-        monotonic: Callable[[], float] = time.monotonic,
-        sleep: Callable[[float], None] = time.sleep,
-    ) -> None:
-        self.config = config
-        self.camera_factory = camera_factory
-        self.client_factory = client_factory or create_inference_client
-        self.runtime_factory = runtime_factory
-        self.monotonic = monotonic
-        self.sleep = sleep
-        self._task_lock = threading.Lock()
-        self._client_lock = threading.Lock()
-        self._control_lock = threading.Lock()
-        self._robot_lock = threading.Lock()
-        self._wireless_client: Any | None = None
-        self._current_arbiter: RobotControlArbiter | None = None
-        self._current_task_cancel: threading.Event | None = None
-        self._robot: Any | None = None
-        self._estop_latched = False
-        self._closed = False
-
-    def health(self) -> dict[str, Any]:
-        """Report ready only when the configured inference service is reachable."""
-
-        client = self._inference_client(2.0)
-        try:
-            health = client.health()
-        finally:
-            self._release_inference_client(client)
-        if health.get("status") != "ok":
-            raise ControlServiceError(
-                f"inference service at {self.config.inference_endpoint} is not healthy"
-            )
-        return {"status": "ok", "runtime_id": self.config.runtime_id}
-
-    def execute(self, request: TaskRequest) -> TaskResult:
-        """Run one exclusive model task; the service retains robot ownership."""
-
-        if request.runtime_id != self.config.runtime_id:
-            raise ControlTaskRejected(
-                f"runtime {request.runtime_id!r} is not served by this control service"
-            )
-        with self._control_lock:
-            if self._closed:
-                raise ControlTaskRejected("control service is closed")
-            if self._current_arbiter is None and self._estop_latched:
-                raise ControlTaskRejected("emergency stop is latched")
-        if not self._task_lock.acquire(blocking=False):
-            raise ControlTaskRejected("control service is already executing a task")
-        try:
-            return self._execute_locked(request)
-        finally:
-            self._task_lock.release()
-
-    def _execute_locked(self, request: TaskRequest) -> TaskResult:
-        binding, robot_definition_value = _definitions(self.config)
-        if request.chunk_steps > binding.maximum_chunk_steps:
-            raise ControlTaskRejected(
-                f"chunk_steps {request.chunk_steps} exceeds binding "
-                f"{binding.kind!r} maximum {binding.maximum_chunk_steps}"
-            )
-        if self.config.runtime_options:
-            names = ", ".join(sorted(self.config.runtime_options))
-            raise ControlServiceError(f"unsupported runtime options: {names}")
-        client = self._inference_client(request.inference_timeout_s)
-        cameras: CameraSource | None = None
-        controller: Any | None = None
-        task_cancel = None
-        completed = 0
-        try:
-            health = client.health()
-            if health.get("status") != "ok":
-                raise ControlServiceError(
-                    f"inference service at {self.config.inference_endpoint} is not healthy"
-                )
-            cameras = self.camera_factory(self.config.inputs)
-            robot, arbiter = self._ensure_robot_arbiter(robot_definition_value)
-            task_cancel = arbiter.begin_model_task()
-            with self._control_lock:
-                self._current_task_cancel = task_cancel
-            controller = self.runtime_factory(
-                robot,
-                client,
-                instruction=request.prompt,
-                mapper=binding.mapper_factory(),
-                chunk_steps=request.chunk_steps,
-                control_hz=request.control_hz,
-                command_sink=ArbiterCommandSink(arbiter, task_cancel),
-                cancel_event=task_cancel,
-                monotonic=self.monotonic,
-                sleep=self.sleep,
-            )
-            for _ in range(request.max_steps):
-                controller.step(cameras.capture())
-                completed += 1
-        finally:
-            with self._control_lock:
-                if self._current_task_cancel is task_cancel:
-                    self._current_task_cancel = None
-            try:
-                if controller is not None:
-                    controller.close()
-            finally:
-                try:
-                    if cameras is not None:
-                        cameras.close()
-                finally:
-                    self._release_inference_client(client)
-        return TaskResult(request.request_id, request.runtime_id, completed)
-
-    def _ensure_robot_arbiter(
-        self,
-        robot_definition_value: RobotDefinition,
-    ) -> tuple[Any, RobotControlArbiter]:
-        with self._robot_lock:
-            robot = self._robot
-            arbiter = self._current_arbiter
-            if robot is not None and arbiter is not None:
-                if self._closed:
-                    raise ControlTaskRejected("control service is closed")
-                return robot, arbiter
-            with self._control_lock:
-                if self._closed or self._estop_latched:
-                    raise ControlTaskRejected("service is closed or emergency stop is latched")
-            try:
-                robot_config = robot_definition_value.config_factory(
-                    self.config.robot_id,
-                    self.config.robot_options,
-                )
-            except (TypeError, ValueError) as error:
-                raise ControlServiceError(
-                    f"robot {self.config.robot_id!r} configuration is invalid: {error}"
-                ) from error
-            robot = robot_definition_value.adapter_type(robot_config)
-            try:
-                robot.connect()
-                arbiter = RobotControlArbiter(
-                    RobotAdapterCommandPort(
-                        robot,
-                        action_resolver=resolve_teleop_action,
-                        emergency_stop_policy=(
-                            EmergencyStopPolicy.PREEMPTIVE
-                            if self.config.robot_kind == "franka.fr3"
-                            else EmergencyStopPolicy.SERIALIZED
-                        ),
-                    ),
-                    clock=self.monotonic,
-                )
-            except BaseException:
-                try:
-                    robot.close()
-                finally:
-                    raise
-            with self._control_lock:
-                self._robot = robot
-                self._current_arbiter = arbiter
-                stopped = self._estop_latched or self._closed
-            if stopped:
-                arbiter.emergency_stop()
-                raise ControlTaskRejected("connection interrupted by emergency stop or shutdown")
-            return robot, arbiter
-
-    def emergency_stop(self) -> dict[str, Any]:
-        with self._control_lock:
-            arbiter = self._current_arbiter
-            if arbiter is None:
-                self._estop_latched = True
-            task_cancel = self._current_task_cancel
-            if task_cancel is not None:
-                task_cancel.set()
-        if arbiter is not None:
-            arbiter.emergency_stop()
-        return self.control_snapshot()
-
-    def reset_emergency_stop(self) -> dict[str, Any]:
-        with self._control_lock:
-            arbiter = self._current_arbiter
-        if arbiter is not None:
-            arbiter.reset_emergency_stop()
-        else:
-            with self._control_lock:
-                self._estop_latched = False
-        return self.control_snapshot()
-
-    def acquire_manual(self) -> dict[str, Any]:
-        _, definition = _definitions(self.config)
-        _, arbiter = self._ensure_robot_arbiter(definition)
-        with self._control_lock:
-            task_cancel = self._current_task_cancel
-        if task_cancel is not None:
-            task_cancel.set()
-        arbiter.acquire_manual()
-        return self.control_snapshot()
-
-    def release_manual(self) -> dict[str, Any]:
-        with self._control_lock:
-            arbiter = self._current_arbiter
-        if arbiter is None:
-            raise ControlTaskRejected("manual control must be acquired first")
-        arbiter.release_manual()
-        return self.control_snapshot()
-
-    def set_manual_deadman(self, active: bool) -> dict[str, Any]:
-        with self._control_lock:
-            arbiter = self._current_arbiter
-        if arbiter is None:
-            raise ControlTaskRejected("manual control must be acquired first")
-        arbiter.set_deadman(active)
-        return self.control_snapshot()
-
-    def submit_manual_action(self, action: Any) -> dict[str, Any]:
-        robot_action = _robot_action(action)
-        with self._control_lock:
-            arbiter = self._current_arbiter
-        if arbiter is None:
-            raise ControlTaskRejected("manual control must be acquired first")
-        ticket = arbiter.submit_manual(robot_action, wait=False)
-        return {**self.control_snapshot(), "ticket_status": ticket.status.value}
-
-    def control_snapshot(self) -> dict[str, Any]:
-        with self._control_lock:
-            arbiter = self._current_arbiter
-            estop_latched = self._estop_latched
-            active_task = self._current_task_cancel is not None
-        if arbiter is None:
-            return {
-                "status": "ok",
-                "runtime_id": self.config.runtime_id,
-                "robot_id": self.config.robot_id,
-                "authority": AuthorityState.ESTOP_LATCHED.value
-                if estop_latched
-                else AuthorityState.MODEL.value,
-                "active_task": False,
-                "last_error": None,
-                "closed": self._closed,
-            }
-        snapshot = arbiter.snapshot()
-        return {
-            "status": "ok",
-            "runtime_id": self.config.runtime_id,
-            "active_task": active_task,
-            **snapshot,
-        }
-
-    def close(self) -> None:
-        """Release process-owned robot and wireless resources."""
-
-        with self._control_lock:
-            self._closed = True
-            if self._current_task_cancel is not None:
-                self._current_task_cancel.set()
-        with self._robot_lock, self._control_lock:
-            arbiter = self._current_arbiter
-            robot = self._robot
-            self._current_arbiter = None
-            self._current_task_cancel = None
-            self._robot = None
-        primary_error: BaseException | None = None
-        if arbiter is not None:
-            try:
-                arbiter.close()
-            except BaseException as error:
-                if primary_error is None:
-                    primary_error = error
-        if robot is not None:
-            try:
-                robot.close()
-            except BaseException as error:
-                if primary_error is None:
-                    primary_error = error
-        with self._client_lock:
-            client = self._wireless_client
-            self._wireless_client = None
-        if client is not None:
-            try:
-                _shutdown_client(client)
-            except BaseException as error:
-                if primary_error is None:
-                    primary_error = error
-        if primary_error is not None:
-            raise primary_error
-
-    def _inference_client(self, timeout_s: float) -> Any:
-        if self.config.inference_transport != "wireless":
-            return self.client_factory(self.config, timeout_s)
-        with self._client_lock:
-            if self._wireless_client is None:
-                self._wireless_client = self.client_factory(self.config, timeout_s)
-            client = self._wireless_client
-        with_timeout = getattr(client, "with_timeout", None)
-        return with_timeout(timeout_s) if callable(with_timeout) else client
-
-    def _release_inference_client(self, client: Any) -> None:
-        if self.config.inference_transport != "wireless":
-            _shutdown_client(client)
-
-
-def create_inference_client(config: ControlServiceConfig, timeout_s: float) -> Any:
-    """Select the Control-to-Inference client from the static runtime config."""
-
-    return build_inference_client(
-        config.inference_transport,
-        config.inference_endpoint,
-        config.inference_options,
-        backend=config.inference_backend,
-        timeout_s=timeout_s,
-    )
+_TRUSTED_MANUAL_OWNER = ("trusted", "loopback")
 
 
 class ControlHttpServer(ThreadingHTTPServer):
@@ -373,14 +66,52 @@ class ControlHttpServer(ThreadingHTTPServer):
 
     daemon_threads = True
 
-    def __init__(self, service: ControlService) -> None:
+    def __init__(
+        self,
+        service: ControlService,
+        *,
+        application: ControlApplication | None = None,
+        state_dir: str | os.PathLike[str] | None = None,
+        auth_policy: AuthPolicy | None = None,
+    ) -> None:
         self.control_service = service
+        self.control_application = application
+        self._owns_application = False
+        if self.control_application is None and isinstance(service, ControlService):
+            registry = JobRegistry(_control_job_database(service, state_dir))
+            self.control_application = ControlApplication(
+                service,
+                registry=registry,
+                observation_store=service.observation_store,
+                auth_policy=auth_policy,
+            )
+            self._owns_application = True
+        if self.control_application is not None:
+            self.control_api = ControlHTTPAPI(self.control_application)
         if ":" in service.config.bind:
             self.address_family = socket.AF_INET6
-        super().__init__(
-            (service.config.bind, service.config.port),
-            ControlRequestHandler,
-        )
+        try:
+            super().__init__(
+                (service.config.bind, service.config.port),
+                ControlRequestHandler,
+            )
+        except BaseException:
+            if self._owns_application:
+                self.close_application()
+            raise
+
+    def close_application(self) -> bool:
+        application = self.control_application
+        if application is None or not self._owns_application:
+            return True
+        closed = application.close()
+        if closed:
+            self._owns_application = False
+        return closed
+
+    def server_close(self) -> None:
+        super().server_close()
+        self.close_application()
 
 
 class ControlRequestHandler(BaseHTTPRequestHandler):
@@ -388,8 +119,26 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
 
     server: ControlHttpServer
 
-    def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
+    def do_GET(self) -> None:
+        if self._dispatch_application("GET"):
+            return
+        if self.path == "/v1/describe":
+            self._send(HTTPStatus.OK, self.server.control_service.describe())
+            return
+        if self.path == "/v1/observe":
+            try:
+                self._send(HTTPStatus.OK, self.server.control_service.observe())
+            except (
+                ControlTaskRejected,
+                ControlServiceError,
+                OSError,
+                ValueError,
+            ) as error:
+                self._send(HTTPStatus.CONFLICT, error_payload(str(error)))
+            return
         if self.path == "/v1/control":
+            if not self._authorize_legacy(Role.OBSERVER):
+                return
             self._send(HTTPStatus.OK, self.server.control_service.control_snapshot())
             return
         if self.path != "/healthz":
@@ -405,7 +154,17 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
             return
         self._send(HTTPStatus.OK, payload)
 
-    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+    def do_POST(self) -> None:
+        if self.server.control_application is not None and self._is_application_route(
+            self.path
+        ):
+            try:
+                body = self._read_optional_json()
+            except (OSError, ValueError) as error:
+                self._send(HTTPStatus.BAD_REQUEST, error_payload(str(error)))
+                return
+            if self._dispatch_application("POST", body=body):
+                return
         if self.path != "/v1/tasks":
             if self.path.startswith("/v1/control/"):
                 self._handle_control_post()
@@ -424,7 +183,9 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
             return
         except ControlTaskRejected as error:
             status = (
-                HTTPStatus.CONFLICT if "already executing" in str(error) else HTTPStatus.BAD_REQUEST
+                HTTPStatus.CONFLICT
+                if "already executing" in str(error)
+                else HTTPStatus.BAD_REQUEST
             )
             self._send(status, error_payload(str(error)))
             return
@@ -434,23 +195,38 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         self._send(HTTPStatus.OK, result.to_payload())
 
     def _handle_control_post(self) -> None:
+        if not self._authorize_legacy(Role.CONTROLLER):
+            return
+        manual_scope = getattr(self, "_legacy_scope", None)
+        manual_kwargs = (
+            {}
+            if manual_scope is None
+            else {
+                "caller_id": manual_scope[0],
+                "session_id": manual_scope[1],
+            }
+        )
         try:
             if self.path == "/v1/control/emergency-stop":
                 payload = self.server.control_service.emergency_stop()
             elif self.path == "/v1/control/reset":
                 payload = self.server.control_service.reset_emergency_stop()
             elif self.path == "/v1/control/manual/acquire":
-                payload = self.server.control_service.acquire_manual()
+                payload = self.server.control_service.acquire_manual(**manual_kwargs)
             elif self.path == "/v1/control/manual/release":
-                payload = self.server.control_service.release_manual()
+                payload = self.server.control_service.release_manual(**manual_kwargs)
             elif self.path == "/v1/control/manual/deadman":
                 root = _payload_mapping(self._read_json(), "manual deadman")
                 active = root.get("active")
                 if not isinstance(active, bool):
                     raise ValueError("manual deadman active must be boolean")
-                payload = self.server.control_service.set_manual_deadman(active)
+                payload = self.server.control_service.set_manual_deadman(
+                    active, **manual_kwargs
+                )
             elif self.path == "/v1/control/manual/action":
-                payload = self.server.control_service.submit_manual_action(self._read_json())
+                payload = self.server.control_service.submit_manual_action(
+                    self._read_json(), **manual_kwargs
+                )
             else:
                 self._send(HTTPStatus.NOT_FOUND, error_payload("route not found"))
                 return
@@ -465,6 +241,92 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
             return
         self._send(HTTPStatus.OK, payload)
 
+    def _dispatch_application(
+        self,
+        method: str,
+        *,
+        body: Mapping[str, Any] | None = None,
+    ) -> bool:
+        if self.server.control_application is None or not self._is_application_route(
+            self.path
+        ):
+            return False
+        try:
+            response = self.server.control_api.dispatch(
+                method,
+                self.path,
+                body=body,
+                headers=dict(self.headers.items()),
+            )
+        except Exception as error:  # noqa: BLE001 - normalize handler boundary
+            self._send(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": str(error), "code": "application_error"},
+            )
+            return True
+        self._send(HTTPStatus(response.status), response.payload)
+        return True
+
+    @staticmethod
+    def _is_application_route(path: str) -> bool:
+        route = path.split("?", 1)[0].rstrip("/") or "/"
+        if route.startswith("/v1/control"):
+            return False
+        return (
+            route
+            in {
+                "/v1/describe",
+                "/v1/observe",
+                "/v1/propose",
+                "/v1/execute",
+                "/v1/tasks",
+                "/v1/cancel",
+                "/v1/stop",
+                "/v1/recordings/start",
+                "/v1/recordings/stop",
+                "/v1/recordings/status",
+            }
+            or route.startswith("/v1/jobs/")
+            or route.startswith("/v1/media/")
+            or route.startswith("/v1/recordings/record/")
+        )
+
+    def _authorize_legacy(self, role: Role) -> bool:
+        application = self.server.control_application
+        self._legacy_scope = None
+        if application is None:
+            return True
+        try:
+            headers = _headers(dict(self.headers.items()))
+            token = _token(headers)
+            caller_id, session_id = self.server.control_api._identity(headers, token)
+            application.auth.authorize_scope(
+                token,
+                role,
+                caller_id=caller_id,
+                session_id=session_id,
+            )
+        except AuthenticationError as error:
+            self._send(
+                HTTPStatus.UNAUTHORIZED,
+                {"error": str(error), "code": "authentication_required"},
+            )
+            return False
+        except AuthorizationError as error:
+            self._send(
+                HTTPStatus.FORBIDDEN,
+                {"error": str(error), "code": "forbidden"},
+            )
+            return False
+        except ValueError as error:
+            self._send(
+                HTTPStatus.BAD_REQUEST,
+                {"error": str(error), "code": "invalid_request"},
+            )
+            return False
+        self._legacy_scope = (caller_id, session_id)
+        return True
+
     def _read_json(self) -> object:
         content_type = self.headers.get_content_type()
         if content_type != "application/json":
@@ -475,16 +337,32 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         except ValueError as error:
             raise ValueError("Content-Length must be an integer") from error
         if not 0 < length <= _MAX_REQUEST_BYTES:
-            raise ValueError(f"request body must be between 1 and {_MAX_REQUEST_BYTES} bytes")
+            raise ValueError(
+                f"request body must be between 1 and {_MAX_REQUEST_BYTES} bytes"
+            )
         body = self.rfile.read(length)
         try:
             return json.loads(body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
             raise ValueError("request body must be valid UTF-8 JSON") from error
 
+    def _read_optional_json(self) -> Mapping[str, Any] | None:
+        length_value = self.headers.get("Content-Length")
+        if length_value is None or not length_value.strip():
+            return None
+        try:
+            if int(length_value) == 0:
+                return None
+        except ValueError as error:
+            raise ValueError("Content-Length must be an integer") from error
+        value = self._read_json()
+        if value is not None and not isinstance(value, Mapping):
+            raise ValueError("request body must be a JSON object")
+        return value
+
     def _send(self, status: HTTPStatus, payload: Mapping[str, Any]) -> None:
         body = json.dumps(
-            dict(payload),
+            _json_safe(payload),
             allow_nan=False,
             ensure_ascii=False,
             separators=(",", ":"),
@@ -503,75 +381,67 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
 def main(argv: Sequence[str] | None = None) -> int:
     """Load one generated runtime and serve it until the supervisor stops us."""
 
-    parser = argparse.ArgumentParser(prog="embodirun-control-serve")
+    parser = argparse.ArgumentParser(prog="rlinf-control-serve")
     parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument(
+        "--state-dir",
+        type=Path,
+        help="persistent control job/recorder state directory (default: device state)",
+    )
+    parser.add_argument(
+        "--token-file",
+        type=Path,
+        help="JSON token-principal mapping; omission keeps trusted loopback/SSH mode",
+    )
+    parser.add_argument(
+        "--recording-dir",
+        type=Path,
+        help="root directory for optional bounded observation/action recordings",
+    )
+    parser.add_argument(
+        "--recording-id",
+        help="safe recording directory name (default: runtime ID)",
+    )
     args = parser.parse_args(argv)
     try:
         content = args.config.read_bytes()
         if len(content) > _MAX_CONFIG_BYTES:
             raise ValueError("control config is too large")
         config = ControlServiceConfig.from_json(content.decode("utf-8"))
-        server = ControlHttpServer(ControlService(config))
+        service = ControlService(config)
+        recorder = _configured_recorder(
+            service.observation_store,
+            config,
+            args.recording_dir,
+            args.recording_id,
+        )
+        if recorder is not None:
+            service.attach_recorder(recorder)
+        server = ControlHttpServer(
+            service,
+            state_dir=args.state_dir,
+            auth_policy=_load_auth_policy(args.token_file),
+        )
     except (OSError, UnicodeDecodeError, ValueError) as error:
         parser.error(str(error))
     try:
         server.serve_forever()
     finally:
         server.server_close()
-        server.control_service.close()
+        service.close()
     return 0
-
-
-def _definitions(
-    config: ControlServiceConfig,
-) -> tuple[BindingDefinition, RobotDefinition]:
-    try:
-        binding = binding_definition(config.binding_kind)
-    except (KeyError, TypeError):
-        raise ControlServiceError(f"binding {config.binding_kind!r} is not available") from None
-    if binding.robot_kind != config.robot_kind:
-        raise ControlServiceError(
-            f"binding {config.binding_kind!r} does not target {config.robot_kind!r}"
-        )
-    try:
-        robot = robot_definition(config.robot_kind)
-    except (KeyError, TypeError):
-        raise ControlServiceError(f"robot type {config.robot_kind!r} is not available") from None
-    return binding, robot
-
-
-def _shutdown_client(client: Any) -> None:
-    shutdown = getattr(client, "shutdown", None)
-    if callable(shutdown):
-        shutdown()
-
-
-def _payload_mapping(value: object, name: str) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        raise ValueError(f"{name} payload must be an object")
-    return value
-
-
-def _robot_action(value: object) -> RobotAction:
-    root = _payload_mapping(value, "manual action")
-    timestamp_s = root.get("timestamp_s", time.time())
-    if isinstance(timestamp_s, bool) or not isinstance(timestamp_s, (int, float)):
-        raise ValueError("manual action timestamp_s must be numeric")
-    values = _payload_mapping(root.get("values"), "manual action values")
-    metadata = root.get("metadata", {})
-    if not isinstance(metadata, Mapping):
-        raise ValueError("manual action metadata must be an object")
-    return RobotAction(float(timestamp_s), dict(values), dict(metadata))
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
 
 
 __all__ = [
     "ControlHttpServer",
+    "ControlRequestHandler",
     "ControlService",
     "ControlServiceError",
+    "ControlTaskRejected",
     "create_inference_client",
     "main",
 ]
+
+
+if __name__ == "__main__":  # pragma: no cover - exercised by the CLI test
+    raise SystemExit(main())
