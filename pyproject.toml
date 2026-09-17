@@ -61,6 +61,7 @@ host = [
 robot-so101 = ["feetech-servo-sdk>=1,<2", "opencv-python-headless>=4.10,<5"]
 robot-fr3 = ["franky-control>=1.1.4,<2"]
 robot-go2 = []
+robot-xlerobot-external-owner = []
 robot-arx5 = ["Pillow>=10,<13", "pyrealsense2>=2.54,<3", "opencv-python-headless>=4.10,<5"]
 sim-libero = [
     "lerobot[libero]>=0.6,<0.7",

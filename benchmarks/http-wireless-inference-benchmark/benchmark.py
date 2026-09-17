@@ -270,7 +270,7 @@ def run(args):
     plan = build_plan(config)
     state = StateStore(state_path(args.state_dir, plan.name)).load()
     if state is None or state.config_digest != config_digest(config):
-        raise ValueError("initialize this exact configuration with embodirun init first")
+        raise ValueError("initialize this exact configuration with rlinf-deploy init first")
     runtimes = [runtime for runtime in plan.runtimes
                 if not args.runtime or runtime.runtime_id in args.runtime]
     if not runtimes or (args.runtime and set(args.runtime) != {r.runtime_id for r in runtimes}):
@@ -281,16 +281,16 @@ def run(args):
         raise ValueError("clients must share one Thor inference service")
     model = config.models[runtimes[0].model]
     if model.backend != "vvla":
-        raise ValueError("this comparison requires the EmbodiInfer backend")
+        raise ValueError("this comparison requires the VVLA backend")
     if state.services[model.model_id].status != "running":
-        raise ValueError("start the model service with embodirun up first")
+        raise ValueError("start the model service with rlinf-deploy up first")
     rows = load_observations(args.observations)
     source = Path(__file__).read_text()
     services = {s.service_id: s for s in plan.services}
     jobs = []
     for runtime in runtimes:
         if state.services[runtime.service_id].status != "stopped":
-            raise ValueError("stop control services with embodirun down --target control first")
+            raise ValueError("stop control services with rlinf-deploy down --target control first")
         node = config.nodes[runtime.node]
         environment = state.environments[runtime.environment_id]
         if environment.status != "ready":

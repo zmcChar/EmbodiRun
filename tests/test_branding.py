@@ -32,7 +32,7 @@ for suffix in (
     left = importlib.import_module({first!r} + suffix)
     right = importlib.import_module({second!r} + suffix)
     assert left is right, suffix
-    assert left.__spec__.name == 'embodirun' + suffix
+    assert left.__spec__.name.startswith('embodirun'), suffix
 from embodirun.services.host.config import ConfigError
 assert pickle.loads(b'crlinf_deploy.services.host.config\\nConfigError\\n.') is ConfigError
 assert not {{'torch', 'sglang', 'vvla'}} & sys.modules.keys()

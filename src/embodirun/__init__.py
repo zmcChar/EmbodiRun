@@ -1,7 +1,7 @@
 """Robot and simulator clients for supported inference services."""
 
 from .robots import RobotAction, RobotAdapter, RobotObservation, RobotProfile
-from .services.inference import (
+from .model_services import (
     ImagePayload,
     PolicyAction,
     PolicyClient,
