@@ -1,4 +1,4 @@
-"""Pi0.5 binding for left-six, right-six SO-101 position actions."""
+"""Pi0.5 binding for left/right SO-101 position actions."""
 
 from embodirun.bindings import BindingDefinition
 from embodirun.bindings.lerobot.so101.pi05.mapper import Pi05SO101Mapper
@@ -9,14 +9,22 @@ from embodirun.robots.lerobot.bi_so101 import (
 
 
 class Pi05BiSO101Mapper(Pi05SO101Mapper):
+    """Map a flat twelve-value Pi0.5 chunk to two arm targets."""
+
     position_features = BI_SO101_POSITION_FEATURES
     robot_action_space = BI_SO101_ACTION_SPACE
 
-    def _action_values(self, positions: list[float]) -> dict:
+    def _action_values(self, positions: list[float]) -> dict[str, object]:
         return {
             "type": "joint_position",
-            "left": {"joint_positions_deg": positions[:5], "gripper_position": positions[5]},
-            "right": {"joint_positions_deg": positions[6:11], "gripper_position": positions[11]},
+            "left": {
+                "joint_positions_deg": positions[:5],
+                "gripper_position": positions[5],
+            },
+            "right": {
+                "joint_positions_deg": positions[6:11],
+                "gripper_position": positions[11],
+            },
         }
 
 

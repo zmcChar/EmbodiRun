@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import io
 import math
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -55,6 +56,7 @@ class RealSenseCameraSource:
         *,
         rs_module: Any | None = None,
         jpeg_encoder: Callable[[bytes, int, int, int], bytes] | None = None,
+        clock_ns: Callable[[], int] | None = None,
     ) -> None:
         self._cameras = tuple(cameras)
         if not self._cameras:
@@ -68,7 +70,11 @@ class RealSenseCameraSource:
                 ) from error
         self._rs = rs_module
         self._jpeg_encoder = jpeg_encoder or _encode_rgb_as_jpeg
+        # Freshness is evaluated in the owner-local monotonic domain; this
+        # timestamp must not be subtracted against another node's clock.
+        self._clock_ns = clock_ns or time.monotonic_ns
         self._pipelines: list[Any] = []
+        self._pipeline_profiles: list[Any | None] = []
         try:
             for camera in self._cameras:
                 pipeline = rs_module.pipeline()
@@ -82,7 +88,7 @@ class RealSenseCameraSource:
                     camera.fps,
                 )
                 self._pipelines.append(pipeline)
-                pipeline.start(config)
+                self._pipeline_profiles.append(pipeline.start(config))
         except Exception as error:
             self.close()
             if isinstance(error, RealSenseCameraError):
@@ -93,7 +99,7 @@ class RealSenseCameraSource:
 
     def capture(self) -> tuple[CameraFrame, ...]:
         images: list[CameraFrame] = []
-        for camera, pipeline in zip(self._cameras, self._pipelines):
+        for index, (camera, pipeline) in enumerate(zip(self._cameras, self._pipelines)):
             try:
                 frames = pipeline.wait_for_frames(
                     max(1, int(camera.frame_timeout_s * 1000))
@@ -107,14 +113,83 @@ class RealSenseCameraSource:
                 raise RealSenseCameraError(
                     f"camera {camera.name!r} returned no color frame"
                 )
+            # RealSense's Python API does not provide a portable exposure
+            # timestamp for this generic contract.  Capture the host read
+            # boundary before copying/encoding the RGB payload instead of
+            # relabelling the later encoded time as capture time.
+            captured_timestamp_ns = self._now_ns()
             encoded = self._jpeg_encoder(
                 bytes(color.get_data()),
                 camera.width,
                 camera.height,
                 camera.jpeg_quality,
             )
-            images.append(CameraFrame(camera.name, "image/jpeg", encoded))
+            images.append(
+                CameraFrame(
+                    camera.name,
+                    "image/jpeg",
+                    encoded,
+                    captured_timestamp_ns=captured_timestamp_ns,
+                    received_timestamp_ns=self._now_ns(),
+                    clock_domain="host_monotonic_ns",
+                    profile=self._actual_profile(self._pipeline_profiles[index], color),
+                )
+            )
         return tuple(images)
+
+    def _now_ns(self) -> int:
+        value = self._clock_ns()
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise RealSenseCameraError(
+                "camera clock must return a non-negative integer nanosecond value"
+            )
+        return value
+
+    def _actual_profile(
+        self, pipeline_profile: Any, color: Any
+    ) -> dict[str, object] | None:
+        """Return only values reported by the SDK's active color profile."""
+
+        stream_profile = None
+        getter = getattr(pipeline_profile, "get_stream", None)
+        if callable(getter):
+            try:
+                stream = getattr(self._rs, "stream", None)
+                color_stream = getattr(stream, "color", None)
+                stream_profile = (
+                    getter(color_stream) if color_stream is not None else None
+                )
+            except Exception:
+                stream_profile = None
+        if stream_profile is None:
+            color_get_profile = getattr(color, "get_profile", None)
+            if callable(color_get_profile):
+                try:
+                    stream_profile = color_get_profile()
+                except Exception:
+                    stream_profile = None
+        video_profile = stream_profile
+        as_video = getattr(stream_profile, "as_video_stream_profile", None)
+        if callable(as_video):
+            try:
+                video_profile = as_video()
+            except Exception:
+                video_profile = stream_profile
+        values: dict[str, object] = {}
+        for name in ("width", "height", "fps"):
+            method = getattr(video_profile, name, None)
+            if not callable(method):
+                continue
+            try:
+                value = method()
+            except Exception:
+                continue
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            if not math.isfinite(float(value)) or float(value) <= 0:
+                continue
+            values[name] = int(value) if name != "fps" else float(value)
+        return values or None
 
     def close(self) -> None:
         for pipeline in reversed(self._pipelines):
@@ -123,6 +198,7 @@ class RealSenseCameraSource:
             except Exception:
                 pass
         self._pipelines.clear()
+        self._pipeline_profiles.clear()
 
 
 def _encode_rgb_as_jpeg(raw: bytes, width: int, height: int, quality: int) -> bytes:

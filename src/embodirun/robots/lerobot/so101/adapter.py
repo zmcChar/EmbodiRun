@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 import math
 import os
 import time
@@ -70,7 +71,7 @@ class _SO101Controller(Protocol):
     @property
     def is_calibrated(self) -> bool: ...
 
-    def connect(self, *, calibrate: bool) -> None: ...
+    def connect(self, *, calibrate: bool, prepare: bool = True) -> None: ...
 
     def get_observation(self) -> Mapping[str, object]: ...
 
@@ -202,6 +203,11 @@ class _FeetechSO101Controller:
         self.packet_handler = scservo_sdk.PacketHandler(0)
         self._connected = False
         self._calibrated = False
+        self._prepared = False
+        # Startup may fail after partially enabling the bus.  Keep this
+        # separate from ``_prepared`` so close can still attempt torque off,
+        # while a passive connection never writes torque registers.
+        self._torque_owned = False
 
     @property
     def is_connected(self) -> bool:
@@ -367,16 +373,18 @@ class _FeetechSO101Controller:
                 initial_goals[motor_id] = self._initial_goal(motor, present)
             for motor_id, target in initial_goals.items():
                 self._write_register(motor_id, _GOAL_POSITION, target, sign_bit=15)
+            self._torque_owned = True
             self._set_torque(True)
         except BaseException as startup_error:
             # Goal writes and partial enabling can also fail; stop every motor.
             try:
                 self._set_torque(False)
+                self._torque_owned = False
             except Exception as cleanup_error:
                 raise startup_error from cleanup_error
             raise
 
-    def connect(self, *, calibrate: bool) -> None:
+    def connect(self, *, calibrate: bool, prepare: bool = True) -> None:
         if calibrate:
             raise SO101AdapterError(
                 "interactive calibration is not supported by the Deploy runtime"
@@ -392,11 +400,25 @@ class _FeetechSO101Controller:
             self.port_handler.setPacketTimeoutMillis(1000)
             self._handshake()
             self._calibrated = self._matches_calibration()
-            if self._calibrated and not self.read_only:
+            if self._calibrated and prepare and not self.read_only:
                 self._configure()
+                self._prepared = True
+            else:
+                self._prepared = False
         except BaseException:
             self._close_port()
             raise
+
+    def prepare(self) -> None:
+        if self.read_only:
+            raise SO101AdapterError("read-only SO-101 connection cannot prepare motors")
+        if not self.is_connected:
+            raise SO101AdapterError("SO-101 is not connected")
+        if not self.is_calibrated:
+            raise SO101AdapterError("SO-101 calibration has not been verified")
+        if not self._prepared:
+            self._configure()
+            self._prepared = True
 
     def _normalized_position(self, motor: str, raw: int) -> float:
         item = self.calibration[motor]
@@ -478,13 +500,20 @@ class _FeetechSO101Controller:
             self.port_handler.closePort()
         self._connected = False
         self._calibrated = False
+        self._prepared = False
+        self._torque_owned = False
 
     def disconnect(self) -> None:
         if not self.is_connected:
             return
         try:
-            if self.config.disable_torque_on_disconnect and not self.read_only:
+            if (
+                self.config.disable_torque_on_disconnect
+                and not self.read_only
+                and (getattr(self, "_torque_owned", False) or self._prepared)
+            ):
                 self._set_torque(False)
+                self._torque_owned = False
         finally:
             self._close_port()
 
@@ -529,12 +558,29 @@ class SO101Adapter(RobotAdapter):
         self.read_only = read_only
         self.robot_id = config.robot_id
         self.controller = controller or _FeetechSO101Controller(config, read_only=read_only)
+        self._prepared = False
 
-    def connect(self) -> None:
+    def connect(self, *, prepare: bool = True) -> None:
+        if not isinstance(prepare, bool):
+            raise TypeError("prepare must be a boolean")
         if self.controller.is_connected:
+            if prepare and not self.read_only:
+                self.prepare()
             return
         try:
-            self.controller.connect(calibrate=False)
+            connect = self.controller.connect
+            try:
+                parameters = inspect.signature(connect).parameters
+            except (TypeError, ValueError):
+                parameters = {}
+            if not prepare and "prepare" not in parameters:
+                raise SO101AdapterError(
+                    "SO-101 controller does not expose a passive connect boundary"
+                )
+            if "prepare" in parameters:
+                connect(calibrate=False, prepare=prepare)
+            else:
+                connect(calibrate=False)
         except BaseException:
             if self.controller.is_connected:
                 self.controller.disconnect()
@@ -544,6 +590,22 @@ class SO101Adapter(RobotAdapter):
             raise SO101AdapterError(
                 "SO-101 motor calibration does not match the configured calibration file"
             )
+        self._prepared = prepare and not self.read_only
+
+    def prepare(self) -> None:
+        if self.read_only:
+            raise SO101AdapterError("read-only SO-101 connection cannot prepare motors")
+        if self._prepared:
+            return
+        if not self.controller.is_connected:
+            self.connect(prepare=False)
+        prepare = getattr(self.controller, "prepare", None)
+        if not callable(prepare):
+            raise SO101AdapterError(
+                "SO-101 controller does not expose an explicit prepare operation"
+            )
+        prepare()
+        self._prepared = True
 
     def _read_positions(self) -> tuple[float, ...]:
         if not self.controller.is_connected:
@@ -560,6 +622,7 @@ class SO101Adapter(RobotAdapter):
 
     def observe(self) -> RobotObservation:
         positions = self._read_positions()
+        captured_timestamp_ns = time.monotonic_ns()
         return RobotObservation(
             timestamp_s=time.time(),
             values={
@@ -571,26 +634,74 @@ class SO101Adapter(RobotAdapter):
                 "robot_type": "so101_follower",
                 "action_space": SO101_ACTION_SPACE,
                 "position_units": "degrees_and_normalized_gripper",
+                "captured_timestamp_ns": captured_timestamp_ns,
+                "clock_domain": "host_monotonic_ns",
             },
         )
 
     def execute(self, action: RobotAction) -> None:
-        command = self._prepare_action(action)
-        if command is None:
-            self.stop()
-        else:
-            self.controller.send_action(command)
-
-    def validate_action(self, action: RobotAction) -> None:
-        """Check an action against fresh feedback without writing motor goals.
-
-        This does not reserve a command; execute checks feedback again.
-        """
-        self._prepare_action(action)
-
-    def _prepare_action(self, action: RobotAction) -> dict[str, float] | None:
         if self.read_only:
             raise SO101AdapterError("read-only SO-101 connection cannot execute actions")
+        if not self._prepared:
+            raise SO101AdapterError(
+                "SO-101 motors are not prepared; call prepare explicitly before execute"
+            )
+        if isinstance(action.values, Mapping) and action.values.get("type") == "stop":
+            if action.values != {"type": "stop"}:
+                raise SO101AdapterError("stop action must not contain parameters")
+            self.stop()
+            return
+        target_joints, target_gripper = self.validate_action(action)
+        current = self._read_positions()
+        maximum_joint_step = max(
+            abs(target - present)
+            for target, present in zip(target_joints, current[:-1])
+        )
+        gripper_step = abs(target_gripper - current[-1])
+        if self.config.step_limit_mode == "reject":
+            if maximum_joint_step > self.config.max_joint_step_deg:
+                raise SO101AdapterError(
+                    f"joint step {maximum_joint_step:.6f} exceeds "
+                    f"{self.config.max_joint_step_deg:.6f} degrees"
+                )
+            if gripper_step > self.config.max_gripper_step:
+                raise SO101AdapterError(
+                    f"gripper step {gripper_step:.6f} exceeds "
+                    f"{self.config.max_gripper_step:.6f}"
+                )
+        else:
+            target_joints = tuple(
+                _clip_step(target, present, self.config.max_joint_step_deg)
+                for target, present in zip(target_joints, current[:-1])
+            )
+            target_gripper = _clip_step(
+                target_gripper,
+                current[-1],
+                self.config.max_gripper_step,
+            )
+        command = {
+            feature: value
+            for feature, value in zip(
+                SO101_POSITION_FEATURES,
+                (*target_joints, target_gripper),
+            )
+        }
+        self.controller.send_action(command)
+
+    def validate_action(self, action: RobotAction) -> tuple[tuple[float, ...], float]:
+        """Validate a position command and read the current pose without writing.
+
+        Dual-arm adapters use this boundary to validate every child before the
+        first serial write, so a malformed or over-sized right-arm target cannot
+        leave the left arm partially commanded.
+        """
+
+        if self.read_only:
+            raise SO101AdapterError("read-only SO-101 connection cannot execute actions")
+        if not self._prepared:
+            raise SO101AdapterError(
+                "SO-101 motors are not prepared; call prepare explicitly before execute"
+            )
         declared_space = action.metadata.get("action_space")
         if declared_space is not None and declared_space != SO101_ACTION_SPACE:
             raise SO101AdapterError(
@@ -600,10 +711,6 @@ class SO101Adapter(RobotAdapter):
             raise SO101AdapterError("SO-101 action values must be an object")
         values = dict(action.values)
         kind = values.pop("type", None)
-        if kind == "stop":
-            if values:
-                raise SO101AdapterError("stop action must not contain parameters")
-            return None
         if kind != "joint_position":
             raise SO101AdapterError(f"unsupported SO-101 action type: {kind!r}")
         expected_fields = {"joint_positions_deg", "gripper_position"}
@@ -637,34 +744,23 @@ class SO101Adapter(RobotAdapter):
                     f"gripper step {gripper_step:.6f} exceeds "
                     f"{self.config.max_gripper_step:.6f}"
                 )
-        else:
-            target_joints = tuple(
-                _clip_step(target, present, self.config.max_joint_step_deg)
-                for target, present in zip(target_joints, current[:-1])
-            )
-            target_gripper = _clip_step(
-                target_gripper,
-                current[-1],
-                self.config.max_gripper_step,
-            )
-        return {
-            feature: value
-            for feature, value in zip(
-                SO101_POSITION_FEATURES,
-                (*target_joints, target_gripper),
-            )
-        }
+        return target_joints, target_gripper
 
     def stop(self) -> None:
         """Hold the measured pose; SO-101 exposes no separate stop primitive."""
         if self.read_only:
             raise SO101AdapterError("read-only SO-101 connection cannot command a hold")
+        if not self._prepared:
+            raise SO101AdapterError(
+                "SO-101 motors are not prepared; call prepare explicitly before stop"
+            )
         positions = self._read_positions()
         self.controller.send_action(dict(zip(SO101_POSITION_FEATURES, positions)))
 
     def close(self) -> None:
         if self.controller.is_connected:
             self.controller.disconnect()
+        self._prepared = False
 
 
 __all__ = [

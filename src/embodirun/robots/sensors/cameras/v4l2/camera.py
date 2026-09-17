@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import math
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from ..camera import CameraFrame
 
@@ -48,6 +49,7 @@ class V4L2CameraSource:
         cameras: Sequence[V4L2CameraConfig],
         *,
         cv2_module: Any | None = None,
+        clock_ns: Callable[[], int] | None = None,
     ) -> None:
         if cv2_module is None:
             try:
@@ -57,6 +59,10 @@ class V4L2CameraSource:
                     "V4L2 capture requires OpenCV in the robot environment"
                 ) from error
         self._cv2 = cv2_module
+        # Age/freshness uses the owner-local monotonic domain.  This value is
+        # not comparable with another node's monotonic clock and is labelled
+        # accordingly in the frame metadata.
+        self._clock_ns = clock_ns or time.monotonic_ns
         self._cameras = tuple(cameras)
         if not self._cameras:
             raise CameraError("at least one V4L2 camera is required")
@@ -81,9 +87,9 @@ class V4L2CameraSource:
             raise
 
     def capture(self) -> tuple[CameraFrame, ...]:
-        frames = self._capture_frames()
+        frames = self._capture_frames_with_timestamps()
         images: list[CameraFrame] = []
-        for camera, frame in zip(self._cameras, frames):
+        for camera, (frame, captured_timestamp_ns) in zip(self._cameras, frames):
             encoded, jpeg = self._cv2.imencode(
                 ".jpg",
                 frame,
@@ -98,15 +104,27 @@ class V4L2CameraSource:
                     name=camera.name,
                     mime_type="image/jpeg",
                     data=jpeg.tobytes(),
+                    captured_timestamp_ns=captured_timestamp_ns,
+                    # This is deliberately sampled after encoding.  It is a
+                    # receive/availability time, not the physical capture
+                    # time and never substitutes for the latter.
+                    received_timestamp_ns=self._now_ns(),
+                    clock_domain="host_monotonic_ns",
+                    profile=self._actual_profile(camera, self._captures[len(images)]),
                 )
             )
         return tuple(images)
 
     def _capture_frames(self) -> tuple[Any, ...]:
+        return tuple(
+            frame for frame, _timestamp in self._capture_frames_with_timestamps()
+        )
+
+    def _capture_frames_with_timestamps(self) -> tuple[tuple[Any, int], ...]:
         for camera, capture in zip(self._cameras, self._captures):
             if not capture.grab():
                 raise CameraError(f"camera {camera.name!r} failed to grab a frame")
-        frames: list[Any] = []
+        frames: list[tuple[Any, int]] = []
         for camera, capture in zip(self._cameras, self._captures):
             ok, frame = capture.retrieve()
             if not ok or frame is None:
@@ -117,8 +135,54 @@ class V4L2CameraSource:
                     f"camera {camera.name!r} returned {width}x{height}; "
                     f"expected {camera.width}x{camera.height}"
                 )
-            frames.append(frame)
+            # OpenCV exposes no portable exposure timestamp.  Record the
+            # host read boundary before any JPEG encoding or subscriber work.
+            frames.append((frame, self._now_ns()))
         return tuple(frames)
+
+    def _now_ns(self) -> int:
+        value = self._clock_ns()
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise CameraError(
+                "camera clock must return a non-negative integer nanosecond value"
+            )
+        return value
+
+    def _actual_profile(
+        self,
+        camera: V4L2CameraConfig,
+        capture: Any,
+    ) -> dict[str, object] | None:
+        """Read driver-reported values when the OpenCV backend exposes them.
+
+        Requested configuration is not repeated as an ``actual`` profile.
+        In particular, a backend without ``get(CAP_PROP_FPS)`` must not be
+        represented as successfully running at the requested FPS.
+        """
+
+        getter = getattr(capture, "get", None)
+        if not callable(getter):
+            return None
+        values: dict[str, object] = {}
+        properties = (
+            ("width", "CAP_PROP_FRAME_WIDTH", camera.width),
+            ("height", "CAP_PROP_FRAME_HEIGHT", camera.height),
+            ("fps", "CAP_PROP_FPS", camera.fps),
+        )
+        for name, property_name, _requested in properties:
+            property_id = getattr(self._cv2, property_name, None)
+            if property_id is None:
+                continue
+            try:
+                value = getter(property_id)
+            except Exception:
+                continue
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            if not math.isfinite(float(value)) or float(value) <= 0:
+                continue
+            values[name] = int(value) if name != "fps" else float(value)
+        return values or None
 
     def close(self) -> None:
         for capture in self._captures:

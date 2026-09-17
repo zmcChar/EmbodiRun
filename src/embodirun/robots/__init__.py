@@ -9,7 +9,7 @@ from functools import cache
 from importlib import import_module
 from typing import Any
 
-from .adapter import RobotAction, RobotAdapter, RobotObservation
+from .adapter import RobotAction, RobotAdapter, RobotObservation, RobotPreparationRefused
 from .profile import RobotProfile
 
 
@@ -22,7 +22,6 @@ class RobotDefinition:
     adapter_type: type[RobotAdapter]
     environment_group: str
     python: str | None = None
-    port_fields: tuple[str, ...] = ("port",)
 
     def __post_init__(self) -> None:
         if not self.kind.strip():
@@ -71,6 +70,7 @@ __all__ = [
     "RobotAdapter",
     "RobotDefinition",
     "RobotObservation",
+    "RobotPreparationRefused",
     "RobotProfile",
     "robot_definition",
 ]

@@ -174,6 +174,8 @@ def test_feetech_read_only_capture_never_writes_motor_registers(tmp_path, monkey
     robot.connect()
     observation = robot.observe()
     assert observation.values == {"joint_positions_deg": [0.0] * 5, "gripper_position": 50.0}
+    assert isinstance(observation.metadata["captured_timestamp_ns"], int)
+    assert observation.metadata["clock_domain"] == "host_monotonic_ns"
     if read_only:
         with pytest.raises(SO101AdapterError, match="read-only"):
             robot.execute(action([0.0] * 5, 50.0))

@@ -12,7 +12,7 @@ from embodirun.robots.unitree.go2.navigation.discrete import (
     NavigationCommand,
     NavigationCommandKind,
 )
-from embodirun.services.inference import (
+from embodirun.model_services import (
     ImagePayload,
     PolicyObservation,
     PolicyResult,

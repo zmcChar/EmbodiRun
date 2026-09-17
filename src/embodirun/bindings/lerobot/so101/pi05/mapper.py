@@ -12,7 +12,7 @@ from embodirun.robots.lerobot.so101 import (
     SO101_POSITION_FEATURES,
 )
 from embodirun.robots.sensors.cameras import CameraFrame
-from embodirun.services.inference import (
+from embodirun.model_services import (
     ImagePayload,
     PolicyObservation,
     PolicyResult,
@@ -33,7 +33,7 @@ class Pi05SO101Mapper:
     position_features = SO101_POSITION_FEATURES
     robot_action_space = SO101_ACTION_SPACE
 
-    def _action_values(self, positions: list[float]) -> dict:
+    def _action_values(self, positions: list[float]) -> dict[str, object]:
         return {
             "type": "joint_position",
             "joint_positions_deg": positions[:-1],

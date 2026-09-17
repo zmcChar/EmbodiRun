@@ -11,7 +11,7 @@ from typing import Any, Protocol
 
 from embodirun.robots import RobotAction, RobotObservation
 from embodirun.robots.sensors.cameras import CameraFrame
-from embodirun.services.inference import PolicyObservation, PolicyResult
+from embodirun.model_services import PolicyObservation, PolicyResult
 
 
 class BindingMapper(Protocol):

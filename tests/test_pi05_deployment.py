@@ -7,9 +7,9 @@ import pytest
 import yaml
 
 from embodirun.robots.lerobot.bi_so101 import BI_SO101_POSITION_FEATURES
-from embodirun.services.host.cli.command.init import InitError, _probe_resources
-from embodirun.services.host.config import ConfigError, load_config
-from embodirun.services.host.plan import ServiceError, _binding_adapter_config, build_plan
+from embodirun.deployment.config import ConfigError, load_config
+from embodirun.deployment.operations.init import InitError, _probe_resources
+from embodirun.deployment.plan import ServiceError, _binding_adapter_config, build_plan
 
 EXAMPLE = Path(__file__).parents[1] / "configs/pi05/bi-so101-vvla.yaml"
 

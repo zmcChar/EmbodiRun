@@ -9,11 +9,15 @@ from importlib import import_module
 
 from .. import SensorInput
 from .camera import CameraFrame, CameraSource, CameraSources
-from .v4l2 import CameraError, V4L2CameraConfig, V4L2CameraSource
-
-_CAMERA_KIND = re.compile(
-    r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\Z"
+from .realsense import (
+    RealSenseCameraConfig,
+    RealSenseCameraError,
+    RealSenseCameraSource,
 )
+from .v4l2 import CameraError, V4L2CameraConfig, V4L2CameraSource
+from .fake import FakeCameraConfig, FakeCameraError, FakeCameraSource
+
+_CAMERA_KIND = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\Z")
 
 
 def create_camera_source(inputs: Sequence[SensorInput]) -> CameraSource:
@@ -63,11 +67,18 @@ def _source_builder(
         raise TypeError(f"{module_name} does not define create_source")
     return builder
 
+
 __all__ = [
     "CameraError",
     "CameraFrame",
     "CameraSource",
     "CameraSources",
+    "FakeCameraConfig",
+    "FakeCameraError",
+    "FakeCameraSource",
+    "RealSenseCameraConfig",
+    "RealSenseCameraError",
+    "RealSenseCameraSource",
     "V4L2CameraConfig",
     "V4L2CameraSource",
     "create_camera_source",

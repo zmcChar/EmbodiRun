@@ -1,18 +1,55 @@
-"""Model-independent camera values used by robot runtimes."""
+"""Model-independent camera values used by robot runtimes.
+
+``CameraFrame`` deliberately keeps the original three positional fields.  The
+optional timing and profile fields describe the source without changing the
+encoded bytes.  ``captured_timestamp_ns`` is the time at which the deployment
+process read the source frame; it is not an exposure or device-clock claim.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from types import MappingProxyType
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
+
+
+def _freeze(value: Any) -> Any:
+    """Make nested metadata safe to share between observation consumers."""
+
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return tuple(_freeze(item) for item in value)
+    if isinstance(value, tuple):
+        return tuple(_freeze(item) for item in value)
+    if isinstance(value, set):
+        return frozenset(_freeze(item) for item in value)
+    if isinstance(value, frozenset):
+        return frozenset(_freeze(item) for item in value)
+    if isinstance(value, (str, bytes, int, float, bool, complex, type(None))):
+        return value
+    raise TypeError(f"camera metadata value {type(value).__name__} is not immutable")
 
 
 @dataclass(frozen=True, slots=True)
 class CameraFrame:
-    """One encoded frame identified in the robot observation schema."""
+    """One encoded frame identified in the robot observation schema.
+
+    ``captured_timestamp_ns`` and ``received_timestamp_ns`` use the clock
+    named by ``clock_domain``.  For V4L2 and RealSense implementations the
+    captured value is taken immediately after host-side frame read and before
+    JPEG encoding.  A legacy source can leave both values as ``None``; callers
+    must then treat timing/freshness as unknown rather than fresh.
+    """
 
     name: str
     mime_type: str
     data: bytes
+    captured_timestamp_ns: int | None = None
+    received_timestamp_ns: int | None = None
+    clock_domain: str | None = None
+    profile: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
@@ -21,6 +58,46 @@ class CameraFrame:
             raise ValueError("camera frame must be JPEG or PNG")
         if not isinstance(self.data, bytes) or not self.data:
             raise ValueError("camera frame data must not be empty")
+        for field_name in ("captured_timestamp_ns", "received_timestamp_ns"):
+            value = getattr(self, field_name)
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+            ):
+                raise ValueError(
+                    f"camera frame {field_name} must be a non-negative integer"
+                )
+        if (
+            self.captured_timestamp_ns is not None
+            and self.received_timestamp_ns is not None
+            and self.received_timestamp_ns < self.captured_timestamp_ns
+        ):
+            raise ValueError("camera frame receive time cannot precede capture time")
+        if self.clock_domain is not None and (
+            not isinstance(self.clock_domain, str) or not self.clock_domain.strip()
+        ):
+            raise ValueError("camera frame clock_domain must be a non-empty string")
+        if self.profile is not None:
+            if not isinstance(self.profile, Mapping):
+                raise ValueError("camera frame profile must be a mapping")
+            if any(not isinstance(key, str) for key in self.profile):
+                raise ValueError("camera frame profile keys must be strings")
+            object.__setattr__(self, "profile", _freeze(self.profile))
+
+    @property
+    def capture_timestamp_ns(self) -> int | None:
+        """Compatibility spelling for the host-side capture timestamp."""
+
+        return self.captured_timestamp_ns
+
+    @property
+    def timestamp_ns(self) -> int | None:
+        """Return the capture time when known, otherwise ``None``.
+
+        This property intentionally does not fall back to receive time: a
+        post-encoding timestamp cannot prove when the physical frame arrived.
+        """
+
+        return self.captured_timestamp_ns
 
 
 class CameraSource(Protocol):
@@ -40,9 +117,7 @@ class CameraSources:
         self._sources = sources
 
     def capture(self) -> tuple[CameraFrame, ...]:
-        return tuple(
-            frame for source in self._sources for frame in source.capture()
-        )
+        return tuple(frame for source in self._sources for frame in source.capture())
 
     def close(self) -> None:
         first_error: Exception | None = None

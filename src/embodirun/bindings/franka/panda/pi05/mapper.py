@@ -8,7 +8,7 @@ from collections.abc import Sequence
 
 from embodirun.robots import RobotAction, RobotObservation
 from embodirun.robots.sensors.cameras import CameraFrame
-from embodirun.services.inference import (
+from embodirun.model_services import (
     ImagePayload,
     PolicyObservation,
     PolicyResult,

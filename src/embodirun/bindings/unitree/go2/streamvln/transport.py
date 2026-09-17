@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from embodirun.services.host.executor import Command
+from embodirun.deployment.executor import Command
 
 
 @dataclass(frozen=True)

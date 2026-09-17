@@ -5,9 +5,9 @@ from __future__ import annotations
 import posixpath
 from typing import Literal
 
-from embodirun.services.host.executor import Command
-from embodirun.services.host.plan import ServiceSpec
-from embodirun.services.host.supervisor import ProcessStatus, ServiceSupervisor
+from embodirun.deployment.executor import Command
+from embodirun.deployment.plan import ServiceSpec
+from embodirun.deployment.supervisor import ProcessStatus, ServiceSupervisor
 
 from .options import (
     CameraStartOptions,

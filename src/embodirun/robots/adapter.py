@@ -26,12 +26,32 @@ class RobotAction:
     metadata: Metadata = field(default_factory=dict)
 
 
+class RobotPreparationRefused(RuntimeError):
+    """A robot explicitly refused preparation before any write occurred."""
+
+    def __init__(self, message: str, receipt: object = None):
+        super().__init__(message)
+        self.receipt = receipt
+
+
 class RobotAdapter(ABC):
     """Own one hardware connection and translate Deploy's robot contracts."""
 
     @abstractmethod
-    def connect(self) -> None:
-        """Establish the hardware connection without commanding motion."""
+    def connect(self, *, prepare: bool = True) -> None:
+        """Establish a connection, optionally leaving actuators unprepared.
+
+        ``prepare=False`` is the passive boundary used by observation paths.
+        Adapters that cannot prove a side-effect-free connection must reject
+        that request rather than silently falling back to their legacy startup
+        behavior.
+        """
+
+    def prepare(self) -> None:
+        """Prepare an already connected adapter for commanded control."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not expose an explicit prepare operation"
+        )
 
     @abstractmethod
     def observe(self) -> RobotObservation:
@@ -50,4 +70,4 @@ class RobotAdapter(ABC):
         """Release hardware and transport resources."""
 
 
-__all__ = ["RobotAction", "RobotAdapter", "RobotObservation"]
+__all__ = ["RobotAction", "RobotAdapter", "RobotObservation", "RobotPreparationRefused"]

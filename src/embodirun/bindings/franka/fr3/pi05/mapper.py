@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from embodirun.robots import RobotAction, RobotObservation
 from embodirun.robots.franka.fr3 import FR3_ACTION_SPACE
 from embodirun.robots.sensors.cameras import CameraFrame
-from embodirun.services.inference import (
+from embodirun.model_services import (
     ImagePayload,
     PolicyObservation,
     PolicyResult,

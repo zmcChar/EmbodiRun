@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from embodirun.robots import RobotAction, RobotObservation
 from embodirun.robots.sensors.cameras import CameraFrame
-from embodirun.services.inference import (
+from embodirun.model_services import (
     ImagePayload,
     PolicyObservation,
     PolicyResult,
@@ -172,7 +172,7 @@ class DM05ARX5Mapper:
             )
         if values.get("output_transform_applied") is not True:
             raise DM05ARX5MapperError(
-                "DM0.5 output transform must be applied by EmbodiInfer"
+                "DM0.5 output transform must be applied by RLinf Inference"
             )
         if values.get("internal_action_dim_exposed", False) is not False:
             raise DM05ARX5MapperError(

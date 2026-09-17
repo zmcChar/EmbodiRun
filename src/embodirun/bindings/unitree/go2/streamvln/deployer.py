@@ -7,7 +7,7 @@ import json
 import posixpath
 from pathlib import Path
 
-from embodirun.services.host.executor import Command
+from embodirun.deployment.executor import Command
 
 from .options import ServiceSelection, StartOptions
 from .services import SERVICE_MODULES, Go2ServiceSupervisor
