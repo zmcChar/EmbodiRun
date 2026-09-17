@@ -10,6 +10,7 @@ from embodirun.robots import RobotAction, RobotObservation
 from embodirun.services.control.arbitration import (
     ArbiterCommandSink,
     AuthorityState,
+    CommandCancelled,
     CommandRejected,
     CommandStatus,
     EmergencyStopPolicy,
@@ -17,6 +18,7 @@ from embodirun.services.control.arbitration import (
     RobotControlArbiter,
 )
 from embodirun.services.control.runtime import ControlRuntime
+from embodirun.services.control.io import IOUnknownError
 
 
 def action(value: float) -> RobotAction:
@@ -109,6 +111,21 @@ class BlockingStopRobot(FakeRobot):
             self._stops_in_flight -= 1
 
 
+class BlockingHoldRobot(FakeRobot):
+    def __init__(self) -> None:
+        super().__init__()
+        self.hold_started = threading.Event()
+        self.hold_release = threading.Event()
+        self.fail_hold = False
+
+    def stop(self) -> None:
+        self.hold_started.set()
+        self.hold_release.wait(1.0)
+        if self.fail_hold:
+            raise RuntimeError("blocked hold failed")
+        self.stop_calls += 1
+
+
 class Mapper:
     policy_action_space = "fake.action.v1"
 
@@ -156,6 +173,200 @@ def test_runtime_executes_model_actions_through_observable_arbiter_sink() -> Non
         arbiter.close()
 
 
+def test_successful_runtime_cleanup_holds_without_cancelling_task_token() -> None:
+    """A completed registry task must not become cancelled during close."""
+
+    robot = FakeRobot()
+    arbiter = RobotControlArbiter(RobotAdapterCommandPort(robot))
+    token = arbiter.begin_model_task()
+    runtime = ControlRuntime(
+        robot,
+        Client([action(1.0)]),
+        instruction="move",
+        mapper=Mapper(),
+        chunk_steps=1,
+        command_sink=ArbiterCommandSink(arbiter, token),
+        cancel_event=token,
+    )
+    try:
+        runtime.step(())
+        runtime.close()
+
+        assert not token.is_set()
+        # Completion detaches the old token, so a late submission from that
+        # runtime cannot acquire the next automatic owner accidentally.
+        with pytest.raises(CommandCancelled, match="no longer current"):
+            arbiter.submit_model(action(2.0), task_cancel=token)
+        new_token = arbiter.begin_model_task()
+        ticket = arbiter.submit_model(action(3.0), task_cancel=new_token)
+        assert ticket.status is CommandStatus.EXECUTED
+    finally:
+        arbiter.close()
+
+
+def test_stale_success_cleanup_cannot_hold_a_new_automatic_owner() -> None:
+    robot = FakeRobot()
+    arbiter = RobotControlArbiter(RobotAdapterCommandPort(robot))
+    try:
+        old_token = arbiter.begin_model_task()
+        old_sink = ArbiterCommandSink(arbiter, old_token)
+        new_token = arbiter.begin_model_task()
+        stop_calls = robot.stop_calls
+
+        old_sink.finish()
+
+        assert not new_token.is_set()
+        assert robot.stop_calls == stop_calls
+        ticket = arbiter.submit_model(action(4.0), task_cancel=new_token)
+        assert ticket.status is CommandStatus.EXECUTED
+    finally:
+        arbiter.close()
+
+
+def test_success_cleanup_after_manual_takeover_does_not_hold_manual_owner() -> None:
+    robot = FakeRobot()
+    arbiter = RobotControlArbiter(RobotAdapterCommandPort(robot))
+    try:
+        old_token = arbiter.begin_model_task()
+        old_sink = ArbiterCommandSink(arbiter, old_token)
+        arbiter.acquire_manual()
+        stop_calls = robot.stop_calls
+
+        old_sink.finish()
+
+        assert arbiter.snapshot()["authority"] == AuthorityState.MANUAL.value
+        assert robot.stop_calls == stop_calls
+
+        # An unscoped legacy sink is equally unable to finish a manual owner.
+        ArbiterCommandSink(arbiter).finish()
+        assert robot.stop_calls == stop_calls
+    finally:
+        arbiter.close(hold=False)
+
+
+def test_manual_takeover_joins_a_success_cleanup_hold() -> None:
+    robot = BlockingHoldRobot()
+    arbiter = RobotControlArbiter(RobotAdapterCommandPort(robot, stop_timeout_s=0.8))
+    token = arbiter.begin_model_task()
+    sink = ArbiterCommandSink(arbiter, token)
+    cleanup_done = threading.Event()
+    takeover_started = threading.Event()
+    takeover_done = threading.Event()
+    errors: list[BaseException] = []
+
+    def finish() -> None:
+        try:
+            sink.finish()
+        except BaseException as error:  # pragma: no cover - assertion below
+            errors.append(error)
+        finally:
+            cleanup_done.set()
+
+    def takeover() -> None:
+        takeover_started.set()
+        try:
+            arbiter.acquire_manual()
+        except BaseException as error:  # pragma: no cover - assertion below
+            errors.append(error)
+        finally:
+            takeover_done.set()
+
+    finish_thread = threading.Thread(target=finish)
+    finish_thread.start()
+    try:
+        assert robot.hold_started.wait(1.0)
+        takeover_thread = threading.Thread(target=takeover)
+        takeover_thread.start()
+        assert takeover_started.wait(1.0)
+        # acquire_manual sets the old task token while holding the arbiter
+        # lock, before it joins the blocked physical hold.  This proves the
+        # takeover has reached the overlap window without relying on sleep.
+        assert token.wait(1.0)
+        assert not takeover_done.is_set()
+
+        robot.hold_release.set()
+        assert cleanup_done.wait(1.0)
+        assert takeover_done.wait(1.0)
+        finish_thread.join(1.0)
+        takeover_thread.join(1.0)
+
+        assert errors == []
+        assert arbiter.snapshot()["authority"] == AuthorityState.MANUAL.value
+        assert robot.stop_calls == 1
+        assert token.is_set()  # takeover cancels the old token
+    finally:
+        robot.hold_release.set()
+        arbiter.close(hold=False)
+
+
+def test_manual_takeover_receives_existing_hold_failure() -> None:
+    robot = BlockingHoldRobot()
+    robot.fail_hold = True
+    arbiter = RobotControlArbiter(RobotAdapterCommandPort(robot, stop_timeout_s=0.8))
+    token = arbiter.begin_model_task()
+    sink = ArbiterCommandSink(arbiter, token)
+    cleanup_done = threading.Event()
+    takeover_started = threading.Event()
+    takeover_done = threading.Event()
+    errors: list[BaseException] = []
+
+    def finish() -> None:
+        try:
+            sink.finish()
+        except BaseException as error:
+            errors.append(error)
+        finally:
+            cleanup_done.set()
+
+    def takeover() -> None:
+        takeover_started.set()
+        try:
+            arbiter.acquire_manual()
+        except BaseException as error:
+            errors.append(error)
+        finally:
+            takeover_done.set()
+
+    finish_thread = threading.Thread(target=finish)
+    finish_thread.start()
+    try:
+        assert robot.hold_started.wait(1.0)
+        takeover_thread = threading.Thread(target=takeover)
+        takeover_thread.start()
+        assert takeover_started.wait(1.0)
+        assert token.wait(1.0)
+        assert not takeover_done.is_set()
+        robot.hold_release.set()
+        assert cleanup_done.wait(1.0)
+        assert takeover_done.wait(1.0)
+        finish_thread.join(1.0)
+        takeover_thread.join(1.0)
+
+        assert len(errors) == 2
+        assert all("blocked hold failed" in str(error) for error in errors)
+        assert arbiter.snapshot()["authority"] == AuthorityState.ESTOP_LATCHED.value
+    finally:
+        robot.hold_release.set()
+        arbiter.close(hold=False)
+
+
+def test_command_ticket_reuses_action_id_for_queued_and_terminal_events() -> None:
+    robot = FakeRobot()
+    events: list[dict[str, object]] = []
+    arbiter = RobotControlArbiter(
+        RobotAdapterCommandPort(robot),
+        event_callback=events.append,
+    )
+    try:
+        ticket = arbiter.submit_model(action(5.0), wait=True)
+        assert ticket.status is CommandStatus.EXECUTED
+        lifecycle = [event for event in events if event["stage"] in {"queued", "executed"}]
+        assert {event["stage"] for event in lifecycle} == {"queued", "executed"}
+        assert len({event["action_id"] for event in lifecycle}) == 1
+    finally:
+        arbiter.close(hold=False)
+
+
 def test_runtime_surfaces_robot_execute_failure_from_arbiter_ticket() -> None:
     class FailingRobot(FakeRobot):
         def execute(self, command: RobotAction) -> None:
@@ -176,7 +387,13 @@ def test_runtime_surfaces_robot_execute_failure_from_arbiter_ticket() -> None:
             runtime.step(())
     finally:
         runtime.close()
-        arbiter.close()
+        try:
+            arbiter.close()
+        except IOUnknownError:
+            # A failed action can leave the scheduler's prior stop unresolved;
+            # the caller must observe that uncertainty rather than claim a
+            # clean close.
+            pass
 
 
 def test_estop_cancels_active_clears_pending_latches_and_requires_reset() -> None:
