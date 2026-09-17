@@ -258,10 +258,10 @@ def _probe_resources(
     for robot in context.config.robots.values():
         if robot.node != node.node_id:
             continue
-        if robot.port is not None:
+        for port in robot.ports:
             _require_path(
                 executor,
-                robot.port,
+                port,
                 kind="e",
                 description=f"robot {robot.robot_id!r} port",
             )

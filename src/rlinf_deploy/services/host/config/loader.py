@@ -195,16 +195,15 @@ def _validate_references(
 def _validate_unique_robot_ports(robots: dict[str, RobotConfig]) -> None:
     owners: dict[tuple[str, str], str] = {}
     for robot in robots.values():
-        if robot.port is None:
-            continue
-        key = (robot.node, robot.port)
-        owner = owners.get(key)
-        if owner is not None:
-            raise ConfigError(
-                f"robots {owner!r} and {robot.robot_id!r} share port {robot.port!r} "
-                f"on node {robot.node!r}"
-            )
-        owners[key] = robot.robot_id
+        for port in robot.ports:
+            key = (robot.node, port)
+            owner = owners.get(key)
+            if owner is not None:
+                raise ConfigError(
+                    f"robots {owner!r} and {robot.robot_id!r} share port {port!r} "
+                    f"on node {robot.node!r}"
+                )
+            owners[key] = robot.robot_id
 
 
 def _validate_unique_service_ports(

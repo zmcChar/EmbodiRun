@@ -113,6 +113,12 @@ to execute that entire selection rather than the generic 10-row prefix.
 
 ## Multi-node configuration
 
+For the 12-dimensional dual SO-101 Pi0.5 checkpoint and three cameras, use
+[the VVLA deployment guide](docs/pi05-bi-so101.md) and
+[portable configuration](configs/pi05/bi-so101-vvla.yaml). It includes the
+paired inference revision, mixed-precision/CUDA Graph settings, and Jetson
+environment prerequisites.
+
 The host CLI reads one deployment YAML and resolves it into nodes, uv
 environments, and service/runtime instances. Validate a file without contacting
 its nodes:

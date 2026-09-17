@@ -439,6 +439,14 @@ def _binding_adapter_config(
     config: DeploymentConfig,
     model: ModelConfig,
 ) -> str | None:
+    policy_kwargs = _option_mapping(model, "policy_kwargs")
+    if policy_kwargs is not None:
+        if model.backend != "vvla":
+            raise ServiceError(f"models.{model.model_id}.policy_kwargs requires VVLA")
+        if any(not isinstance(key, str) or not key.strip() for key in policy_kwargs):
+            raise ServiceError(
+                f"models.{model.model_id}.policy_kwargs keys must be non-empty strings"
+            )
     runtime_ids: list[str] = []
     generated: set[str | None] = set()
     for runtime in config.runtimes.values():
@@ -450,6 +458,8 @@ def _binding_adapter_config(
             generated.add(None)
             continue
         adapter_config = dict(definition.adapter_config)
+        if policy_kwargs is not None:
+            adapter_config["policy_kwargs"] = dict(policy_kwargs)
         image_fields = _runtime_image_fields(config, runtime)
         if image_fields:
             adapter_config["image_fields"] = image_fields
@@ -492,7 +502,13 @@ def _binding_adapter_config(
             f"model {model.model_id!r} is shared by runtimes with incompatible "
             f"adapter configurations: {names}"
         )
-    return next(iter(generated), None)
+    result = next(iter(generated), None)
+    if policy_kwargs is not None and result is None:
+        raise ServiceError(
+            f"models.{model.model_id}.policy_kwargs requires a binding-generated "
+            "adapter configuration; otherwise put policy_kwargs in the adapter_config JSON"
+        )
+    return result
 
 
 def _runtime_image_fields(

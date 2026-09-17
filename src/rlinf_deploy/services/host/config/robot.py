@@ -22,6 +22,15 @@ class RobotConfig:
     port: str | None
     options: dict[str, Any] = field(default_factory=dict, repr=False)
 
+    @property
+    def ports(self) -> tuple[str, ...]:
+        """Serial devices claimed by this robot, including composite arms."""
+        return tuple(
+            self.options[name]
+            for name in robot_definition(self.kind).port_fields
+            if self.options.get(name) is not None
+        )
+
 
 def parse_robot(robot_id: str, value: dict[str, Any]) -> RobotConfig:
     context = f"robots.{robot_id}"

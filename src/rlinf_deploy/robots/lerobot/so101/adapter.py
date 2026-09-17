@@ -575,6 +575,20 @@ class SO101Adapter(RobotAdapter):
         )
 
     def execute(self, action: RobotAction) -> None:
+        command = self._prepare_action(action)
+        if command is None:
+            self.stop()
+        else:
+            self.controller.send_action(command)
+
+    def validate_action(self, action: RobotAction) -> None:
+        """Check an action against fresh feedback without writing motor goals.
+
+        This does not reserve a command; execute checks feedback again.
+        """
+        self._prepare_action(action)
+
+    def _prepare_action(self, action: RobotAction) -> dict[str, float] | None:
         if self.read_only:
             raise SO101AdapterError("read-only SO-101 connection cannot execute actions")
         declared_space = action.metadata.get("action_space")
@@ -589,8 +603,7 @@ class SO101Adapter(RobotAdapter):
         if kind == "stop":
             if values:
                 raise SO101AdapterError("stop action must not contain parameters")
-            self.stop()
-            return
+            return None
         if kind != "joint_position":
             raise SO101AdapterError(f"unsupported SO-101 action type: {kind!r}")
         expected_fields = {"joint_positions_deg", "gripper_position"}
@@ -634,14 +647,13 @@ class SO101Adapter(RobotAdapter):
                 current[-1],
                 self.config.max_gripper_step,
             )
-        command = {
+        return {
             feature: value
             for feature, value in zip(
                 SO101_POSITION_FEATURES,
                 (*target_joints, target_gripper),
             )
         }
-        self.controller.send_action(command)
 
     def stop(self) -> None:
         """Hold the measured pose; SO-101 exposes no separate stop primitive."""
