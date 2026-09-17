@@ -317,13 +317,35 @@ class _FeetechSO101Controller:
         return True
 
     def _set_torque(self, enabled: bool) -> None:
+        errors: list[str] = []
         for motor_id in _MOTOR_IDS.values():
-            self._write_register(motor_id, _TORQUE_ENABLE, int(enabled))
-            self._write_register(motor_id, _LOCK, int(enabled))
+            for register in (_TORQUE_ENABLE, _LOCK):
+                try:
+                    self._write_register(motor_id, register, int(enabled))
+                except Exception as error:
+                    if enabled:
+                        raise
+                    errors.append(str(error))
+        if errors:
+            raise SO101AdapterError("torque shutdown incomplete: " + "; ".join(errors))
+
+    def _initial_goal(self, motor: str, present: int) -> int:
+        item = self.calibration[motor]
+        target = min(item.range_max, max(item.range_min, present))
+        if motor == "gripper":
+            limit = self.config.max_gripper_step * (item.range_max - item.range_min) / 100
+        else:
+            limit = self.config.max_joint_step_deg * (_ENCODER_RESOLUTION - 1) / 360
+        if abs(target - present) > limit:
+            raise SO101AdapterError(
+                f"motor {motor!r} is too far outside its calibrated range to initialize "
+                "within the configured step limit"
+            )
+        return target
 
     def _configure(self) -> None:
-        self._set_torque(False)
         try:
+            self._set_torque(False)
             for motor, motor_id in _MOTOR_IDS.items():
                 self._write_register(motor_id, _RETURN_DELAY, 0)
                 self._write_register(motor_id, _MAXIMUM_ACCELERATION, 254)
@@ -339,11 +361,20 @@ class _FeetechSO101Controller:
                     self._write_register(motor_id, _MAX_TORQUE, 500)
                     self._write_register(motor_id, _PROTECTION_CURRENT, 250)
                     self._write_register(motor_id, _OVERLOAD_TORQUE, 25)
-        except BaseException:
-            # Leave the arm torque-disabled when configuration is incomplete.
-            raise
-        else:
+            initial_goals = {}
+            for motor, motor_id in _MOTOR_IDS.items():
+                present = self._read_register(motor_id, _PRESENT_POSITION, sign_bit=15)
+                initial_goals[motor_id] = self._initial_goal(motor, present)
+            for motor_id, target in initial_goals.items():
+                self._write_register(motor_id, _GOAL_POSITION, target, sign_bit=15)
             self._set_torque(True)
+        except BaseException as startup_error:
+            # Goal writes and partial enabling can also fail; stop every motor.
+            try:
+                self._set_torque(False)
+            except Exception as cleanup_error:
+                raise startup_error from cleanup_error
+            raise
 
     def connect(self, *, calibrate: bool) -> None:
         if calibrate:

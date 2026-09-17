@@ -138,7 +138,7 @@ def test_feetech_read_only_capture_never_writes_motor_registers(tmp_path, monkey
             return (1 if address in (0, 1) else 0), 0, 0
 
         def read2ByteTxRx(self, port, motor, address):
-            return {9: 1000, 11: 3000, 31: 0}[address], 0, 0
+            return {9: 1000, 11: 3000, 31: 0, 56: 2000}[address], 0, 0
 
         def write1ByteTxRx(self, port, motor, address, value):
             writes.append((motor, address, value))
