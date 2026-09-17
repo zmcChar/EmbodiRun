@@ -1,1 +1,1 @@
-"""Adapters for supported inference service backend APIs."""
+"""Compatibility facade for canonical model-service backends."""

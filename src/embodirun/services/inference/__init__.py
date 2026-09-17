@@ -1,53 +1,9 @@
-"""Inference service contracts and clients organized by backend and protocol."""
+"""Compatibility facade for :mod:`embodirun.model_services`.
 
-from .backends.sglang import SglangHttpClient, SglangHttpError
-from .backends.vvla import (
-    VvlaHttpClient,
-    VvlaHttpError,
-    VvlaWirelessClient,
-    VvlaWirelessError,
-)
-from .client import InferenceClient, PolicyClient
-from .contracts import (
-    ImagePayload,
-    PolicyAction,
-    PolicyObservation,
-    PolicyResult,
-    Session,
-)
-from .factory import build_inference_client
-from .protocols.http import (
-    HttpResponse,
-    HttpTransport,
-    HttpTransportError,
-    UrllibHttpTransport,
-)
-from .protocols.wireless import (
-    WirelessProtocolError,
-    WirelessRpcTransport,
-    WirelessTransport,
-)
+Inference service contracts now live under the model-services domain. The
+legacy import remains public so existing Control, Agent, and user code keeps
+the same types and the provider registry remains process-global and unique.
+"""
 
-__all__ = [
-    "HttpResponse",
-    "HttpTransport",
-    "HttpTransportError",
-    "ImagePayload",
-    "InferenceClient",
-    "PolicyAction",
-    "PolicyClient",
-    "PolicyObservation",
-    "PolicyResult",
-    "Session",
-    "SglangHttpClient",
-    "SglangHttpError",
-    "UrllibHttpTransport",
-    "VvlaHttpClient",
-    "VvlaHttpError",
-    "VvlaWirelessClient",
-    "VvlaWirelessError",
-    "WirelessProtocolError",
-    "WirelessRpcTransport",
-    "WirelessTransport",
-    "build_inference_client",
-]
+from embodirun.model_services import *  # noqa: F401,F403
+from embodirun.model_services import __all__ as __all__

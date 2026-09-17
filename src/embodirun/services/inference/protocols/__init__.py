@@ -1,23 +1,4 @@
-"""Transport protocols used by inference service clients."""
+"""Compatibility facade for canonical model-service protocols."""
 
-from .http import (
-    HttpResponse,
-    HttpTransport,
-    HttpTransportError,
-    UrllibHttpTransport,
-)
-from .wireless import (
-    WirelessProtocolError,
-    WirelessRpcTransport,
-    WirelessTransport,
-)
-
-__all__ = [
-    "HttpResponse",
-    "HttpTransport",
-    "HttpTransportError",
-    "UrllibHttpTransport",
-    "WirelessProtocolError",
-    "WirelessRpcTransport",
-    "WirelessTransport",
-]
+from embodirun.model_services.protocols import *  # noqa: F401,F403
+from embodirun.model_services.protocols import __all__ as __all__

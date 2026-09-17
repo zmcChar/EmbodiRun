@@ -1,17 +1,4 @@
-"""VVLA inference service integrations."""
+"""Legacy VVLA backend facade."""
 
-from .http import VvlaHttpClient, VvlaHttpError, vvla_http_server_command
-from .wireless import (
-    VvlaWirelessClient,
-    VvlaWirelessError,
-    vvla_wireless_server_command,
-)
-
-__all__ = [
-    "VvlaHttpClient",
-    "VvlaHttpError",
-    "VvlaWirelessClient",
-    "VvlaWirelessError",
-    "vvla_http_server_command",
-    "vvla_wireless_server_command",
-]
+from embodirun.model_services.backends.vvla import *  # noqa: F401,F403
+from embodirun.model_services.backends.vvla import __all__ as __all__

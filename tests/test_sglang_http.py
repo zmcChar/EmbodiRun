@@ -380,7 +380,10 @@ def test_inference_factory_selects_backend_and_rejects_invalid_pair() -> None:
     )
     assert isinstance(client, SglangHttpClient)
 
-    with pytest.raises(ValueError, match="requires the http protocol"):
+    with pytest.raises(
+        ValueError,
+        match=r"inference provider 'sglang' does not support 'wireless' transport",
+    ):
         build_inference_client(
             "wireless",
             "wireless://policy",
