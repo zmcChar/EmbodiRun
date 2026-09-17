@@ -1,6 +1,35 @@
-# EmbodiInfer policy API v1
+# VVLA policy API v1
 
-EmbodiRun treats EmbodiInfer as a remote policy service. The API is model-neutral
+## Agent proposal API
+
+The Control API also exposes `POST /v1/propose` for one non-executing policy
+step over a retained shared observation. The JSON body is:
+
+```json
+{
+  "request_id": "proposal-1",
+  "observation_id": "service:1:42",
+  "instruction": "move to the table",
+  "runtime_id": "runtime-a",
+  "timeout_s": 10
+}
+```
+
+The server checks caller/session authorization and observation freshness, then
+uses the selected runtime binding and existing `InferenceClient` session to
+return both the raw policy result and binding-mapped `RobotAction` proposals.
+The requested observation is read from the shared store; the proposal path
+does not recapture cameras, prepare a robot, or submit an action to the
+arbiter. It closes only its temporary policy session. The response status is
+`proposed`, and this is not a job or an execution receipt. A later
+`POST /v1/execute` with a new request ID is required to submit selected rows.
+
+Missing/expired observations, unsupported device-only runtimes, invalid
+runtime IDs, authorization failures, and inference errors are rejected; no
+action is sent when proposal generation fails. `request_id` correlates the
+proposal request and policy step, but does not create a persistent job.
+
+RLinf Deploy treats VVLA as a remote policy service. The API is model-neutral
 and may be carried by HTTP or WirelessComm:
 no checkpoint, tokenizer, prompt, or raw token fields cross the boundary.
 
@@ -52,11 +81,11 @@ session state only once.
 }
 ```
 
-The EmbodiInfer HTTP layer is only responsible for model-native action chunks. Deploy
+The VVLA HTTP layer is only responsible for model-native action chunks. Deploy
 maps and validates the rows in `pi05.action_chunk.v1` through the selected
 binding, executes the `run --chunk-steps` prefix, and plays those robot commands
 at the runtime control rate. Robot state fields and action dimensions are owned
-by the binding rather than a user-maintained EmbodiInfer adapter file.
+by the binding rather than a user-maintained VVLA adapter file.
 
 ## WirelessComm mapping
 
