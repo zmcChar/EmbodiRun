@@ -22,6 +22,7 @@ class RobotDefinition:
     adapter_type: type[RobotAdapter]
     environment_group: str
     python: str | None = None
+    port_fields: tuple[str, ...] = ("port",)
 
     def __post_init__(self) -> None:
         if not self.kind.strip():

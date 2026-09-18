@@ -30,6 +30,15 @@ class Pi05SO101Mapper:
     """Translate between SO-101 observations and Pi0.5 policy values."""
 
     policy_action_space = POLICY_ACTION_SPACE
+    position_features = SO101_POSITION_FEATURES
+    robot_action_space = SO101_ACTION_SPACE
+
+    def _action_values(self, positions: list[float]) -> dict:
+        return {
+            "type": "joint_position",
+            "joint_positions_deg": positions[:-1],
+            "gripper_position": positions[-1],
+        }
 
     def map_observation(
         self,
@@ -88,7 +97,7 @@ class Pi05SO101Mapper:
                 "action_chunk feature_names must be unique"
             )
         actual_names = set(names)
-        expected_names = set(SO101_POSITION_FEATURES)
+        expected_names = set(self.position_features)
         if actual_names != expected_names:
             missing = expected_names - actual_names
             unexpected = actual_names - expected_names
@@ -119,17 +128,13 @@ class Pi05SO101Mapper:
                 if not math.isfinite(value):
                     raise Pi05SO101MapperError("action values must be finite")
                 by_name[name] = value
-            positions = [by_name[name] for name in SO101_POSITION_FEATURES]
+            positions = [by_name[name] for name in self.position_features]
             actions.append(
                 RobotAction(
                     timestamp_s=time.time(),
-                    values={
-                        "type": "joint_position",
-                        "joint_positions_deg": positions[:-1],
-                        "gripper_position": positions[-1],
-                    },
+                    values=self._action_values(positions),
                     metadata={
-                        "action_space": SO101_ACTION_SPACE,
+                        "action_space": self.robot_action_space,
                         "request_id": result.request_id,
                         "session_id": result.session_id,
                         "step_id": result.step_id,
