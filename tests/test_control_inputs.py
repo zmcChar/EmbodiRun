@@ -5,10 +5,10 @@ import struct
 
 import pytest
 
-from rlinf_deploy.robots import RobotObservation
-from rlinf_deploy.robots.arx.x5 import ARX5_ACTION_SPACE
-from rlinf_deploy.robots.lerobot.so101 import SO101_ACTION_SPACE
-from rlinf_deploy.services.control.inputs import (
+from embodirun.robots import RobotObservation
+from embodirun.robots.arx.x5 import ARX5_ACTION_SPACE
+from embodirun.robots.lerobot.so101 import SO101_ACTION_SPACE
+from embodirun.services.control.inputs import (
     ControlInputBridge,
     InputEvent,
     InputEventKind,
@@ -18,14 +18,14 @@ from rlinf_deploy.services.control.inputs import (
     KeyboardInput,
     normalize_axis,
 )
-from rlinf_deploy.services.control.teleop import (
+from embodirun.services.control.teleop import (
     TELEOP_AXES_ACTION_SPACE,
     ControlHttpTeleopClient,
     axes_action,
     intent_action_factory,
     resolve_teleop_action,
 )
-from rlinf_deploy.services.control import teleop as teleop_module
+from embodirun.services.control import teleop as teleop_module
 
 
 class FakeArbiter:
@@ -383,8 +383,8 @@ def test_cli_keyboard_only_does_not_require_robot_kind(monkeypatch, capsys) -> N
         def close(self):
             calls.append("bridge.close")
 
-    monkeypatch.setattr("rlinf_deploy.services.control.inputs.KeyboardInput", Keyboard)
-    monkeypatch.setattr("rlinf_deploy.services.control.inputs.ControlInputBridge", Bridge)
+    monkeypatch.setattr("embodirun.services.control.inputs.KeyboardInput", Keyboard)
+    monkeypatch.setattr("embodirun.services.control.inputs.ControlInputBridge", Bridge)
 
     assert teleop_module.main(["--endpoint", "http://127.0.0.1:8100"]) == 0
 
@@ -403,8 +403,8 @@ def test_cli_closes_keyboard_if_joystick_initialization_fails(monkeypatch) -> No
         def __init__(self, _path):
             raise RuntimeError("joystick missing")
 
-    monkeypatch.setattr("rlinf_deploy.services.control.inputs.KeyboardInput", Keyboard)
-    monkeypatch.setattr("rlinf_deploy.services.control.inputs.JoystickInput", Joystick)
+    monkeypatch.setattr("embodirun.services.control.inputs.KeyboardInput", Keyboard)
+    monkeypatch.setattr("embodirun.services.control.inputs.JoystickInput", Joystick)
 
     with pytest.raises(RuntimeError, match="joystick missing"):
         teleop_module.main(
@@ -426,7 +426,7 @@ def test_cli_joystick_requires_explicit_robot_kind(monkeypatch, capsys) -> None:
         def __init__(self):
             raise AssertionError("inputs must not initialize after parser error")
 
-    monkeypatch.setattr("rlinf_deploy.services.control.inputs.KeyboardInput", Keyboard)
+    monkeypatch.setattr("embodirun.services.control.inputs.KeyboardInput", Keyboard)
 
     with pytest.raises(SystemExit) as captured:
         teleop_module.main(["--endpoint", "http://127.0.0.1:8100", "--joystick", "/dev/input/js0"])

@@ -6,11 +6,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from rlinf_deploy.robots import RobotAction, RobotObservation
-from rlinf_deploy.services.control.arbitration import CommandCancelled
-from rlinf_deploy.services.control.server import ControlService, ControlTaskRejected
-from rlinf_deploy.services.control.server import ControlHttpServer
-from rlinf_deploy.services.control.teleop import ControlHttpTeleopClient
+from embodirun.robots import RobotAction, RobotObservation
+from embodirun.services.control.arbitration import CommandCancelled
+from embodirun.services.control.server import ControlService, ControlTaskRejected
+from embodirun.services.control.server import ControlHttpServer
+from embodirun.services.control.teleop import ControlHttpTeleopClient
 from test_control_services import _unused_loopback_port, control_config, task_request
 
 
@@ -67,7 +67,7 @@ def controlled_service(monkeypatch):
         map_result=lambda result: (RobotAction(0, {"model": True}),),
     )
     monkeypatch.setattr(
-        "rlinf_deploy.services.control.server._definitions",
+        "embodirun.services.control.server._definitions",
         lambda config: (
             SimpleNamespace(maximum_chunk_steps=1, mapper_factory=lambda: mapper),
             SimpleNamespace(config_factory=lambda *args: None, adapter_type=Robot),

@@ -3,9 +3,9 @@ requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rlinf-deploy"
+name = "embodirun"
 version = "0.1.0"
-description = "Robot and simulator deployment clients for RLinf inference services"
+description = "EmbodiRun: robot and simulator deployment clients for inference services"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -84,15 +84,24 @@ sim-libero = { requires-python = ">=3.12" }
 sim-vlabench = { requires-python = ">=3.12" }
 
 [project.scripts]
-rlinf-deploy = "rlinf_deploy.services.host.cli.cli:main"
-rlinf-control-serve = "rlinf_deploy.services.control.server:main"
-rlinf-simulation-serve = "rlinf_deploy.services.simulation.server:main"
-rlinf-sglang-serve = "rlinf_deploy.services.inference.adapters.sglang.pi05:main"
-rlinf-go2-streamvln = "rlinf_deploy.bindings.unitree.go2.streamvln.cli:main"
+embodirun = "embodirun.services.host.cli.cli:main"
+embodirun-control-serve = "embodirun.services.control.server:main"
+embodirun-simulation-serve = "embodirun.services.simulation.server:main"
+embodirun-sglang-serve = "embodirun.services.inference.adapters.sglang.pi05:main"
+embodirun-go2-streamvln = "embodirun.bindings.unitree.go2.streamvln.cli:main"
+# Compatibility aliases for existing deployments.
+rlinf-deploy = "embodirun.services.host.cli.cli:main"
+rlinf-control-serve = "embodirun.services.control.server:main"
+rlinf-simulation-serve = "embodirun.services.simulation.server:main"
+rlinf-sglang-serve = "embodirun.services.inference.adapters.sglang.pi05:main"
+rlinf-go2-streamvln = "embodirun.bindings.unitree.go2.streamvln.cli:main"
+
+[tool.setuptools]
+py-modules = ["rlinf_deploy"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["rlinf_deploy*"]
+include = ["embodirun*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

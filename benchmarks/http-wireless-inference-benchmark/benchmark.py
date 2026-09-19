@@ -94,7 +94,7 @@ def distribution(values):
 
 
 def measure(client, mapper, session, row, frames, *, step_id, request_id, expected_actions):
-    from rlinf_deploy.robots import RobotObservation
+    from embodirun.robots import RobotObservation
 
     start = time.perf_counter_ns()
     request = mapper.map_observation(
@@ -114,9 +114,9 @@ def measure(client, mapper, session, row, frames, *, step_id, request_id, expect
 
 
 def worker(payload, emit, wait_start, wait_shutdown=None):
-    from rlinf_deploy.bindings.lerobot.so101.pi05 import Pi05SO101Mapper
-    from rlinf_deploy.robots.sensors.cameras import CameraFrame
-    from rlinf_deploy.services.inference.factory import build_inference_client
+    from embodirun.bindings.lerobot.so101.pi05 import Pi05SO101Mapper
+    from embodirun.robots.sensors.cameras import CameraFrame
+    from embodirun.services.inference.factory import build_inference_client
 
     rows = payload["observations"]
     frames = [tuple(CameraFrame(image["name"], image["mime_type"],
@@ -261,16 +261,16 @@ def ssh_command(connection, python, source, extra_options):
 
 
 def run(args):
-    from rlinf_deploy.services.host.cli.context import state_path
-    from rlinf_deploy.services.host.config import config_digest, load_config
-    from rlinf_deploy.services.host.plan import build_plan
-    from rlinf_deploy.services.host.state import StateStore
+    from embodirun.services.host.cli.context import state_path
+    from embodirun.services.host.config import config_digest, load_config
+    from embodirun.services.host.plan import build_plan
+    from embodirun.services.host.state import StateStore
 
     config = load_config(args.config)
     plan = build_plan(config)
     state = StateStore(state_path(args.state_dir, plan.name)).load()
     if state is None or state.config_digest != config_digest(config):
-        raise ValueError("initialize this exact configuration with rlinf-deploy init first")
+        raise ValueError("initialize this exact configuration with embodirun init first")
     runtimes = [runtime for runtime in plan.runtimes
                 if not args.runtime or runtime.runtime_id in args.runtime]
     if not runtimes or (args.runtime and set(args.runtime) != {r.runtime_id for r in runtimes}):
@@ -281,16 +281,16 @@ def run(args):
         raise ValueError("clients must share one Thor inference service")
     model = config.models[runtimes[0].model]
     if model.backend != "vvla":
-        raise ValueError("this comparison requires the VVLA backend")
+        raise ValueError("this comparison requires the EmbodiInfer backend")
     if state.services[model.model_id].status != "running":
-        raise ValueError("start the model service with rlinf-deploy up first")
+        raise ValueError("start the model service with embodirun up first")
     rows = load_observations(args.observations)
     source = Path(__file__).read_text()
     services = {s.service_id: s for s in plan.services}
     jobs = []
     for runtime in runtimes:
         if state.services[runtime.service_id].status != "stopped":
-            raise ValueError("stop control services with rlinf-deploy down --target control first")
+            raise ValueError("stop control services with embodirun down --target control first")
         node = config.nodes[runtime.node]
         environment = state.environments[runtime.environment_id]
         if environment.status != "ready":

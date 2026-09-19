@@ -6,10 +6,10 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from rlinf_deploy.robots.lerobot.bi_so101 import BI_SO101_POSITION_FEATURES
-from rlinf_deploy.services.host.cli.command.init import InitError, _probe_resources
-from rlinf_deploy.services.host.config import ConfigError, load_config
-from rlinf_deploy.services.host.plan import ServiceError, _binding_adapter_config, build_plan
+from embodirun.robots.lerobot.bi_so101 import BI_SO101_POSITION_FEATURES
+from embodirun.services.host.cli.command.init import InitError, _probe_resources
+from embodirun.services.host.config import ConfigError, load_config
+from embodirun.services.host.plan import ServiceError, _binding_adapter_config, build_plan
 
 EXAMPLE = Path(__file__).parents[1] / "configs/pi05/bi-so101-vvla.yaml"
 

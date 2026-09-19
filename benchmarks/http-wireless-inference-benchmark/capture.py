@@ -8,9 +8,9 @@ import math
 import time
 from pathlib import Path
 
-from rlinf_deploy.robots.lerobot.so101 import SO101Adapter, SO101Config
-from rlinf_deploy.robots.sensors import SensorInput
-from rlinf_deploy.robots.sensors.cameras.v4l2 import create_source
+from embodirun.robots.lerobot.so101 import SO101Adapter, SO101Config
+from embodirun.robots.sensors import SensorInput
+from embodirun.robots.sensors.cameras.v4l2 import create_source
 
 
 def capture(config, output, *, prompt, count, interval_s):

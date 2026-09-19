@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from rlinf_deploy.robots.sensors.cameras import (
+from embodirun.robots.sensors.cameras import (
     CameraFrame,
     V4L2CameraConfig,
     V4L2CameraSource,
@@ -12,7 +12,7 @@ def test_viewer_reader_stops_with_an_open_or_partial_input_pipe() -> None:
     from queue import Queue
     from threading import Event, Thread
 
-    from rlinf_deploy.simulators.viewer import _read_frames
+    from embodirun.simulators.viewer import _read_frames
 
     for partial in (b"", b"\x00\x00", b"\x00\x00\x00\x04xy"):
         read_fd, write_fd = os.pipe()

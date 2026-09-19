@@ -20,7 +20,7 @@ Supported HTTP control routes:
   `values` and `metadata`; asynchronous action submission returns ticket state.
 
 Keyboard polling is always enabled by the HTTP teleop CLI:
-`python -m rlinf_deploy.services.control.teleop --endpoint http://127.0.0.1:8100`.
+`python -m embodirun.services.control.teleop --endpoint http://127.0.0.1:8100`.
 Pass `--joystick /dev/input/js0` to add joystick motion intent.
 `--robot-kind arx5` or `--robot-kind so101` selects the namespace for joystick
 axes, and is required when `--joystick` is present. If omitted, keyboard-only

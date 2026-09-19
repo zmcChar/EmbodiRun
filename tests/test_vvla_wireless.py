@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from rlinf_deploy.services.inference import (
+from embodirun.services.inference import (
     ImagePayload,
     PolicyObservation,
     VvlaWirelessClient,

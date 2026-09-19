@@ -1,6 +1,6 @@
-# RLinf Deploy
+# EmbodiRun
 
-RLinf Deploy owns the last mile between an inference service and a robot or
+EmbodiRun owns the last mile between an inference service and a robot or
 simulator. It does not load checkpoints, import model frameworks, build prompts,
 or execute neural networks.
 
@@ -17,7 +17,7 @@ Control service ------------------------------> Inference service
 
 ## Repository boundary
 
-| RLinf Deploy owns | RLinf Inference owns |
+| EmbodiRun owns | EmbodiInfer owns |
 |---|---|
 | Robot and simulator observations | Checkpoints and processors |
 | Policy clients, retries, deadlines | Prompt and model forward |
@@ -26,9 +26,9 @@ Control service ------------------------------> Inference service
 | Go2 and FR3 control | DP, TP, CUDA Graph, compilation |
 | SSH deployment and service routing | Canonical policy actions |
 
-`third_party/vvla` pins the server implementation for integration and deployment
+`third_party/embodiinfer` pins the server implementation for integration and deployment
 reproducibility. Runtime communication crosses the versioned policy API over HTTP
-or the optional WirelessComm data plane; the deploy package never imports VVLA
+or the optional WirelessComm data plane; the deploy package never imports EmbodiInfer
 Python modules.
 
 The service directories follow those process boundaries:
@@ -53,13 +53,19 @@ services/
 └── inference/                  # Control <-> Inference boundary
     ├── contracts.py            # versioned policy sessions, steps, and actions
     ├── client/                 # HTTP and WirelessComm clients
-    └── server/                 # external VVLA launch descriptors
+    └── server/                 # external EmbodiInfer launch descriptors
 ```
 
 `bindings/` contains only policy-to-robot mappings and safety horizons; it does
 not own a process, network listener, or deployment protocol.
 
 ## Environments
+
+Install this checkout as `embodirun`, import `embodirun`, and use the `embodirun` CLI.
+Existing `rlinf-*` commands, `rlinf_deploy` imports, configuration keys, and
+state/data paths remain supported with no scheduled removal. For pip upgrades,
+uninstall `rlinf-deploy` before installing this checkout; `uv sync --frozen`
+replaces the old distribution automatically. Keep your existing groups/extras.
 
 Use uv 0.12.x from the repository root. Each process installs only the capability
 group it needs:
@@ -77,6 +83,12 @@ UV_PROJECT_ENVIRONMENT=.venv-robot-arx5 uv sync --frozen --no-dev --group robot-
 The `wireless` extra pins WirelessComm to a reviewed commit in the
 BUAA-CI-LAB repository. Private Git access must be configured for pip or uv.
 
+The optional platform profiles remain separate: the locked `franky-control`
+wheel supports Linux x86_64, not ARM64; the locked SGLang and Isaac Sim wheels
+require Linux glibc >= 2.34 and >= 2.35 respectively. Habitat uses Python 3.11,
+while SO-101, LIBERO, VLABench, and Isaac profiles use Python 3.12. A successful
+lock/install-plan check does not verify CUDA, robot SDKs, devices, or checkpoints.
+
 `robot-so101` requires Python 3.12 or newer. The repository does not set a global
 Python version because the other environments continue to support Python 3.10.
 Groups may be combined when one process genuinely needs multiple capabilities;
@@ -93,7 +105,7 @@ configured SocketCAN interface must already be available to the control process.
 Do not rely on a different shell's Python environment. Physical connection still
 requires `operator_confirmed: true` and may enable motors or move to home.
 
-For DM05, use a matching RLinf Inference revision containing the DM05 policy.
+For DM05, use a matching EmbodiInfer revision containing the DM05 policy.
 Configure the inference environment's OpenDM installation separately; its
 model YAML entry must set `adapter_config: /absolute/path/to/dm05.json` on the
 compute node. That JSON is deployment-owned because the norm-stat path depends
@@ -114,7 +126,7 @@ to execute that entire selection rather than the generic 10-row prefix.
 ## Multi-node configuration
 
 For the 12-dimensional dual SO-101 Pi0.5 checkpoint and three cameras, use
-[the VVLA deployment guide](docs/pi05-bi-so101.md) and
+[the EmbodiInfer deployment guide](docs/pi05-bi-so101.md) and
 [portable configuration](configs/pi05/bi-so101-vvla.yaml). It includes the
 paired inference revision, mixed-precision/CUDA Graph settings, and Jetson
 environment prerequisites.
@@ -124,10 +136,10 @@ environments, and service/runtime instances. Validate a file without contacting
 its nodes:
 
 ```bash
-uv run rlinf-deploy \
+uv run embodirun \
   --config configs/http-wireless-inference/http.yaml validate
 
-uv run rlinf-deploy \
+uv run embodirun \
   --config configs/http-wireless-inference/http.yaml probe
 ```
 
@@ -157,18 +169,18 @@ Initialize the nodes, then start their persistent services:
 ```bash
 # The checked-in configuration uses key-based SSH to Thor and both Orin nodes,
 # with the observed serial, calibration, camera, and checkpoint paths.
-uv run rlinf-deploy \
+uv run embodirun \
   --config configs/http-wireless-inference/http.yaml init
 
 # During Deploy-side development, reload Control without restarting pi0.5.
-uv run rlinf-deploy \
+uv run embodirun \
   --config configs/http-wireless-inference/http.yaml down --target control
-uv run rlinf-deploy \
+uv run embodirun \
   --config configs/http-wireless-inference/http.yaml sync --target deploy
-uv run rlinf-deploy \
+uv run embodirun \
   --config configs/http-wireless-inference/http.yaml up
 
-uv run rlinf-deploy \
+uv run embodirun \
   --config configs/http-wireless-inference/http.yaml down
 ```
 
@@ -182,7 +194,7 @@ dependencies. Successful initialization is recorded locally below
 one node remains ordered, and each Deploy or Inference environment appears as a
 separate synchronization stage in that node's progress row.
 
-`sync --target deploy` packages the current local `src/rlinf_deploy` tree and
+`sync --target deploy` packages the current local `src/embodirun` tree and
 uploads it once per Deploy node into a content-addressed development overlay.
 It atomically activates that overlay without restarting Inference. A running
 Control process has already imported its Python modules, so `sync` requires
@@ -209,7 +221,7 @@ After `up` reports the services healthy, submit one prompt to a configured
 control runtime:
 
 ```bash
-rlinf-deploy \
+embodirun \
   --config configs/http-wireless-inference/http.yaml run \
   --runtime so101-1-runtime \
   --prompt "Pick up the cube and put it into the bowl." \
@@ -227,7 +239,7 @@ chunk. `--chunk-steps N` selects how many ordered actions to execute from each
 chunk (default 10), `--max-steps N` bounds the number of inference chunks, and
 `--control-hz HZ` selects the action playback rate. The SO101/Pi0.5 binding
 declares its five arm joints, gripper, image fields, and maximum model horizon;
-`up` materializes that declaration as an internal VVLA adapter file. No
+`up` materializes that declaration as an internal EmbodiInfer adapter file. No
 user-maintained model adapter JSON is required. Before connecting the arm,
 Control checks model health and opens, warms up, and validates every camera.
 V4L2 capture is implemented in the robot sensor camera layer and returns
@@ -297,7 +309,7 @@ must use a distinct port, including Host-facing HTTP and WirelessComm listeners.
 `validate` checks the topology without contacting nodes. `init` prepares the
 environments, including the wireless extra. During `up`, Host generates native
 WirelessComm configs under each node's deployment `generated/` directory and
-passes their absolute paths to VVLA and the robot/simulator runtime. Peer IDs
+passes their absolute paths to EmbodiInfer and the robot/simulator runtime. Peer IDs
 identify model/runtime instances: a model lists all its runtimes, while a runtime
 lists only its selected model. Do not specify `comm_config`, `client_comm_config`,
 or `server_node_id` in the deployment YAML anymore. Changes to a running topology
@@ -342,8 +354,8 @@ definition.
 The existing Unitree Go2 camera/control agents and SSH deployer remain under:
 
 ```text
-src/rlinf_deploy/robots/unitree/go2
-src/rlinf_deploy/bindings/unitree/go2/streamvln
+src/embodirun/robots/unitree/go2
+src/embodirun/bindings/unitree/go2/streamvln
 ```
 
 The robot-resident processes remain isolated from model inference and expose

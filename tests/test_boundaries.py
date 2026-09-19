@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def test_model_dependencies_are_isolated_to_the_sglang_service() -> None:
-    root = Path(__file__).parents[1] / "src" / "rlinf_deploy"
+    root = Path(__file__).parents[1] / "src" / "embodirun"
     forbidden = {"models", "policies", "backends", "engine"}
     assert not forbidden.intersection(path.name for path in root.iterdir())
     integration = root / "services/inference/adapters/sglang/pi05.py"
@@ -33,9 +33,9 @@ def test_host_and_client_import_without_inference_frameworks() -> None:
             "-c",
             (
                 "import sys\n"
-                "import rlinf_deploy\n"
-                "import rlinf_deploy.services.host.plan\n"
-                "import rlinf_deploy.services.inference.adapters.sglang\n"
+                "import embodirun\n"
+                "import embodirun.services.host.plan\n"
+                "import embodirun.services.inference.adapters.sglang\n"
                 "assert not {'torch', 'sglang', 'vvla'} & sys.modules.keys()\n"
             ),
         ],
@@ -47,6 +47,6 @@ def test_host_and_client_import_without_inference_frameworks() -> None:
 
 
 def test_go2_adapter_is_retained() -> None:
-    from rlinf_deploy.robots.unitree.go2 import Go2ControlClient
+    from embodirun.robots.unitree.go2 import Go2ControlClient
 
     assert Go2ControlClient.__name__ == "Go2ControlClient"

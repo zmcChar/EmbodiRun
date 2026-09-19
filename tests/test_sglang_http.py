@@ -5,10 +5,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from rlinf_deploy.bindings.unitree.go2.streamvln import StreamVLNGo2Mapper
-from rlinf_deploy.robots.sensors.cameras import CameraFrame
-from rlinf_deploy.robots.unitree.go2.navigation.discrete import NavigationCommandKind
-from rlinf_deploy.services.inference import (
+from embodirun.bindings.unitree.go2.streamvln import StreamVLNGo2Mapper
+from embodirun.robots.sensors.cameras import CameraFrame
+from embodirun.robots.unitree.go2.navigation.discrete import NavigationCommandKind
+from embodirun.services.inference import (
     HttpResponse,
     ImagePayload,
     PolicyObservation,
@@ -16,9 +16,9 @@ from rlinf_deploy.services.inference import (
     SglangHttpError,
     build_inference_client,
 )
-from rlinf_deploy.services.simulation.runtime import SimulationRuntime
-from rlinf_deploy.simulators.habitat import HabitatAdapter, HabitatConfig
-from rlinf_deploy.simulators.navigation import (
+from embodirun.services.simulation.runtime import SimulationRuntime
+from embodirun.simulators.habitat import HabitatAdapter, HabitatConfig
+from embodirun.simulators.navigation import (
     NavigationObservation,
     NavigationTransition,
 )
@@ -30,7 +30,7 @@ from rlinf_deploy.simulators.navigation import (
 def test_sglang_environment_preserves_or_discovers_toolkit(
     tmp_path, monkeypatch, selection
 ):
-    from rlinf_deploy.services.inference.backends import sglang
+    from embodirun.services.inference.backends import sglang
 
     monkeypatch.delenv("CUDA_HOME", raising=False)
     monkeypatch.delenv("CUDA_PATH", raising=False)
@@ -66,7 +66,7 @@ def test_sglang_lerobot_statistics_preserve_mean_std_math():
     pytest.importorskip("sglang.multimodal_gen")
     import torch
 
-    from rlinf_deploy.services.inference.adapters.sglang.pi05 import _Statistics
+    from embodirun.services.inference.adapters.sglang.pi05 import _Statistics
 
     mean = torch.tensor([1.0, 2.0])
     std = torch.tensor([0.0, 0.5])
@@ -93,7 +93,7 @@ def test_sglang_lerobot_manifest_excludes_duplicate_processor_tensors(tmp_path):
     from safetensors.torch import save_file
     from sglang.multimodal_gen.configs.pipeline_configs.pi05 import Pi05PipelineConfig
 
-    from rlinf_deploy.services.inference.adapters.sglang.pi05 import _LeRobotPolicyModel
+    from embodirun.services.inference.adapters.sglang.pi05 import _LeRobotPolicyModel
 
     save_file(
         {"model.action_out_proj.bias": torch.zeros(32)},
@@ -117,7 +117,7 @@ def test_sglang_lerobot_statistics_load_checkpoint_contract(tmp_path, problem):
     import torch
     from safetensors.torch import save_file
 
-    from rlinf_deploy.services.inference.adapters.sglang.pi05 import _Statistics
+    from embodirun.services.inference.adapters.sglang.pi05 import _Statistics
 
     checkpoint = tmp_path / "snapshot"
     checkpoint.mkdir()
@@ -183,7 +183,7 @@ def test_sglang_lerobot_statistics_load_checkpoint_contract(tmp_path, problem):
 
 def test_sglang_lerobot_pipeline_preserves_native_parallel_layout_rejection():
     pytest.importorskip("sglang.multimodal_gen")
-    from rlinf_deploy.services.inference.adapters.sglang.pi05 import LeRobotPi05Pipeline
+    from embodirun.services.inference.adapters.sglang.pi05 import LeRobotPi05Pipeline
 
     pipeline = object.__new__(LeRobotPi05Pipeline)
     args = SimpleNamespace(
@@ -228,7 +228,7 @@ class FakeTransport:
 
 
 def test_sglang_command_selects_explicit_pipeline_and_optional_entrypoint() -> None:
-    from rlinf_deploy.services.inference.backends.sglang.http import (
+    from embodirun.services.inference.backends.sglang.http import (
         sglang_server_command,
     )
 
@@ -392,7 +392,7 @@ def test_inference_factory_selects_backend_and_rejects_invalid_pair() -> None:
 
 def test_navigation_runtime_accepts_mock_sglang_action_responses(monkeypatch) -> None:
     """Contract-only test: neither Habitat nor a real SGLang model runs here."""
-    from rlinf_deploy.simulators import navigation
+    from embodirun.simulators import navigation
 
     monkeypatch.setattr(
         navigation,

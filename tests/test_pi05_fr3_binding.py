@@ -2,19 +2,19 @@ from types import SimpleNamespace
 
 import pytest
 
-from rlinf_deploy.bindings.franka.fr3.pi05 import (
+from embodirun.bindings.franka.fr3.pi05 import (
     Pi05FR3Mapper,
     Pi05FR3MapperConfig,
     Pi05FR3MapperError,
 )
-from rlinf_deploy.services.control.runtime import ControlRuntime
-from rlinf_deploy.services.inference import (
+from embodirun.services.control.runtime import ControlRuntime
+from embodirun.services.inference import (
     PolicyAction,
     PolicyObservation,
     PolicyResult,
     Session,
 )
-from rlinf_deploy.robots.sensors.cameras import CameraFrame
+from embodirun.robots.sensors.cameras import CameraFrame
 
 
 class FakeRobot:

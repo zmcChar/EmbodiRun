@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from rlinf_deploy.robots import RobotAction, RobotObservation
-from rlinf_deploy.services.control.arbitration import (
+from embodirun.robots import RobotAction, RobotObservation
+from embodirun.services.control.arbitration import (
     ArbiterCommandSink,
     AuthorityState,
     CommandRejected,
@@ -16,7 +16,7 @@ from rlinf_deploy.services.control.arbitration import (
     RobotAdapterCommandPort,
     RobotControlArbiter,
 )
-from rlinf_deploy.services.control.runtime import ControlRuntime
+from embodirun.services.control.runtime import ControlRuntime
 
 
 def action(value: float) -> RobotAction:

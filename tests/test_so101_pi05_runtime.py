@@ -2,16 +2,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from rlinf_deploy.services.control.runtime import ControlRuntime
-from rlinf_deploy.bindings.lerobot.so101.pi05 import Pi05SO101Mapper
-from rlinf_deploy.services.inference import (
+from embodirun.services.control.runtime import ControlRuntime
+from embodirun.bindings.lerobot.so101.pi05 import Pi05SO101Mapper
+from embodirun.services.inference import (
     ImagePayload,
     PolicyAction,
     PolicyResult,
     Session,
 )
-from rlinf_deploy.robots import RobotAction
-from rlinf_deploy.robots.sensors.cameras import CameraFrame
+from embodirun.robots import RobotAction
+from embodirun.robots.sensors.cameras import CameraFrame
 
 
 class FakeRobot:

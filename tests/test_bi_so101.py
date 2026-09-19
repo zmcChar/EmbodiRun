@@ -2,21 +2,21 @@ from dataclasses import replace
 
 import pytest
 
-from rlinf_deploy.bindings.lerobot.bi_so101.pi05 import Pi05BiSO101Mapper
-from rlinf_deploy.bindings.lerobot.so101.pi05 import Pi05SO101MapperError
-from rlinf_deploy.robots import RobotAction
-from rlinf_deploy.robots.lerobot.bi_so101 import (
+from embodirun.bindings.lerobot.bi_so101.pi05 import Pi05BiSO101Mapper
+from embodirun.bindings.lerobot.so101.pi05 import Pi05SO101MapperError
+from embodirun.robots import RobotAction
+from embodirun.robots.lerobot.bi_so101 import (
     BI_SO101_ACTION_SPACE,
     BI_SO101_POSITION_FEATURES,
     BiSO101Adapter,
     BiSO101Config,
 )
-from rlinf_deploy.robots.lerobot.so101 import (
+from embodirun.robots.lerobot.so101 import (
     SO101_POSITION_FEATURES, SO101Adapter, SO101AdapterError,
 )
-from rlinf_deploy.robots.sensors.cameras import CameraFrame
-from rlinf_deploy.services.control.runtime import ControlRuntime
-from rlinf_deploy.services.inference import PolicyAction, PolicyResult, Session
+from embodirun.robots.sensors.cameras import CameraFrame
+from embodirun.services.control.runtime import ControlRuntime
+from embodirun.services.inference import PolicyAction, PolicyResult, Session
 
 
 class Bus:

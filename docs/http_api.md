@@ -1,6 +1,6 @@
-# VVLA policy API v1
+# EmbodiInfer policy API v1
 
-RLinf Deploy treats VVLA as a remote policy service. The API is model-neutral
+EmbodiRun treats EmbodiInfer as a remote policy service. The API is model-neutral
 and may be carried by HTTP or WirelessComm:
 no checkpoint, tokenizer, prompt, or raw token fields cross the boundary.
 
@@ -52,11 +52,11 @@ session state only once.
 }
 ```
 
-The VVLA HTTP layer is only responsible for model-native action chunks. Deploy
+The EmbodiInfer HTTP layer is only responsible for model-native action chunks. Deploy
 maps and validates the rows in `pi05.action_chunk.v1` through the selected
 binding, executes the `run --chunk-steps` prefix, and plays those robot commands
 at the runtime control rate. Robot state fields and action dimensions are owned
-by the binding rather than a user-maintained VVLA adapter file.
+by the binding rather than a user-maintained EmbodiInfer adapter file.
 
 ## WirelessComm mapping
 

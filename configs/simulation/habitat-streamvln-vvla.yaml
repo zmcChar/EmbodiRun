@@ -35,9 +35,9 @@ models:
     type: streamvln
     node: workstation
     gpu: cuda:0
-    environment: /home/user/sim-train-infer/RLinf-deploy/.venv-vvla-streamvln
+    environment: /home/user/sim-train-infer/EmbodiRun/.venv-vvla-streamvln
     environment_packages:
-      - /home/user/sim-train-infer/RLinf-deploy/third_party/vvla
+      - /home/user/sim-train-infer/EmbodiRun/third_party/embodiinfer
     source: /home/user/huggingface/streamvln
     server:
       bind: 127.0.0.1

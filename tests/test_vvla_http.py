@@ -1,6 +1,6 @@
 import json
 
-from rlinf_deploy.services.inference import (
+from embodirun.services.inference import (
     HttpResponse,
     ImagePayload,
     PolicyObservation,

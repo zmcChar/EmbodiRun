@@ -1,4 +1,4 @@
-[submodule "third_party/vvla"]
-	path = third_party/vvla
-	url = git@github.com:BUAA-CI-LAB/RLinf-inference.git
+[submodule "third_party/embodiinfer"]
+	path = third_party/embodiinfer
+	url = git@github.com:BUAA-CI-LAB/EmbodiInfer.git
 	branch = main

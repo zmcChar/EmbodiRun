@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from rlinf_deploy.robots import RobotAction
-from rlinf_deploy.robots.lerobot.so101 import (
+from embodirun.robots import RobotAction
+from embodirun.robots.lerobot.so101 import (
     SO101_POSITION_FEATURES,
     SO101Adapter,
     SO101AdapterError,

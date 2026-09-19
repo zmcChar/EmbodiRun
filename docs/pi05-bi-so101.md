@@ -1,24 +1,23 @@
-# Pi0.5 with VVLA and two SO-101 followers
+# Pi0.5 with EmbodiInfer and two SO-101 followers
 
-Use these branches together while the PRs are open:
+The dual-arm recipe was introduced by these branches:
 
 | Repository | Branch |
 | --- | --- |
-| RLinf-deploy | `feat/pi05-agx-deployment-20260917` |
-| RLinf-inference (VVLA) | `perf/pi05-agx-mixed-graph-20260917` |
+| EmbodiRun | `feat/pi05-agx-deployment-20260917` |
+| EmbodiInfer | `perf/pi05-agx-mixed-graph-20260917` |
 
-Deploy's `third_party/vvla` points to inference commit
+Deploy's `third_party/embodiinfer` points to inference commit
 `430d4ef660c7d3b086b1c8126109d0ca6ad3a9a0`
-([inference PR #27](https://github.com/BUAA-CI-LAB/RLinf-inference/pull/27)).
+([inference PR #27](https://github.com/BUAA-CI-LAB/EmbodiInfer/pull/27)).
 Host `init` uses the gitlink from `metadata.deploy-commit`; a separate inference
 checkout does not override it. After merging, use the Deploy revision containing
 this change and its pinned inference revision.
 
 ```bash
-git clone --branch feat/pi05-agx-deployment-20260917 \
-  https://github.com/BUAA-CI-LAB/RLinf-deploy.git
-cd RLinf-deploy
-git submodule update --init third_party/vvla
+git clone https://github.com/BUAA-CI-LAB/EmbodiRun.git
+cd EmbodiRun
+git submodule update --init third_party/embodiinfer
 # Requires SSH access to the private inference repository through .gitmodules.
 uv sync --frozen
 cp configs/pi05/bi-so101-vvla.yaml /absolute/path/to/my-pi05.yaml
@@ -93,7 +92,7 @@ base/head control or web UI.
 Validate configuration without contacting hardware:
 
 ```bash
-uv run rlinf-deploy --config /absolute/path/to/my-pi05.yaml validate
+uv run embodirun --config /absolute/path/to/my-pi05.yaml validate
 ```
 
 Once device dependencies and paths are ready, `init` prepares projects and
@@ -102,13 +101,13 @@ explicit motion command and connects both arms. For an operator-authorized
 single chunk at the recorded 15 Hz playback rate:
 
 ```bash
-uv run rlinf-deploy --config /absolute/path/to/my-pi05.yaml init
-uv run rlinf-deploy --config /absolute/path/to/my-pi05.yaml up
+uv run embodirun --config /absolute/path/to/my-pi05.yaml init
+uv run embodirun --config /absolute/path/to/my-pi05.yaml up
 # MOTION: issue only after checking calibration, workspace and serial ownership.
-uv run rlinf-deploy --config /absolute/path/to/my-pi05.yaml run \
+uv run embodirun --config /absolute/path/to/my-pi05.yaml run \
   --runtime bi-so101-pi05 --prompt 'Pick up the chips.' \
   --max-steps 1 --chunk-steps 50 --control-hz 15 --request-timeout 120
-uv run rlinf-deploy --config /absolute/path/to/my-pi05.yaml down
+uv run embodirun --config /absolute/path/to/my-pi05.yaml down
 ```
 
 Playback rate is not inference frequency. Control completes an action chunk
@@ -118,7 +117,7 @@ no asynchronous prediction or latency compensation.
 
 ## Validation scope
 
-Software tests cover the 12-feature mapping, three image roles, generated VVLA
+Software tests cover the 12-feature mapping, three image roles, generated EmbodiInfer
 arguments, both serial-port checks, step limits, and cleanup after a bus failure.
 Inference PR #27 records the separate AGX model-output and performance checks.
 Those results are not an end-to-end measurement of this new Control binding.

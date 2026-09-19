@@ -1,7 +1,7 @@
 import pytest
 
-from rlinf_deploy.robots import RobotAction
-from rlinf_deploy.robots.franka.fr3 import (
+from embodirun.robots import RobotAction
+from embodirun.robots.franka.fr3 import (
     FR3_ACTION_SPACE,
     FR3Adapter,
     FR3AdapterError,

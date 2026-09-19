@@ -5,17 +5,17 @@ from pathlib import Path
 
 import pytest
 
-from rlinf_deploy.bindings import binding_definition
-from rlinf_deploy.robots import robot_definition
-from rlinf_deploy.robots.arx.x5 import ARX5Adapter, ARX5Config
-from rlinf_deploy.services.inference import PolicyAction, PolicyResult
+from embodirun.bindings import binding_definition
+from embodirun.robots import robot_definition
+from embodirun.robots.arx.x5 import ARX5Adapter, ARX5Config
+from embodirun.services.inference import PolicyAction, PolicyResult
 
 
 def test_standard_host_plan_selects_arx5_and_dm05(tmp_path):
     import yaml
 
-    from rlinf_deploy.services.host.config import load_config
-    from rlinf_deploy.services.host.plan import build_plan
+    from embodirun.services.host.config import load_config
+    from embodirun.services.host.plan import build_plan
 
     root = Path(__file__).parents[1]
     config = yaml.safe_load((root / "configs/http-wireless-inference/http.yaml").read_text())
@@ -83,7 +83,7 @@ def test_vendor_sdk_path_does_not_require_host_pythonpath(tmp_path):
 
 
 def test_binding_preserves_last_action_and_normalized_gripper():
-    from rlinf_deploy.bindings.arx.x5.dm05 import (
+    from embodirun.bindings.arx.x5.dm05 import (
         ACTION_FEATURE_NAMES,
         ACTION_REPRESENTATION,
     )

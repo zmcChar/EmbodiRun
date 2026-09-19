@@ -9,27 +9,27 @@ from types import SimpleNamespace
 
 import pytest
 
-from rlinf_deploy.robots.sensors import SensorInput
-from rlinf_deploy.services.control.contracts import (
+from embodirun.robots.sensors import SensorInput
+from embodirun.services.control.contracts import (
     ControlContractError,
     ControlServiceConfig,
     TaskRequest,
     TaskResult,
 )
-from rlinf_deploy.services.control.server import (
+from embodirun.services.control.server import (
     ControlHttpServer,
     ControlService,
     ControlServiceError,
 )
-from rlinf_deploy.services.host.control import ControlClient
-from rlinf_deploy.services.host.executor import LocalExecutor
-from rlinf_deploy.services.inference import VvlaWirelessClient
-from rlinf_deploy.services.simulation.contracts import (
+from embodirun.services.host.control import ControlClient
+from embodirun.services.host.executor import LocalExecutor
+from embodirun.services.inference import VvlaWirelessClient
+from embodirun.services.simulation.contracts import (
     EpisodeRequest,
     SimulationServiceConfig,
 )
-from rlinf_deploy.services.simulation.runtime import EpisodeOutcome
-from rlinf_deploy.services.simulation.server import SimulationService
+from embodirun.services.simulation.runtime import EpisodeOutcome
+from embodirun.services.simulation.server import SimulationService
 
 
 def control_config(*, port: int = 8100) -> ControlServiceConfig:
@@ -160,7 +160,7 @@ def test_control_service_executes_chunks_and_releases_resources(monkeypatch) -> 
         adapter_type=Robot,
     )
     monkeypatch.setattr(
-        "rlinf_deploy.services.control.server._definitions",
+        "embodirun.services.control.server._definitions",
         lambda _config: (binding, robot),
     )
     service = ControlService(
@@ -333,7 +333,7 @@ def test_simulation_keeps_wireless_connection_until_service_close(
                 self.client.close(self.session.session_id)
 
     monkeypatch.setattr(
-        "rlinf_deploy.services.simulation.server.simulator_definition",
+        "embodirun.services.simulation.server.simulator_definition",
         lambda _kind: SimpleNamespace(
             embodiment_kind="franka.panda.eef",
             config_factory=lambda _id, options: options,

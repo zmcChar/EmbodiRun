@@ -1,12 +1,12 @@
 import pytest
 
-from rlinf_deploy.robots.lerobot.so101.adapter import (
+from embodirun.robots.lerobot.so101.adapter import (
     _MOTOR_IDS,
     SO101AdapterError,
     _FeetechSO101Controller,
     _MotorCalibration,
 )
-from rlinf_deploy.robots.lerobot.so101.config import SO101Config
+from embodirun.robots.lerobot.so101.config import SO101Config
 
 
 def controller(failure=None, present=2000):
