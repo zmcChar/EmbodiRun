@@ -69,6 +69,7 @@ nav:
   - Demos:
       - Multi-robot serving: demos/multi-robot-serving.md
       - Engine end-to-end contrast: demos/engine-e2e-contrast.md
+      - XLeRobot snack delivery: demos/xlerobot-snack-delivery.md
   - Project:
       - Contributing: contributing.md
       - Code of Conduct: code-of-conduct.md

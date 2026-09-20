@@ -94,6 +94,34 @@ Clipping is a per-row rate limit, not collision avoidance.
 > [Safety](docs/safety.md), keep an operator present, and keep the hardware
 > emergency stop within reach.
 
+## XLeRobot snack-delivery demo
+
+The public demo recipe drives an XLeRobot to a pickup point, uses a π0.5-style
+VLA policy to grasp a bag of chips, returns with it, and extends the right arm
+to hand it to a person. RPent owns task and route planning; EmbodiRun owns
+observation, model calls, action validation, bounded execution, and feedback;
+the XLeRobot owner owns motors, cameras, limits, and stop confirmation.
+
+![XLeRobot snack-delivery demo system composition](docs/demos/assets/xlerobot-snack-delivery.svg)
+
+> **Demo video / GIF placeholder**
+>
+> Add the public recording here when it is ready. Keep the caption tied to the
+> route source, model, compute device, and playback speed.
+
+> **Performance placeholder**
+>
+> Add measured route duration, end-to-end latency, grasp success, handover
+> success, hardware revision, model revision, and test count here when the
+> results are public.
+
+The route can be recorded by the operator on their own site or selected by
+RPent from a simple route sketch. No private route trace, token, checkpoint,
+serial path, or site map is part of this repository. See the full
+[XLeRobot snack-delivery demo guide](docs/demos/xlerobot-snack-delivery.md) for
+the scene, hardware bill of materials, setup order, model/agent split, and
+official assembly references.
+
 ## How it works
 
 An agent or application drives the runtime through one public client

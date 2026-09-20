@@ -57,6 +57,8 @@ theme:
 nav:
   - 首页: index.md
   - 快速开始: quickstart.md
+  - Demo:
+      - XLeRobot 薯片递送: xlerobot-snack-delivery.md
 
 markdown_extensions:
   - admonition

@@ -71,6 +71,22 @@ uv run embodirun --config my-deployment.yaml down
 
 > ⚠️ **在首次实机运行之前**，请阅读 [Control](docs/control.md) 和 [Safety](docs/safety.md)，确保操作员在场，并让硬件急停按钮触手可及。
 
+## XLeRobot 薯片递送 Demo
+
+这个公开 Demo recipe 驱动 XLeRobot 到取物点，用 π0.5 风格的 VLA 模型抓取一包薯片，携物返回，再伸展右臂把薯片递给人。RPent 负责任务与路线规划；EmbodiRun 负责观测、模型调用、动作校验、有界执行和反馈；XLeRobot owner 负责电机、相机、限位和停止确认。
+
+![XLeRobot 薯片递送 Demo 系统组成](docs/demos/assets/xlerobot-snack-delivery.svg)
+
+> **Demo 视频 / GIF 占位**
+>
+> 视频准备好后放在这里。配文应说明路线来源、模型、计算设备和播放倍速。
+
+> **性能材料占位**
+>
+> 结果公开后，在这里补充路线时长、端到端延迟、抓取成功率、交付成功率、硬件版本、模型版本和测试次数。
+
+路线可以由使用者在自己的场地录制，也可以让 RPent 根据简单路线示意图选择。仓库不包含私有路线轨迹、token、检查点、串口路径或场地地图。场景、硬件清单、配置顺序、Model / Agent 分工和官方装配链接见完整的 [XLeRobot 薯片递送 Demo 指南](docs/zh/xlerobot-snack-delivery.md)。
+
 ## 工作原理
 
 Agent 或应用通过同一个公共客户端（`observe`、`propose`、`execute`、`inspect`、`cancel`、`stop`）驱动整个运行时。EmbodiRun 内部：
