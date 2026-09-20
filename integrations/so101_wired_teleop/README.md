@@ -121,8 +121,9 @@ arms are spread across hosts and the assignment has to change per session.
 ## Tests
 
 ```bash
-pytest integrations/so101_wired_teleop/tests -q
+pytest tests/so101_wired_teleop -q
 ```
 
 The suite covers the layout rules, the placeholder guard, the packet framing, the
-safety clamp and the episode bookkeeping. It needs no arm, camera or socket.
+safety clamp and the episode bookkeeping. It needs no arm, camera or socket, so
+it runs in the repository's CPU job alongside the other integration tests.
