@@ -11,6 +11,8 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![Docs](https://img.shields.io/badge/docs-embodirun.readthedocs.io-informational.svg)](https://embodirun.readthedocs.io/)
+[![Contributing](https://img.shields.io/badge/contributing-guide-brightgreen.svg)](CONTRIBUTING.md)
+[![Code of Conduct](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
 EmbodiRun is the deployment and execution runtime for embodied AI. It connects
 model inference, service deployment, cross-node communication, and robot
@@ -262,6 +264,22 @@ software examples, outside the installed core package.
 | [`docs/safety.md`](docs/safety.md) | Safety limits and operator checklist |
 | [`docs/architecture.md`](docs/architecture.md) | Runtime domains and process boundaries |
 | [`docs/support-matrix.md`](docs/support-matrix.md) | Full support status |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Development setup, pull request expectations, support-matrix rule |
+| [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) / [`SECURITY.md`](SECURITY.md) | Community behavior standard and private vulnerability reporting |
+
+---
+
+## Contributing
+
+Contributions are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) for the
+development setup and what a pull request must satisfy, and follow the
+[Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md) in every project
+space. Report vulnerabilities privately as described in
+[`SECURITY.md`](SECURITY.md) instead of opening a public issue.
+
+Repository conventions for reviewers and automated agents live in
+[`AGENTS.md`](AGENTS.md). Both governance documents are kept in English so that
+there is a single authoritative version.
 
 ---
 

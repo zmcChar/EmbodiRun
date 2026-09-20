@@ -1,8 +1,26 @@
 # Contributing to EmbodiRun
 
-Thanks for your interest. EmbodiRun is licensed under Apache-2.0; by
-contributing you agree that your contribution is provided under the same
-license (see section 5 of [`LICENSE`](LICENSE)).
+Thanks for your interest in EmbodiRun. This document covers the development
+setup, what a pull request must satisfy, and how to report problems. It is kept
+in English so that there is a single authoritative version.
+
+## Code of Conduct
+
+This project follows the
+[Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). By participating,
+you are expected to uphold it. Report unacceptable behavior to
+**cclonelycc@outlook.com**; reports are handled privately. For security
+problems, follow [`SECURITY.md`](SECURITY.md) instead of opening a public
+issue.
+
+## License of contributions
+
+EmbodiRun is licensed under Apache-2.0. See [`LICENSE`](LICENSE),
+[`NOTICE`](NOTICE), and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). By
+submitting a pull request you agree that your contribution is provided under
+the same license, as described in section 5 of the license. Do not contribute
+code you cannot license this way, and do not paste third-party code without its
+license and attribution.
 
 ## Development setup
 
@@ -40,12 +58,21 @@ mark a combination **Tested** based only on code presence.
 
 ## Reporting issues
 
-Include the EmbodiRun revision, the deployment YAML shape (redact addresses and
-secrets), the exact command, the observed result, and whether hardware was
-involved. Never paste tokens, credentials, or personal data.
+Use [GitHub Issues](https://github.com/BUAA-CI-LAB/EmbodiRun/issues) for bugs,
+documentation gaps, and support questions. Include the EmbodiRun revision, the
+deployment YAML shape (redact addresses and secrets), the exact command, the
+observed result, and whether hardware was involved. Never paste tokens,
+credentials, or personal data into an issue.
+
+**Do not open a public issue for a security problem.** Follow
+[`SECURITY.md`](SECURITY.md) instead.
 
 ## Documentation
 
 User documentation lives in `docs/` and is published to ReadTheDocs from
 `mkdocs.yml`. Keep the English `README.md` and Chinese `README.zh-CN.md` in
 sync when you change positioning, install steps, or the support matrix.
+
+The governance documents — this file, [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md),
+and [`SECURITY.md`](SECURITY.md) — are maintained in English only so that there
+is one authoritative text. The Chinese README links to them.

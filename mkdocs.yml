@@ -36,6 +36,8 @@ nav:
   - Architecture: architecture.md
   - Support Matrix: support-matrix.md
   - License and relicensing: license.md
+  - Contributing: contributing.md
+  - Code of Conduct: code-of-conduct.md
   - Control: control.md
   - Safety: safety.md
   - Inference API v1: http_api.md

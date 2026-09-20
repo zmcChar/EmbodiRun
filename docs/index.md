@@ -40,3 +40,13 @@ Integrating:
 The repository README is available in
 [English](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/README.md) and
 [简体中文](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/README.zh-CN.md).
+
+## Community
+
+- [Contributing](contributing.md) — development setup, pull request
+  expectations, and the support-matrix rule.
+- [Code of Conduct](code-of-conduct.md) — the Contributor Covenant 2.1 adopted
+  by this project.
+- [Security policy](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/SECURITY.md)
+  — report vulnerabilities privately, never in a public issue.
+- [License and relicensing](license.md) — Apache-2.0 and the move from MIT.

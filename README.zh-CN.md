@@ -11,6 +11,8 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![Docs](https://img.shields.io/badge/docs-embodirun.readthedocs.io-informational.svg)](https://embodirun.readthedocs.io/)
+[![Contributing](https://img.shields.io/badge/contributing-guide-brightgreen.svg)](CONTRIBUTING.md)
+[![Code of Conduct](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
 EmbodiRun 是面向具身智能的部署与执行 Runtime，把模型推理、服务部署、跨节点通信和机器人执行组织成一套可复现的运行系统：配置好模型、算力节点与机器人（或仿真器），即可启动服务并运行任务。
 
@@ -211,6 +213,16 @@ result = client.inspect(job.job_id)
 | [`docs/safety.md`](docs/safety.md) | 安全限制与操作员清单 |
 | [`docs/architecture.md`](docs/architecture.md) | 运行时域与进程边界 |
 | [`docs/support-matrix.md`](docs/support-matrix.md) | 完整支持状态 |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 开发环境、PR 要求与支持矩阵规则 |
+| [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) / [`SECURITY.md`](SECURITY.md) | 社区行为准则与安全问题上报 |
+
+---
+
+## 参与贡献
+
+欢迎提交贡献。开发环境与 PR 要求见 [`CONTRIBUTING.md`](CONTRIBUTING.md)；在所有项目空间请遵守[《贡献者公约》行为准则](CODE_OF_CONDUCT.md)。发现安全问题请按 [`SECURITY.md`](SECURITY.md) 私下上报，**不要开公开 issue**。
+
+面向审查者与自动化 Agent 的仓库约定见 [`AGENTS.md`](AGENTS.md)。上表中的治理文档（CONTRIBUTING、Code of Conduct、SECURITY）只保留英文，以保证执行时只有唯一权威文本。
 
 ---
 
