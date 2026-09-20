@@ -1,0 +1,2 @@
+# Documentation build dependencies for ReadTheDocs.
+mkdocs-material>=9.5,<10

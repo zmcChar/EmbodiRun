@@ -2,7 +2,7 @@
 """Run a complete local fake-device Host walkthrough.
 
 This is an executable software demo, not a deployment initializer.  It loads
-the public fake YAML, builds the same Host plan as ``rlinf-deploy``, starts a
+the public fake YAML, builds the same Host plan as ``embodirun``, starts a
 real :class:`ControlService` on a loopback socket, and writes an ephemeral
 ``StateStore`` fixture so the normal Host CLI can resolve that service.  The
 fixture is deliberately temporary and never opens a serial, CAN, USB, or
@@ -206,7 +206,7 @@ def _run_cli(config_path: Path, state_dir: Path, args: list[str]) -> dict[str, A
         "$ "
         + shlex.join(
             [
-                "rlinf-deploy",
+                "embodirun",
                 "--config",
                 str(config_path),
                 "--state-dir",
@@ -487,7 +487,7 @@ def print_commands(
 
     runtime = deployment.runtimes[0].runtime_id
     prefix = (
-        f"rlinf-deploy --config {shlex.quote(str(config_path))} "
+        f"embodirun --config {shlex.quote(str(config_path))} "
         f"--state-dir {shlex.quote(str(state_dir))}"
     )
     print(f"service endpoint: {service.endpoint}", file=sys.stderr)

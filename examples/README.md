@@ -31,12 +31,12 @@ fixture and is not a production deployment state store.
 Alternatively, validate and start it with the normal Host lifecycle commands:
 
 ```text
-rlinf-deploy --config examples/shared-device-fake.yaml validate
-rlinf-deploy --config examples/shared-device-fake.yaml init
+embodirun --config examples/shared-device-fake.yaml validate
+embodirun --config examples/shared-device-fake.yaml init
 # When running from this checkout, overlay the checkout before starting the
 # service so the simulated adapters and Host API are available on the node.
-rlinf-deploy --config examples/shared-device-fake.yaml sync --source .
-rlinf-deploy --config examples/shared-device-fake.yaml up
+embodirun --config examples/shared-device-fake.yaml sync --source .
+embodirun --config examples/shared-device-fake.yaml up
 ```
 
 Then use the Host JSON boundary to inspect the running local service. Stable
@@ -45,9 +45,9 @@ separate CLI invocations:
 
 ```sh
 CONFIG=examples/shared-device-fake.yaml
-rlinf-deploy --config "$CONFIG" describe --runtime fake-device \
+embodirun --config "$CONFIG" describe --runtime fake-device \
   --caller-id example-agent --session-id example-session --json
-rlinf-deploy --config "$CONFIG" observe --runtime fake-device \
+embodirun --config "$CONFIG" observe --runtime fake-device \
   --caller-id example-agent --session-id example-session --json
 ```
 
@@ -56,7 +56,7 @@ JSON media command (frame data is explicitly opt-in):
 
 ```sh
 OBSERVATION_ID=observation-id-from-json
-rlinf-deploy --config "$CONFIG" media --runtime fake-device \
+embodirun --config "$CONFIG" media --runtime fake-device \
   --caller-id example-agent --session-id example-session \
   --observation-id "$OBSERVATION_ID" --include-data --json
 ```

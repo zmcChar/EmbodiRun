@@ -6,7 +6,7 @@ left six values followed by right six values, with grippers in the native
 `range_0_100` convention. The binding matches action features by name and
 rejects malformed or over-sized commands before the first bus write.
 
-Use [configs/pi05/bi-so101-vvla.yaml](../configs/pi05/bi-so101-vvla.yaml) as a
+Use [configs/pi05/bi-so101-vvla.yaml](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/configs/pi05/bi-so101-vvla.yaml) as a
 validation template. Replace serial paths, camera paths, calibration IDs, and
 the inference checkpoint. `validate` and `build_plan` do not contact devices.
 The dual adapter belongs to the same Deploy Control resource owner as the

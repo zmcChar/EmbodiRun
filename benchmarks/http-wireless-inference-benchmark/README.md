@@ -53,7 +53,7 @@ E2E 排除文件读取、SSH 输入分发、预热、建连/建会话、传感�
 先在 Host 初始化、生成配置并停止控制服务（见下方运行步骤），再同步只读适配器：
 
 ```bash
-uv run rlinf-deploy --config configs/http-wireless-inference/http.yaml sync --target deploy
+uv run embodirun --config configs/http-wireless-inference/http.yaml sync --target deploy
 ```
 
 `sync` 只同步 Deploy 包；将 `capture.py` 另行复制到各 Orin，例如 `~/capture.py`。
@@ -93,25 +93,25 @@ uv sync --frozen
 uv run python benchmarks/http-wireless-inference-benchmark/benchmark.py fixture \
   --output artifacts/so101-input
 
-uv run rlinf-deploy --config configs/http-wireless-inference/http.yaml validate
-uv run rlinf-deploy --config configs/http-wireless-inference/http.yaml init
-uv run rlinf-deploy --config configs/http-wireless-inference/http.yaml up --wait-timeout 600
+uv run embodirun --config configs/http-wireless-inference/http.yaml validate
+uv run embodirun --config configs/http-wireless-inference/http.yaml init
+uv run embodirun --config configs/http-wireless-inference/http.yaml up --wait-timeout 600
 # benchmark 替代控制客户端，保留模型服务；释放 WirelessComm 所需的客户端端口。
-uv run rlinf-deploy --config configs/http-wireless-inference/http.yaml down --target control
+uv run embodirun --config configs/http-wireless-inference/http.yaml down --target control
 uv run python benchmarks/http-wireless-inference-benchmark/benchmark.py run \
   --config configs/http-wireless-inference/http.yaml \
   --observations artifacts/so101-input/observations.jsonl \
   --output artifacts/so101-http.json
-uv run rlinf-deploy --config configs/http-wireless-inference/http.yaml down
+uv run embodirun --config configs/http-wireless-inference/http.yaml down
 
-uv run rlinf-deploy --config configs/http-wireless-inference/wireless.yaml init
-uv run rlinf-deploy --config configs/http-wireless-inference/wireless.yaml up --wait-timeout 600
-uv run rlinf-deploy --config configs/http-wireless-inference/wireless.yaml down --target control
+uv run embodirun --config configs/http-wireless-inference/wireless.yaml init
+uv run embodirun --config configs/http-wireless-inference/wireless.yaml up --wait-timeout 600
+uv run embodirun --config configs/http-wireless-inference/wireless.yaml down --target control
 uv run python benchmarks/http-wireless-inference-benchmark/benchmark.py run \
   --config configs/http-wireless-inference/wireless.yaml \
   --observations artifacts/so101-input/observations.jsonl \
   --output artifacts/so101-wireless.json
-uv run rlinf-deploy --config configs/http-wireless-inference/wireless.yaml down
+uv run embodirun --config configs/http-wireless-inference/wireless.yaml down
 
 uv run python benchmarks/http-wireless-inference-benchmark/benchmark.py compare \
   --http artifacts/so101-http.json --wireless artifacts/so101-wireless.json

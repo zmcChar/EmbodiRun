@@ -61,6 +61,13 @@ commit. EmbodiInfer carries its own `LICENSE`, `NOTICE`, and
 `THIRD_PARTY_NOTICES.md`; refer to them when redistributing the pinned
 inference server.
 
+## Documentation tooling
+
+The documentation site is built with [MkDocs](https://www.mkdocs.org/) and
+[Material for MkDocs](https://squidfunk.github.io/mkdocs-material/), both MIT
+licensed. They are build-time-only dependencies declared in
+`docs/requirements.txt` and are not installed with the runtime.
+
 ## Models and datasets
 
 Model checkpoints, tokenizers, normalization statistics, and datasets are not

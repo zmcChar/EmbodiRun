@@ -17,12 +17,15 @@ from .progress import ConsoleProgressReporter
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="rlinf-deploy")
+    parser = argparse.ArgumentParser(prog="embodirun")
     parser.add_argument("--config", required=True, help="deployment YAML path")
     parser.add_argument(
         "--state-dir",
         type=Path,
-        help="local state directory (default: ~/.local/state/rlinf-deploy)",
+        help=(
+            "local state directory "
+            "(default: ~/.local/state/rlinf-deploy, kept for compatibility)"
+        ),
     )
     commands = parser.add_subparsers(dest="command", required=True)
     validate.register(commands)
@@ -47,7 +50,7 @@ def main(
         config = load_config(args.config)
         deployment = build_plan(config)
     except (ConfigError, EnvironmentError, ServiceError, RuntimeError) as error:
-        print(f"rlinf-deploy: error: {error}", file=sys.stderr)
+        print(f"embodirun: error: {error}", file=sys.stderr)
         return 2
 
     context = CommandContext(
@@ -60,7 +63,7 @@ def main(
     try:
         return args.command_handler(args, context)
     except (OSError, RuntimeError, ValueError) as error:
-        print(f"rlinf-deploy: error: {error}", file=sys.stderr)
+        print(f"embodirun: error: {error}", file=sys.stderr)
         return 1
 
 
