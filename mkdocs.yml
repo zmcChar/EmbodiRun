@@ -67,8 +67,8 @@ nav:
   - Reference:
       - Python API: api.md
   - Demos:
-      - Multi-robot serving: demos/multi-robot-serving.md
-      - Engine end-to-end contrast: demos/engine-e2e-contrast.md
+      - Three robots, one service: demos/multi-robot-serving.md
+      - Inference engines on SO-101: demos/engine-e2e-contrast.md
   - Project:
       - Contributing: contributing.md
       - Code of Conduct: code-of-conduct.md

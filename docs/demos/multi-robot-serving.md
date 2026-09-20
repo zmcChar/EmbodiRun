@@ -1,8 +1,8 @@
-# Multi-robot serving
+# Three robots, one inference service
 
-Three SO-101 arms driven from three separate rollout processes against one
-π0.5 inference service, configured for `batch_size = 3`. Each device is a
-different computer: one Jetson Orin NX and two Raspberry Pi 4B boards.
+Three SO-101 arms pick up a cube and place it in a bowl using the same π0.5
+model service on a Jetson AGX Thor. Each robot has its own cameras, control
+computer, and rollout process; model inference runs on the shared GPU host.
 
 <video controls muted playsinline preload="metadata" width="720"
        poster="https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/v0.1/multi_robot_serving.jpg">
@@ -10,87 +10,102 @@ different computer: one Jetson Orin NX and two Raspberry Pi 4B boards.
   Your browser does not support the video tag.
 </video>
 
-*74 s. Six camera views: the three front cameras on the top row, the three wrist
-cameras below, one column per device. The columns are three separate
-recordings, aligned at their own start points rather than a shared clock.*
+*Front cameras above, wrist cameras below; one column per robot. The 74-second
+edit aligns each recording at its own starting point.*
 
-## What it shows
+## Shared inference, independent control
 
-One operator session starts three rollout processes, and all three receive the
-same instruction — **"Pick up the cube and place it in the bowl."** — from a
-single inference service. There is no per-robot service and no per-robot
-checkpoint. The service runs π0.5 on a Jetson AGX Thor over HTTP: 10 denoising
-steps, bfloat16, CUDA graph enabled, and a 50-step action chunk played back by
-each device at a nominal 20 Hz.
+The operator starts one rollout process for each arm with the instruction
+**“Pick up the cube and place it in the bowl.”** Each process sends its robot's
+two camera images and joint state to the same inference endpoint, then executes
+the returned action chunk locally.
+
+EmbodiRun handles observations, action mapping, execution, and recording on
+each device. EmbodiInfer loads the checkpoint on the Thor and serves model
+predictions. This keeps the model off the robot computers while letting each
+robot advance through its own control loop.
 
 ```mermaid
-flowchart LR
-  operator["Operator session"]
-  subgraph rollouts["One rollout process per device"]
-    d1["Device 1<br/>Jetson Orin NX"]
-    d2["Device 2<br/>Raspberry Pi 4B"]
-    d3["Device 3<br/>Raspberry Pi 4B"]
-  end
-  service["Inference service<br/>Jetson AGX Thor<br/>π0.5, batch_size = 3"]
-  arms["3 × SO-101"]
-
-  operator --> d1 & d2 & d3
-  d1 & d2 & d3 -- "step: two frames + joint state + instruction" --> service
-  service -- "50 × 6 action chunk" --> d1 & d2 & d3
-  d1 & d2 & d3 --> arms
+flowchart TB
+  model["Shared π0.5 service<br/>Jetson AGX Thor"]
+  nx["Jetson Orin NX<br/>SO-101 + front / wrist cameras"]
+  pi1["Raspberry Pi 4B · Device 2<br/>SO-101 + front / wrist cameras"]
+  pi2["Raspberry Pi 4B · Device 3<br/>SO-101 + front / wrist cameras"]
+  model <-->|Observations / actions over HTTP| nx
+  model <-->|Observations / actions over HTTP| pi1
+  model <-->|Observations / actions over HTTP| pi2
 ```
 
-## The three runs
+## Hardware and policy
 
-Recorded on 2026-09-18, with one run per device.
+| Component | Configuration |
+|---|---|
+| Inference host | Jetson AGX Thor Developer Kit, 128 GB |
+| Robot computers | One Jetson Orin NX (8 cores, 16 GB); two Raspberry Pi 4B boards (4 cores, 8 GB each) |
+| Robots | Three SO-101 follower arms, each with front and wrist cameras |
+| Camera capture | 640 × 480 MJPG, configured at 20 fps |
+| Policy | π0.5, trained on SO-101 multi-arm data; BF16, 10 denoising steps, CUDA graphs |
+| Recorded service configuration | One shared HTTP endpoint, `batch_size = 3` |
+| Action execution | 50-step chunks, nominal 20 Hz playback |
+| Recording date | September 18, 2026 |
 
-| | Device 1 | Device 2 | Device 3 |
-|---|---|---|---|
-| Compute | Jetson Orin NX, 8 cores / 16 GB | Raspberry Pi 4B, 4 cores / 8 GB | Raspberry Pi 4B, 4 cores / 8 GB |
-| Arm and cameras | SO-101, front + wrist at 640×480 | same | same |
-| Recording (ID, duration) | `demo-OrinNx-20260918-215928`, 191.9 s | `demo-Pi221-20260918-220827`, 97.8 s | `demo-Pi202-20260918-220708`, 49.0 s |
-| Chunks executed | 53 | 26 | 13 |
-| Cube in the bowl at | 14.5 s | 66.0 s | 9.0 s |
-| Chunk period, median | 3588 ms | 3622 ms | 3620 ms |
-| — playback, fixed | 2500 ms | 2500 ms | 2500 ms |
-| — everything else | 1088 ms | 1122 ms | 1120 ms |
-| Observation rate | 8.88 Hz | 8.46 Hz | 8.53 Hz |
-| Effective action rate | 13.8 Hz | 13.4 Hz | 13.3 Hz |
-| Dropped observations / actions / frames | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 |
+## Pick-and-place results
 
-## What the numbers say
+All three recordings show the cube reaching the bowl. Placement times below
+are measured from the beginning of each recording and identified from the video.
 
-- **The three chunk periods agree to within 1%** (3588 / 3622 / 3620 ms) even
-  though one device has twice the CPU cores and four times the memory of the
-  other two.
-- **The loop does not reach its nominal rate.** Playback is a fixed 2.5 s, but
-  each chunk also carries about 1.1 s of inference, communication, and
-  recording, so the arm runs at 13.3–13.8 Hz against a 20 Hz target. Playback
-  is the largest single component at about 69% of the period; the remaining 31%
-  covers inference, communication, and recording.
-- **The recording path is stable.** Every device reports zero dropped
-  observations, zero dropped actions, and zero missing frames across the run.
-- **Sampling is slower than the cameras.** The cameras are configured for 20 fps
-  but observations were produced at 8.5 Hz.
+| Robot computer | Cube | Cube placed at | Recorded chunks | Recording duration |
+|---|---|---:|---:|---:|
+| Device 1 · Orin NX | Blue | 14.5 s | 53 | 191.9 s |
+| Device 2 · Pi 4B | Pink | 66.0 s | 26 | 97.8 s |
+| Device 3 · Pi 4B | Yellow | 9.0 s | 13 | 49.0 s |
 
-## Recording notes
+The operator stopped each run manually, so recording continued after placement.
 
-- **Timing.** Each column starts at its own recording's beginning. The
-  "cube in the bowl" times mark the placement event; recording continued
-  until the operator stopped the run.
-- **Device 3's gripper was miscalibrated.** Its travel span was 2248 ticks
-  against 1518 on the other two, so the commanded closed position was not
-  physically reachable. From 19.6 s the gripper stalled and the picture was
-  static for 28 s; the video freezes that column at 21 s to skip the dead
-  footage. Re-calibrate the gripper before the next run.
-- **Task completion.** Placement was identified by reviewing the frames and
-  the cube's colour track.
+## Control-loop timing
 
-## Where the pieces live
+The median chunk period was about **3.6 seconds** on all three devices.
+Each chunk includes a 2.5-second playback budget plus roughly 1.1 seconds for
+inference, communication, and recording.
 
-The runtime, the robot binding, and the recording format are described in
-[Architecture](../architecture.md) and [Configuration](../configuration.md).
-[Engine end-to-end contrast](engine-e2e-contrast.md) draws the per-chunk loop
-and compares inference engines on one of these devices. The inference service is
-[EmbodiInfer](https://github.com/BUAA-CI-LAB/EmbodiInfer), reached over the
-versioned [inference API](../http_api.md).
+| Metric | Device 1 · Orin NX | Device 2 · Pi 4B | Device 3 · Pi 4B |
+|---|---:|---:|---:|
+| Median chunk period | 3,588 ms | 3,622 ms | 3,620 ms |
+| Playback budget | 2,500 ms | 2,500 ms | 2,500 ms |
+| Remaining time | 1,088 ms | 1,122 ms | 1,120 ms |
+| Recorded observation rate | 8.88 Hz | 8.46 Hz | 8.53 Hz |
+| Average action rate over the recording | 13.8 Hz | 13.4 Hz | 13.3 Hz |
+| Reported dropped observations / actions / missing frames | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 |
+
+Playback occupies about 69% of the chunk period. The pauses between chunks
+bring the average action rate below the nominal 20 Hz playback rate. Observation
+recording runs independently and averaged roughly 8.5 Hz.
+
+For a breakdown of inference and transport latency on one arm, see
+[Comparing inference engines on SO-101](engine-e2e-contrast.md).
+
+<details markdown="1">
+<summary>Recording details</summary>
+
+The recording IDs are `demo-OrinNx-20260918-215928`,
+`demo-Pi221-20260918-220827`, and `demo-Pi202-20260918-220708`.
+The side-by-side edit uses separate recording timelines.
+
+Device 3 placed its cube at 9.0 s. Later, a gripper calibration mismatch caused
+a stall from 19.6 s; its configured travel span was 2,248 ticks, compared with
+1,518 on the other arms. The edit freezes this column at 21 s. Correct the
+gripper calibration before repeating that run.
+
+</details>
+
+## Set up a shared-service deployment
+
+Start with the [multi-device HTTP configuration](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/configs/http-wireless-inference/http.yaml),
+which connects two independent SO-101 runtimes to one model service. Give each
+robot its own device paths, calibration, and camera mapping, and point its
+runtime at the shared model entry.
+
+Follow [Quick start](../quickstart.md) for the deployment lifecycle and
+[Configuration](../configuration.md) for node and runtime settings. Current
+model-server options are described in
+[EmbodiInfer's serving guide](https://github.com/BUAA-CI-LAB/EmbodiInfer/blob/main/docs/serving.md).
