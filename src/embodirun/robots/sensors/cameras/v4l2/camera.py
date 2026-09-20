@@ -3,12 +3,33 @@
 from __future__ import annotations
 
 import math
+import os
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from ..camera import CameraFrame
+
+
+def _camera_buffer_size() -> int:
+    """Return the V4L2 driver buffer count to request.
+
+    A single buffer makes the driver drop every other frame on the UVC cameras
+    used for SO-101: measured on a Pi 4B front camera, ``CAP_PROP_BUFFERSIZE=1``
+    caps delivery at 10.00 fps while 2 (or more) reaches 20.00 fps. Two buffers
+    keep the configured rate and cost only one frame of freshness.
+
+    Override with ``RLINF_DEPLOY_CAMERA_BUFFERSIZE``; values below 1 fall back to
+    the default.
+    """
+
+    raw = os.environ.get("RLINF_DEPLOY_CAMERA_BUFFERSIZE", "2")
+    try:
+        value = int(raw)
+    except ValueError:
+        return 2
+    return value if value >= 1 else 2
 
 
 class CameraError(RuntimeError):
@@ -86,7 +107,7 @@ class V4L2CameraSource:
                 capture.set(cv2_module.CAP_PROP_FRAME_HEIGHT, camera.height)
                 capture.set(cv2_module.CAP_PROP_FPS, camera.fps)
                 if hasattr(cv2_module, "CAP_PROP_BUFFERSIZE"):
-                    capture.set(cv2_module.CAP_PROP_BUFFERSIZE, 1)
+                    capture.set(cv2_module.CAP_PROP_BUFFERSIZE, _camera_buffer_size())
             for _ in range(3):
                 self._capture_frames()
             for camera, capture in zip(self._cameras, self._captures):

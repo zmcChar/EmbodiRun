@@ -432,3 +432,19 @@ def test_cross_domain_timestamps_keep_skew_unknown() -> None:
         )
         is False
     )
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [(None, 0.03), ("0.05", 0.05), ("0", 0.03), ("-1", 0.03), ("nan", 0.03), ("bad", 0.03)],
+)
+def test_producer_poll_interval_does_not_cap_the_stream_at_ten_hertz(monkeypatch, configured, expected) -> None:
+    """A fixed 0.1 s poll starves a 20 Hz control loop; the default must be lower."""
+    if configured is None:
+        monkeypatch.delenv("RLINF_DEPLOY_OBSERVATION_INTERVAL_S", raising=False)
+    else:
+        monkeypatch.setenv("RLINF_DEPLOY_OBSERVATION_INTERVAL_S", configured)
+
+    producer = ObservationProducer(lambda: None)
+
+    assert producer.interval_s == pytest.approx(expected)
