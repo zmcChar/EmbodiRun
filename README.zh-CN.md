@@ -2,10 +2,6 @@
 
 [English](README.md) | **简体中文**
 
-### Embodied AI, Ready to Run.
-
-**面向具身智能的高效部署与执行 Runtime。**
-
 **Deploy Models. Accelerate Inference. Run Robots.**
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -14,55 +10,33 @@
 [![Contributing](https://img.shields.io/badge/contributing-guide-brightgreen.svg)](CONTRIBUTING.md)
 [![Code of Conduct](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
-EmbodiRun 是面向具身智能的部署与执行 Runtime，把模型推理、服务部署、跨节点通信和机器人执行组织成一套可复现的运行系统：配置好模型、算力节点与机器人（或仿真器），即可启动服务并运行任务。
+EmbodiRun 是具身智能的部署与执行运行时。只需指定一个模型、一个计算节点，以及一台机器人或仿真器，它就能通过一个配置文件跑通整个闭环——观测、推理、动作映射、有界执行、反馈。
 
-高性能推理由 [EmbodiInfer](https://github.com/BUAA-CI-LAB/EmbodiInfer) 提供。它保持独立引擎形态，也可以单独使用。
+模型推理由 [EmbodiInfer](https://github.com/BUAA-CI-LAB/EmbodiInfer) 完成，这是一个独立引擎，也可以单独使用。EmbodiRun 不负责检查点、提示词或模型框架；它通过带版本号的 HTTP 或 WirelessComm API 与推理服务通信。
 
-> **Build embodied applications, not integration code.**
+> **构建具身应用，而不是集成代码。**
 
----
+## 为什么选择 EmbodiRun
 
-## 为什么用 EmbodiRun
-
-- **计算与控制分离。** 贴近机器人的 Control 进程负责传感器采集与动作执行，推理可部署在 Jetson、工作站或远端 GPU 上，两侧独立配置与维护。
-- **复用稳定的执行链路。** 观测 → 推理请求 → 动作映射 → 有界执行 → 反馈只实现一次，并内置动作校验、控制仲裁、人工接管和软件停止。
-- **可接入 Agent、可替换后端。** 无额外依赖的公共客户端（`observe` / `propose` / `execute` / `inspect` / `cancel` / `stop`）让 Agent 框架保留自己的规划循环；推理后端通过 provider 注册，可替换。
-- **部署可复现。** 一份 YAML 描述节点、环境、服务、机器人、相机与绑定，Host CLI 负责校验、准备、启动与停止。
-
-EmbodiRun **不**负责 checkpoint、模型框架、prompt 构造和模型输出解析。它通过带版本号的 HTTP（或可选 WirelessComm）API 与推理服务通信。
-
----
+- **控制留在机器人身边，算力放在 GPU 所在之处。** 面向机器人的 Control 进程与推理服务独立部署，可以同机运行，也可以跨节点拆分。
+- **执行路径只需编写一次。** 动作校验、控制仲裁、有界执行、人工接管和软件停机由所有机器人和所有智能体共用。
+- **智能体保留自己的规划循环。** 一个无依赖客户端通过 `observe` / `propose` / `execute` / `inspect` / `cancel` / `stop` 暴露运行时，而不限定规划器。
+- **一次部署就是一个文件。** 节点、环境、服务、机器人、传感器和策略绑定都写在一份 YAML 中，由 CLI 完成校验、准备、启动和停止。
 
 ## 快速开始
 
-EmbodiRun 使用 [uv](https://docs.astral.sh/uv/) 从源码安装。公共 lock 文件不依赖任何私有仓库。
+使用 [uv](https://docs.astral.sh/uv/) 从源码安装：
 
 ```bash
 git clone https://github.com/BUAA-CI-LAB/EmbodiRun.git
 cd EmbodiRun
-uv sync --frozen            # 核心 CLI + 开发工具
-uv run pytest -q            # 在本机（仅 CPU）验证代码
+uv sync --frozen
+uv run pytest -q          # CPU-only check of the checkout
 ```
 
-每个进程只安装自己需要的能力组：
+### 在没有机器人的情况下运行
 
-```bash
-uv sync --frozen --no-dev --group host            # SSH 编排 / Host CLI
-uv sync --frozen --no-dev --group robot-so101     # SO-101 控制
-uv sync --frozen --no-dev --group robot-fr3       # Franka FR3 控制
-uv sync --frozen --no-dev --group robot-arx5      # ARX5 控制
-uv sync --frozen --no-dev --group sim-libero      # LIBERO 仿真
-```
-
-不连接任何节点即可校验部署文件：
-
-```bash
-uv run embodirun --config configs/http-wireless-inference/http.yaml validate
-```
-
-### 无需真机
-
-下面的示例用内存中的模拟关节和假相机启动一个只有机器人的 Control 服务。它不打开任何硬件，暴露真实的 Host JSON API，是了解 observe/execute 链路的最佳起点：
+一个仅面向机器人的 Control 服务，由仿真关节和虚拟摄像头支撑。它不打开任何硬件，但提供真实的 API：
 
 ```bash
 uv run embodirun --config examples/shared-device-fake.yaml validate
@@ -73,18 +47,17 @@ uv run embodirun --config examples/shared-device-fake.yaml describe \
 uv run embodirun --config examples/shared-device-fake.yaml down
 ```
 
-完整流程（观测、媒体、执行、录制）见 [`examples/README.md`](examples/README.md)。
+[`examples/README.md`](examples/README.md) 完整演示了观测、媒体、执行和录制。
 
-### 真机部署
+### 在机器人上运行
 
-1. 复制一份示例配置，替换其中的占位符（设备路径、标定、checkpoint、节点地址）。
-2. 执行生命周期命令：
+从 [`configs/`](configs) 复制一份配置，替换设备路径、标定参数、检查点和节点地址，然后执行：
 
 ```bash
-uv run embodirun --config my-deployment.yaml validate   # 静态校验
-uv run embodirun --config my-deployment.yaml probe      # 连通性与工具探测
-uv run embodirun --config my-deployment.yaml init       # 准备环境与源码
-uv run embodirun --config my-deployment.yaml up         # 启动服务
+uv run embodirun --config my-deployment.yaml validate   # static checks
+uv run embodirun --config my-deployment.yaml probe      # connectivity and tools
+uv run embodirun --config my-deployment.yaml init       # environments and sources
+uv run embodirun --config my-deployment.yaml up         # start services
 uv run embodirun --config my-deployment.yaml run \
   --runtime so101-1-runtime \
   --prompt "Pick up the cube and put it into the bowl." \
@@ -92,95 +65,61 @@ uv run embodirun --config my-deployment.yaml run \
 uv run embodirun --config my-deployment.yaml down
 ```
 
-`run` 会驱动真实机器人。默认只提交一个有界动作块；`--max-steps`、`--chunk-steps`、`--control-hz` 用于限制执行规模。返回的每一行动作仍受配置中的关节与夹爪步长限制约束。限幅是逐行的速率限制，不是避障。
+启动服务并不会连接或移动机器人；`run` 才会。`--max-steps`、`--chunk-steps` 和 `--control-hz` 限定实际执行的内容，并且每一行返回结果仍然受配置中的关节和夹爪步数限制约束。裁剪是逐行的速率限制，而不是碰撞规避。
 
-> **使用真机时：** 服务启动阶段不会连接或移动机械臂，但 `run` 会。请先阅读 [`docs/control.md`](docs/control.md) 与 [`docs/safety.md`](docs/safety.md)，全程保持操作员在场，并把物理急停放在伸手可及处。
+> ⚠️ **在首次实机运行之前**，请阅读 [Control](docs/control.md) 和 [Safety](docs/safety.md)，确保操作员在场，并让硬件急停按钮触手可及。
 
-更多内容见 [`docs/installation.md`](docs/installation.md) 与 [`docs/quickstart.md`](docs/quickstart.md)。
+## 工作原理
 
----
+```text
+Application / agent
+        │  public client: observe · propose · execute · inspect · cancel · stop
+        ▼
+EmbodiRun
+├─ Deployment runtime — configuration, environments, nodes, lifecycle
+├─ Application runtime — jobs, proposals, execution coordination
+├─ Device runtime — connection ownership, shared observations, arbitration
+├─ Model services — versioned inference contracts and provider registry
+└─ Robot / simulator adapters + policy bindings
+        │  HTTP or WirelessComm (versioned policy API)
+        ▼
+EmbodiInfer, or an external backend such as SGLang
+```
 
-## 推理性能
+三个进程刻意分离：**Host** 运行在操作员机器上，**Control** 运行在机器人旁边并掌管硬件，**Inference** 负责模型计算。它们可以共用一台机器，也可以跨节点拆分；部署位置由配置决定，自动放置属于未来工作。
 
-EmbodiRun 把三层性能分开测量，让每个数字都有明确范围：模型推理、Runtime 链路、应用任务。推理由 EmbodiInfer 执行。
-
-一组已记录的 π0.5 离线结果：
-
-| 条件 | 结果 |
-|---|---|
-| 硬件 / 配置 | RTX 4090，B=1，BF16，10 次去噪 |
-| 数据 | LIBERO-10，1,600 条离线观测 |
-| 平均端到端推理延迟 | **74.33 → 38.89 ms** |
-| 吞吐 | **13.45 → 25.71 observations/s** |
-
-计时范围从已解码 CPU 输入到 CPU 动作输出，不包含相机采集、网络通信、机器人执行、模型加载与首次预热。这是相对原 EmbodiInfer/VVLA 路径的历史结果，不代表所有设备或任务。完整条件见 [`EmbodiInfer/benchmarks/pi05-benchmark`](https://github.com/BUAA-CI-LAB/EmbodiInfer)。
-
----
+只有 `execute` 会移动任何东西。`observe`、`propose`、`media` 和 `inspect` 都是只读的，并且被接受的请求绝不会被报告为任务成功——请读取返回的执行证据和下一次观测。
 
 ## 支持状态
 
-支持范围按**完整组合**记录，而不是按单个组件。某个模型、机器人或平台可用，不代表它们可以任意组合。
+支持情况按**完整组合**记录。某个模型、机器人或平台受支持，并不意味着任意组合都能正常工作。
 
-- **Tested** —— 在标注层级（软件接口 / 仿真 / 离线模型）有本仓库测试覆盖。真机验证记录由部署负责人单独维护。
-- **Experimental** —— 维护者提供的试验性路径，存在已知限制。
-- **Planned** —— 尚无实现。
+| 组合 | 状态 |
+|---|---|
+| π0.5 + SO-101 / Bi-SO-101 | 已测试——软件（CPU 测试套件、离线动作检查） |
+| LIBERO + π0.5 | 已测试——软件；闭环需要 GPU 和检查点 |
+| VLABench + π0.5、Habitat 或 Isaac Sim + StreamVLN | 实验性 |
+| 多节点共享推理 | 已测试——软件基准 |
+| RPent 和 Astra 智能体适配器、XLeRobot owner、LightNav-0 | 实验性，仅限软件 |
 
-| 组合 | 实现 | 本仓库验证范围 | 公开配置 |
-|---|---|---|---|
-| π0.5 + SO-101 / Bi-SO-101 | 控制、绑定、部署配置 | Tested —— 软件（CPU 测试）；已有离线动作核验记录 | `configs/pi05/bi-so101-vvla.yaml` |
-| LIBERO + π0.5 | 仿真适配、SGLang/VVLA 配置 | Tested —— 软件；闭环需要 GPU 与 checkpoint | `configs/simulation/libero-pi05-*.yaml` |
-| Habitat + StreamVLN | 仿真适配与配置 | Experimental | `configs/simulation/habitat-streamvln-vvla.yaml` |
-| VLABench + π0.5 | 仿真适配与配置 | Experimental | `configs/simulation/vlabench-pi05-*.yaml` |
-| Isaac Sim + StreamVLN | 仿真适配与配置 | Experimental（需接受 NVIDIA Isaac Sim EULA） | `configs/simulation/isaac-streamvln-vvla.yaml` |
-| Unitree Go2 + StreamVLN | 机器人 agent、绑定、SSH 部署 | Experimental | `src/embodirun/robots/unitree/go2` |
-| SGLang HTTP 后端 | provider、客户端、适配器 | Tested —— 软件（无 sglang 时跳过） | `[sglang]` extra |
-| 多控制节点共享推理 | 配置、benchmark、控制仲裁 | Tested —— 软件 benchmark | `configs/http-wireless-inference/` |
-| RPent Agent 适配 | `agents/rpent` 契约 + RPent fork 中的 `robots/embodirun` | Experimental，仅软件；RPent 侧注册由 RPent 项目负责 | `BUAA-CI-LAB/RPent:embodirun-integration` |
-| Astra + π0.5 评审循环 | `agents/astra_pi05` 示例 | Experimental，模拟 reviewer | `agents/astra_pi05/README.md` |
-| XLeRobot external owner | `integrations/xlerobot_owner` | Experimental，独立安装 | `integrations/xlerobot_owner/README.md` |
-| LightNav-0 + XLeRobot | `bindings/xlerobot/lightnav0` | Experimental，软件 | `docs/lightnav0_xlerobot.md` |
+**已测试——软件**表示该路径已由本仓库中的自动化测试覆盖。它并不意味着实体机器人完成了任务。真机记录由部署方自行保存。
 
-“Tested —— 软件”表示该路径有本仓库自动化测试覆盖，**不**表示真机已完成任务。
+→ [完整支持矩阵](docs/support-matrix.md)
 
----
+## 性能
 
-## 架构
+在 RTX 4090 上记录到的一个 π0.5 离线结果——B=1、BF16、10 步去噪、LIBERO-10、1,600 次观测：
 
-```text
-应用 / RPent / 自定义 Agent
-        │  公共客户端：observe / propose / execute / inspect / cancel / stop
-        ▼
-EmbodiRun
-├─ Deployment runtime  —— 配置、环境、节点、服务生命周期
-├─ Application runtime —— job、proposal、执行协调、默认模型循环
-├─ Device runtime      —— 连接所有权、共享观测、执行仲裁
-├─ Model services      —— 带版本的推理契约与 provider 注册
-└─ 机器人 / 仿真器适配器 + 策略绑定
-        │  HTTP 或 WirelessComm（带版本的 policy API）
-        ▼
-EmbodiInfer（或 SGLang 等外部后端）
-```
+| 条件 | 结果 |
+|---|---|
+| 平均端到端推理延迟 | **74.33 → 38.89 ms** |
+| 吞吐量 | **13.45 → 25.71 observations/s** |
 
-进程边界清晰：**Host** 运行在操作员机器上，**Control** 运行在机器人旁并独占硬件，**Inference** 负责模型计算。三者可以同机，也可以按配置跨节点部署。节点目前由配置指定，自动放置属于后续工作。
+计时范围从解码后的 CPU 输入到 CPU 动作输出，不包含摄像头采集、网络通信、机器人执行、模型加载和预热。这是针对该配置的一个有范围的历史结果，并不代表所有设备或任务；完整条件记录在 [EmbodiInfer benchmark](https://github.com/BUAA-CI-LAB/EmbodiInfer) 中。
 
-```text
-src/embodirun/
-├── client/          # 公共 Agent HTTP 客户端
-├── deployment/      # 配置、计划、状态、SSH/进程生命周期
-├── application/     # job、proposal、执行协调、运行循环
-├── devices/         # 连接所有权、共享观测、执行仲裁
-├── model_services/  # 推理契约、协议、provider
-├── services/        # CLI/HTTP 入口与兼容导入
-├── robots/          # 机器人适配器
-├── bindings/        # 策略到机器人的映射与安全边界
-└── simulators/      # 仿真器适配器
-```
+## 接入
 
----
-
-## Agent 接入
-
-Agent 保留自己的规划循环，通过公共客户端调用 Control 服务：
+智能体保留自己的规划循环，并通过一个无依赖客户端调用运行时：
 
 ```python
 from embodirun.client import ControlClient
@@ -194,46 +133,27 @@ job = client.execute(runtime="so101-1-runtime", session_id="task-1",
 result = client.inspect(job.job_id)
 ```
 
-客户端无额外依赖，说明见 [`agents/CLIENT.md`](agents/CLIENT.md)。`observe` 与 `propose` 不会让机器人运动；`execute` 与 CLI 走同一套授权、校验与安全检查。请求被接受不等于任务成功——请读取返回的执行证据与下一次观测。
-
-参考适配器位于 [`agents/`](agents/README.md)：[`agents/rpent`](agents/rpent/README.md) 对应 RPent 风格 Agent，[`agents/astra_pi05`](agents/astra_pi05/README.md) 对应评审循环。二者都是软件示例，不属于安装后的核心包。
-
----
+- [公共 Agent 客户端](agents/CLIENT.md)——完整的请求与响应契约。
+- [Inference API v1](docs/http_api.md)——带版本号的策略 API，可通过 HTTP 或 WirelessComm 使用。
+- [RPent 集成](docs/rpent-integration.md)——一个智能体框架接入示例，包含针对真实 π0.5 服务的可复现软件链路。
+- 参考适配器位于 [`agents/`](agents/README.md)；它们是软件示例，不在已安装的包内。
 
 ## 文档
 
-| 文档 | 内容 |
+| | |
 |---|---|
-| [`docs/installation.md`](docs/installation.md) | 安装、extra、可选机器人/仿真 SDK |
-| [`docs/quickstart.md`](docs/quickstart.md) | 第一次部署演练 |
-| [`docs/configuration.md`](docs/configuration.md) | 部署 YAML 参考 |
-| [`docs/control.md`](docs/control.md) | 人工控制、仲裁与软件停止 |
-| [`docs/http_api.md`](docs/http_api.md) | 推理服务 API v1 |
-| [`docs/pi05-bi-so101.md`](docs/pi05-bi-so101.md) | 双臂 SO-101 π0.5 部署指南 |
-| [`docs/safety.md`](docs/safety.md) | 安全限制与操作员清单 |
-| [`docs/architecture.md`](docs/architecture.md) | 运行时域与进程边界 |
-| [`docs/support-matrix.md`](docs/support-matrix.md) | 完整支持状态 |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 开发环境、PR 要求与支持矩阵规则 |
-| [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) / [`SECURITY.md`](SECURITY.md) | 社区行为准则与安全问题上报 |
+| 入门 | [安装](docs/installation.md) · [快速开始](docs/quickstart.md) · [配置](docs/configuration.md) |
+| 运维 | [Control](docs/control.md) · [Safety](docs/safety.md) · [支持矩阵](docs/support-matrix.md) |
+| 接入 | [Inference API v1](docs/http_api.md) · [RPent 集成](docs/rpent-integration.md) · [π0.5 与两个 SO-101](docs/pi05-bi-so101.md) |
+| 了解原理 | [架构](docs/architecture.md) · [实验](docs/experiments.md) |
+| 项目 | [参与贡献](CONTRIBUTING.md) · [行为准则](CODE_OF_CONDUCT.md) · [安全](SECURITY.md) · [许可证与再许可](docs/license.md) |
 
----
+完整文档：**https://embodirun.readthedocs.io/**
 
 ## 参与贡献
 
-欢迎提交贡献。开发环境与 PR 要求见 [`CONTRIBUTING.md`](CONTRIBUTING.md)；在所有项目空间请遵守[《贡献者公约》行为准则](CODE_OF_CONDUCT.md)。发现安全问题请按 [`SECURITY.md`](SECURITY.md) 私下上报，**不要开公开 issue**。
-
-面向审查者与自动化 Agent 的仓库约定见 [`AGENTS.md`](AGENTS.md)。上表中的治理文档（CONTRIBUTING、Code of Conduct、SECURITY）只保留英文，以保证执行时只有唯一权威文本。
-
----
+欢迎贡献。[`CONTRIBUTING.md`](CONTRIBUTING.md) 介绍了开发环境搭建以及 pull request 需要满足的要求；[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) 说明了社区行为期望。请按照 [`SECURITY.md`](SECURITY.md) 私下报告漏洞，切勿在公开 issue 中披露。
 
 ## 许可证
 
-Apache License 2.0，见 [`LICENSE`](LICENSE)、[`NOTICE`](NOTICE)、[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) 与[换 License 的原因](docs/license.md)。模型 checkpoint、数据集、机器人 SDK 与仿真器各自保留其许可证，本仓库不再分发。
-
----
-
-**EmbodiRun — Embodied AI, Ready to Run.**
-
-**Deploy Models. Accelerate Inference. Run Robots.**
-
-**让具身智能用得起、部署快、跑得好。**
+Apache License 2.0——参见 [`LICENSE`](LICENSE)、[`NOTICE`](NOTICE) 和 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。模型检查点、数据集、机器人 SDK 和仿真器各自保留其许可证，不在此处分发。
