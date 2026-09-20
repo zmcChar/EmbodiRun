@@ -6,7 +6,7 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
-[![Docs](https://img.shields.io/badge/docs-embodirun.readthedocs.io-informational.svg)](https://embodirun.readthedocs.io/)
+[![Documentation Status](https://readthedocs.org/projects/embodirun/badge/?version=latest)](https://embodirun.readthedocs.io/en/latest/?badge=latest)
 [![Contributing](https://img.shields.io/badge/contributing-guide-brightgreen.svg)](CONTRIBUTING.md)
 [![Code of Conduct](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
