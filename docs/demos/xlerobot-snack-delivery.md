@@ -104,7 +104,7 @@ A hardware run needs these separately owned pieces:
 | Layer | What the operator prepares |
 | --- | --- |
 | Recipe host | Python 3.10+, this repository, and the public EmbodiRun client. |
-| XLeRobot owner | The owner integration, one serial owner, stable device identities, motor IDs, arm calibration, camera roles, and feedback timestamps. Start in read-only mode. See [XLeRobot owner](../../integrations/xlerobot_owner/README.md). |
+| XLeRobot owner | The owner integration, one serial owner, stable device identities, motor IDs, arm calibration, camera roles, and feedback timestamps. Start in read-only mode. See [XLeRobot owner](https://github.com/BUAA-CI-LAB/EmbodiRun/tree/main/integrations/xlerobot_owner). |
 | EmbodiRun Control | A deployment YAML that names the Control runtime, device binding, action limits, observation freshness checks, and service endpoints. See [Configuration](../configuration.md) and [Control](../control.md). |
 | VLA service | A π0.5/VLA service selected by the manipulation runtime ID. Checkpoints and model-server credentials stay in deployment-owned configuration; they are not committed here. See [π0.5 with two SO-101](../pi05-bi-so101.md) and [Inference API v1](../http_api.md). |
 | RPent | The task and route planner that calls only the public EmbodiRun boundary. See [RPent integration](../rpent-integration.md). |

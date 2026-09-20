@@ -68,7 +68,7 @@ Recipe 是一个场景的公开、可复现运行配方：把任务阶段、硬�
 | 层 | 使用者需要准备什么 |
 | --- | --- |
 | Recipe 主机 | Python 3.10+、本仓库和公共 EmbodiRun 客户端。 |
-| XLeRobot owner | owner 集成、唯一串口 owner、稳定设备身份、电机 ID、机械臂标定、相机角色和反馈时间戳。先以只读模式启动，见 [XLeRobot owner](../../integrations/xlerobot_owner/README.md)。 |
+| XLeRobot owner | owner 集成、唯一串口 owner、稳定设备身份、电机 ID、机械臂标定、相机角色和反馈时间戳。先以只读模式启动，见 [XLeRobot owner](https://github.com/BUAA-CI-LAB/EmbodiRun/tree/main/integrations/xlerobot_owner)。 |
 | EmbodiRun Control | 一份部署 YAML，写明 Control runtime、设备 binding、动作限幅、观测新鲜度检查和服务地址。见[配置](../configuration.md)和 [Control](../control.md)。 |
 | VLA 服务 | 由 manipulation runtime ID 选择的 π0.5 / VLA 服务。检查点和模型服务凭据留在部署配置中，不提交到仓库。见 [π0.5 与两个 SO-101](../pi05-bi-so101.md) 和 [Inference API v1](../http_api.md)。 |
 | RPent | 只通过 EmbodiRun 公共边界调用运行时的任务与路线规划器。见 [RPent 集成](../rpent-integration.md)。 |
