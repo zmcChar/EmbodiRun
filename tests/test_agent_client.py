@@ -524,6 +524,10 @@ def test_real_http_control_and_non_vvla_sglang_proposal_execute_reobserve(
     try:
         described = client.describe()
         assert described["capabilities"]["propose"] is True
+        binding = described["binding"]
+        assert binding["kind"] == "simulated.policy_vector.pi05"
+        assert binding["maximum_chunk_steps"] > 0
+        assert binding["action_feature_names"]
         before = client.observe(include_robot=True)
         assert before.robot["state_native"] == [0.0] * 6
         proposal = client.propose(

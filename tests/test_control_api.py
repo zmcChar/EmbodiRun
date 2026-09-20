@@ -898,6 +898,9 @@ def test_server_wires_persistent_application_routes_and_protects_legacy_control(
         assert status == 200
         assert described["application"]["execute"] is True
         assert described["capabilities"]["direct_execute"] is True
+        assert described["binding"]["kind"]
+        assert described["binding"]["maximum_chunk_steps"] is None
+        assert described["binding"]["action_feature_names"] == []
         status, unauthenticated = request("GET", "/v1/control", auth_headers=False)
         assert status == 401
         assert unauthenticated["code"] == "authentication_required"

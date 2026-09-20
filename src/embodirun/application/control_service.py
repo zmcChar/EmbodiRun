@@ -562,6 +562,7 @@ class ControlService:
             "robot_id": self.config.robot_id,
             "robot_kind": self.config.robot_kind,
             "inference_enabled": self.config.inference_enabled,
+            "binding": _binding_description(self.config),
             "devices": resources,
             "capabilities": {
                 "describe": True,
@@ -1514,6 +1515,38 @@ def _definitions(
             f"robot type {config.robot_kind!r} is not available"
         ) from None
     return binding, robot
+
+
+def _binding_description(config: ControlServiceConfig) -> dict[str, Any]:
+    """Describe the configured binding's action surface without loading it.
+
+    ``describe`` must stay side-effect free, so this reads only the static
+    binding definition.  Agent callers use the feature names and the maximum
+    chunk length to build a bounded ``execute`` request without importing the
+    robot or model packages.
+    """
+
+    try:
+        binding = binding_definition(config.binding_kind)
+    except (KeyError, TypeError):
+        # Device-only and other binding-less services still report a stable
+        # shape so callers do not need a special case.
+        return {
+            "kind": config.binding_kind,
+            "maximum_chunk_steps": None,
+            "action_feature_names": [],
+        }
+    adapter = binding.adapter_config or {}
+    features = adapter.get("action_feature_names")
+    if isinstance(features, (list, tuple)):
+        names = [str(name) for name in features]
+    else:
+        names = []
+    return {
+        "kind": binding.kind,
+        "maximum_chunk_steps": binding.maximum_chunk_steps,
+        "action_feature_names": names,
+    }
 
 
 def _connect_robot(robot: Any, *, prepare: bool) -> None:
