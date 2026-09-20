@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/embodirun-logo.png" alt="EmbodiRun" width="440">
+  <img src="https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/logo.png" alt="EmbodiRun" width="440">
 </p>
 
 **English** | [简体中文](README.zh-CN.md)

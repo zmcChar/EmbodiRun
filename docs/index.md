@@ -1,7 +1,7 @@
 <div class="hero" markdown>
 
 <h1 class="hero-title">
-  <img src="assets/logo.png" alt="EmbodiRun" class="hero-logo">
+  <img src="https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/logo.png" alt="EmbodiRun" class="hero-logo">
 </h1>
 
 **Embodied AI, Ready to Run.**
