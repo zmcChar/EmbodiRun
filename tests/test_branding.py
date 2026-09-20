@@ -23,7 +23,7 @@ import importlib
 import pickle
 import sys
 for suffix in (
-    '', '.robots', '.robots.profile', '.bindings', '.services.host.config',
+    '', '.robots', '.bindings', '.services.host.config',
     '.services.host.plan', '.services.control.contracts',
     '.services.inference.backends.vvla',
 ):

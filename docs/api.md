@@ -37,4 +37,3 @@ custom simulator, a hardware adapter, or a test harness.
         - RobotAdapter
         - RobotObservation
         - RobotAction
-        - RobotProfile

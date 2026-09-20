@@ -11,7 +11,7 @@ from .model_services import (
     VvlaHttpClient,
     VvlaWirelessClient,
 )
-from .robots import RobotAction, RobotAdapter, RobotObservation, RobotProfile
+from .robots import RobotAction, RobotAdapter, RobotObservation
 
 __all__ = [
     "ImagePayload",
@@ -22,7 +22,6 @@ __all__ = [
     "RobotAction",
     "RobotAdapter",
     "RobotObservation",
-    "RobotProfile",
     "Session",
     "SglangHttpClient",
     "VvlaHttpClient",
