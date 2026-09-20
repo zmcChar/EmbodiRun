@@ -39,6 +39,7 @@ to "Tested — real robot".
 | RPent agent adapter | Public-client contract in `agents/rpent`; reference robot in the RPent fork | Experimental, software only; RPent-side registration is owned by the RPent project | `agents/rpent/README.md`, `BUAA-CI-LAB/RPent:embodirun-integration` |
 | Astra + π0.5 review loop | Cooperative loop with an injectable reviewer | Experimental, mock reviewer | `agents/astra_pi05/README.md` |
 | XLeRobot external owner | Optional integration package | Experimental, separately installed | `integrations/xlerobot_owner/README.md` |
+| Wired SO-101 teleoperation | Optional integration package; multi-leader UDP fan-out and follower-side episode recording | Experimental, separately installed; no real-robot validation recorded in this repository | `integrations/so101_wired_teleop/README.md` |
 | LightNav-0 + XLeRobot (remote HTTP) | Binding, remote robot client, local segment, teleop | Experimental, software | `docs/lightnav0_xlerobot.md` |
 | Camera / transport experiments | GStreamer capture, camera shared memory, NIXL tensors, Zenoh endpoint | Experimental, skipped without the optional dependency | `docs/camera-only-experiments.md`, `docs/transport-experiments.md` |
 
