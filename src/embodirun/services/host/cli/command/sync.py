@@ -30,7 +30,7 @@ def register(commands: Any) -> None:
         "--source",
         type=Path,
         default=Path("."),
-        help="local RLinf Deploy repository root (default: current directory)",
+        help="local EmbodiRun repository root (default: current directory)",
     )
     parser.set_defaults(command_handler=run)
 

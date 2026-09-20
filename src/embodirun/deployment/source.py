@@ -230,7 +230,7 @@ def active_deploy_project(deployment_root: str) -> str:
 
 
 def build_source_archive(value: Path) -> SourceArchive:
-    """Validate and archive one local RLinf Deploy source tree."""
+    """Validate and archive one local EmbodiRun source tree."""
 
     source = value.expanduser().resolve()
     missing = [
@@ -240,7 +240,7 @@ def build_source_archive(value: Path) -> SourceArchive:
     ]
     if missing:
         raise SourceError(
-            f"{source} is not an RLinf Deploy source tree; missing: "
+            f"{source} is not an EmbodiRun source tree; missing: "
             + ", ".join(missing)
         )
     package_root = source / "src" / "embodirun"
