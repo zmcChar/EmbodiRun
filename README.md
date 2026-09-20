@@ -172,7 +172,7 @@ model, robot, or platform being supported does not mean they work together.
 | Unitree Go2 + StreamVLN | Robot agent, binding, SSH deployer | Experimental | `src/embodirun/robots/unitree/go2` |
 | SGLang HTTP backend | Provider, client, adapter | Tested — software (skipped without `sglang`) | `[sglang]` extra |
 | Multi-node shared inference | Config, benchmark, control arbitration | Tested — software benchmark | `configs/http-wireless-inference/` |
-| RPent agent adapter | `agents/rpent` public-client session | Experimental, software only; RPent-side registration owned by the RPent project | `agents/rpent/README.md` |
+| RPent agent adapter | `agents/rpent` contract + `robots/embodirun` in the RPent fork | Experimental, software only; RPent-side registration owned by the RPent project | `BUAA-CI-LAB/RPent:embodirun-integration` |
 | Astra + π0.5 review loop | `agents/astra_pi05` examples | Experimental, mock reviewer | `agents/astra_pi05/README.md` |
 | XLeRobot external owner | `integrations/xlerobot_owner` | Experimental, separately installed | `integrations/xlerobot_owner/README.md` |
 | LightNav-0 + XLeRobot | `bindings/xlerobot/lightnav0` | Experimental, software | `docs/lightnav0_xlerobot.md` |

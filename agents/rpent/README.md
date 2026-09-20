@@ -13,6 +13,15 @@ RPent-side code consumes; it never imports RPent modules and never owns a
 device. The `PublicCooperativeSession` ordering, the Astra decision seam, and
 the SO-101 correction mapper can be reused directly by the RPent-side adapter.
 
+**Reference adapter.** The maintained RPent-side integration lives in the
+`BUAA-CI-LAB/RPent` fork on the `embodirun-integration` branch:
+`robots/embodirun/` implements `get_robot_spec`/`get_toolkit`, talks to this
+repository's public Control HTTP API, owns no Env/VLA server or daemon, and
+returns `([], runtime_kwargs)` from `init_runtime`. `GET /v1/describe` reports
+the binding kind, `maximum_chunk_steps`, and `action_feature_names` so the
+adapter can build a bounded `execute` request without importing robot or model
+packages.
+
 The prototype lives in the separate RPent-deploy-integration repository.  Use
 the repository's configured remote and checkout instructions to inspect its
 current files; this package deliberately does not depend on a workstation

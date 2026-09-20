@@ -4,7 +4,9 @@
 existing versioned Control HTTP routes.  It carries caller/session identity on
 each request and exposes:
 
-- `describe()`
+- `describe()` — capabilities plus the configured `binding` section (`kind`,
+  `maximum_chunk_steps`, `action_feature_names`) so a caller can build a
+  bounded `execute` request without importing robot or model packages
 - `observe()` and `media()` for shared observations
 - `propose()` for one non-executing inference step against a retained
   `observation_id`

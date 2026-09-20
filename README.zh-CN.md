@@ -133,7 +133,7 @@ EmbodiRun 把三层性能分开测量，让每个数字都有明确范围：模�
 | Unitree Go2 + StreamVLN | 机器人 agent、绑定、SSH 部署 | Experimental | `src/embodirun/robots/unitree/go2` |
 | SGLang HTTP 后端 | provider、客户端、适配器 | Tested —— 软件（无 sglang 时跳过） | `[sglang]` extra |
 | 多控制节点共享推理 | 配置、benchmark、控制仲裁 | Tested —— 软件 benchmark | `configs/http-wireless-inference/` |
-| RPent Agent 适配 | `agents/rpent` 公共客户端会话 | Experimental，仅软件；RPent 侧注册由 RPent 项目负责 | `agents/rpent/README.md` |
+| RPent Agent 适配 | `agents/rpent` 契约 + RPent fork 中的 `robots/embodirun` | Experimental，仅软件；RPent 侧注册由 RPent 项目负责 | `BUAA-CI-LAB/RPent:embodirun-integration` |
 | Astra + π0.5 评审循环 | `agents/astra_pi05` 示例 | Experimental，模拟 reviewer | `agents/astra_pi05/README.md` |
 | XLeRobot external owner | `integrations/xlerobot_owner` | Experimental，独立安装 | `integrations/xlerobot_owner/README.md` |
 | LightNav-0 + XLeRobot | `bindings/xlerobot/lightnav0` | Experimental，软件 | `docs/lightnav0_xlerobot.md` |
