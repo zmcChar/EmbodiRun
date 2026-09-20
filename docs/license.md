@@ -63,15 +63,14 @@ Contributors with commits in **EmbodiRun** include:
 
 - yufoo1 `<yufoo1.cs@gmail.com>`
 - cc `<cclonelycc@outlook.com>`
-- hootandy321 / Xingyu Liu `<133196559+hootandy321@users.noreply.github.com>`
+- Xingyu Liu `<133196559+hootandy321@users.noreply.github.com>`
 - Ao Zhou `<425109310@qq.com>`
-- 刘兴宇 `<hootandy@outlook.com>`
 
 Contributors with commits in **EmbodiInfer** include:
 
 - yufoo1 `<yufoo1.cs@gmail.com>`
 - Longxmas `<1185267696@qq.com>`
-- Liu xingyu `<133196559+hootandy321@users.noreply.github.com>`
+- Xingyu Liu `<133196559+hootandy321@users.noreply.github.com>`
 - Ao Zhou `<425109310@qq.com>`
 - cc `<cclonelycc@outlook.com>`
 
