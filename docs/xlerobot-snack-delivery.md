@@ -21,16 +21,16 @@ The recipe keeps the ownership boundary explicit:
 ## Start from the recipe directory
 
 The complete recipe package is under
-[`recipes/xlerobot/snack_delivery`](../recipes/xlerobot/snack_delivery/README.md):
+[`recipes/xlerobot/snack_delivery`](https://github.com/BUAA-CI-LAB/EmbodiRun/tree/main/recipes/xlerobot/snack_delivery):
 
 | Need | Document |
 |---|---|
-| Scene, components, and agent/model split | [`README.md`](../recipes/xlerobot/snack_delivery/README.md) |
-| Hardware bill of materials and planning prices | [`hardware.md`](../recipes/xlerobot/snack_delivery/hardware.md) |
-| Setup, calibration, routes, and supervised execution | [`guide.md`](../recipes/xlerobot/snack_delivery/guide.md) |
-| Public interfaces and evidence contract | [`architecture.md`](../recipes/xlerobot/snack_delivery/architecture.md) |
-| Deployment fields | [`deployment.example.yaml`](../recipes/xlerobot/snack_delivery/deployment.example.yaml), [`config.example.json`](../recipes/xlerobot/snack_delivery/config.example.json) |
-| Local setup and launch | [`scripts/recipes/xlerobot_snack_setup.sh`](../scripts/recipes/xlerobot_snack_setup.sh), [`scripts/recipes/xlerobot_snack.sh`](../scripts/recipes/xlerobot_snack.sh) |
+| Scene, components, and agent/model split | [`README.md`](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/recipes/xlerobot/snack_delivery/README.md) |
+| Hardware bill of materials and planning prices | [`hardware.md`](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/recipes/xlerobot/snack_delivery/hardware.md) |
+| Setup, calibration, routes, and supervised execution | [`guide.md`](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/recipes/xlerobot/snack_delivery/guide.md) |
+| Public interfaces and evidence contract | [`architecture.md`](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/recipes/xlerobot/snack_delivery/architecture.md) |
+| Deployment fields | [`deployment.example.yaml`](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/recipes/xlerobot/snack_delivery/deployment.example.yaml), [`config.example.json`](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/recipes/xlerobot/snack_delivery/config.example.json) |
+| Local setup and launch | [`scripts/recipes/xlerobot_snack_setup.sh`](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/scripts/recipes/xlerobot_snack_setup.sh), [`scripts/recipes/xlerobot_snack.sh`](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/scripts/recipes/xlerobot_snack.sh) |
 
 The default route files are marked as fixtures and are accepted only by
 `dry-run`. For a real scene, record directed route chunks in the target space
