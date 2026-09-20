@@ -29,19 +29,14 @@ def parse_runtime(runtime_id: str, value: dict[str, Any]) -> RuntimeConfig:
     context = f"runtimes.{runtime_id}"
     server = parse_server(value.get("server"), f"{context}.server")
     if server.bind not in {"127.0.0.1", "localhost", "::1"}:
-        raise ConfigError(
-            f"{context}.server.bind must be a loopback address because Host "
-            "connects through SSH"
-        )
+        raise ConfigError(f"{context}.server.bind must be a loopback address because Host connects through SSH")
     inputs_value = mapping(value.get("inputs", {}), f"{context}.inputs")
     inputs: dict[str, str] = {}
     for input_name, sensor_id in inputs_value.items():
         if not input_name.strip():
             raise ConfigError(f"{context}.inputs keys must not be empty")
         if not isinstance(sensor_id, str) or not sensor_id.strip():
-            raise ConfigError(
-                f"{context}.inputs.{input_name} must reference a sensor ID"
-            )
+            raise ConfigError(f"{context}.inputs.{input_name} must reference a sensor ID")
         inputs[input_name] = sensor_id
     robot = value.get("robot")
     simulator = value.get("simulator")
@@ -52,13 +47,10 @@ def parse_runtime(runtime_id: str, value: dict[str, Any]) -> RuntimeConfig:
     model = optional_string(value, "model", context)
     binding = optional_string(value, "binding", context)
     if (model is None) != (binding is None):
-        raise ConfigError(
-            f"{context}.model and {context}.binding must be provided together"
-        )
+        raise ConfigError(f"{context}.model and {context}.binding must be provided together")
     if target_name == "simulator" and model is None:
         raise ConfigError(
-            f"{context} simulator runtimes require model and binding; "
-            "device-only mode is available for robots only"
+            f"{context} simulator runtimes require model and binding; device-only mode is available for robots only"
         )
     return RuntimeConfig(
         runtime_id=runtime_id,
@@ -69,9 +61,7 @@ def parse_runtime(runtime_id: str, value: dict[str, Any]) -> RuntimeConfig:
         inputs=inputs,
         server=server,
         inference_client=(
-            parse_inference_client(
-                value["inference_client"], f"{context}.inference_client"
-            )
+            parse_inference_client(value["inference_client"], f"{context}.inference_client")
             if "inference_client" in value
             else None
         ),

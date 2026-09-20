@@ -43,9 +43,7 @@ def ensure_cyclonedds_library_dir(
     if not os.path.isfile(library):
         raise RuntimeError(f"CycloneDDS library does not exist: {library}")
     if dds_library_has_unsafe_iceoryx(library):
-        raise RuntimeError(
-            f"CycloneDDS library contains the incompatible Iceoryx publisher ABI: {library}"
-        )
+        raise RuntimeError(f"CycloneDDS library contains the incompatible Iceoryx publisher ABI: {library}")
 
     current = os.environ.get("LD_LIBRARY_PATH", "")
     entries = [entry for entry in current.split(os.pathsep) if entry]
@@ -74,9 +72,7 @@ def load_sdk_components(
         from unitree_sdk2py.go2.sport.sport_client import SportClient
         from unitree_sdk2py.idl.unitree_go.msg.dds_ import SportModeState_
     except ImportError as exc:
-        raise RuntimeError(
-            "Unitree SDK2 is unavailable; install unitree_sdk2_python in the robot environment"
-        ) from exc
+        raise RuntimeError("Unitree SDK2 is unavailable; install unitree_sdk2_python in the robot environment") from exc
 
     if required_dds_lib_dir is not None:
         expected_dir = os.path.realpath(required_dds_lib_dir)
@@ -88,8 +84,7 @@ def load_sdk_components(
             )
         if dds_library_has_unsafe_iceoryx(loaded_library):
             raise RuntimeError(
-                "refusing an Iceoryx-enabled CycloneDDS library that is "
-                "ABI-incompatible with this Python binding"
+                "refusing an Iceoryx-enabled CycloneDDS library that is ABI-incompatible with this Python binding"
             )
     return (
         ChannelFactoryInitialize,

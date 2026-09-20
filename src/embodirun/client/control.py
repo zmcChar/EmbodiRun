@@ -9,18 +9,18 @@ space from an arbitrary vector.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 import json
 import math
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 from urllib.error import HTTPError as UrllibHTTPError
-from urllib.parse import quote, urlencode
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
-from .transport import ControlClientError, request_json as shared_request_json
+from .transport import ControlClientError
+from .transport import request_json as shared_request_json
 
 
 class AgentClientError(ControlClientError):
@@ -146,11 +146,9 @@ class ControlClient:
             or parsed.query
             or parsed.fragment
         ):
-            raise ValueError(
-                "control endpoint must be an HTTP(S) URL without credentials, query, or fragment"
-            )
+            raise ValueError("control endpoint must be an HTTP(S) URL without credentials, query, or fragment")
         try:
-            parsed.port
+            _ = parsed.port
         except ValueError as error:
             raise ValueError("control endpoint must include a valid port") from error
         _non_empty(caller_id, "caller_id")
@@ -307,9 +305,7 @@ class ControlClient:
             "actions": actions,
             "source": source,
             "observation_id": observation_id,
-            "steps": steps
-            if steps is not None
-            else (1 if isinstance(actions, Mapping) else len(actions)),
+            "steps": steps if steps is not None else (1 if isinstance(actions, Mapping) else len(actions)),
             "control_hz": control_hz,
             "wait": bool(wait),
             "timeout_s": timeout_s,
@@ -327,9 +323,7 @@ class ControlClient:
         still need the device's feedback path for that claim.
         """
 
-        return self._request(
-            "GET", f"/v1/jobs/{quote(_non_empty(request_id, 'request_id'), safe=':')}"
-        )
+        return self._request("GET", f"/v1/jobs/{quote(_non_empty(request_id, 'request_id'), safe=':')}")
 
     def cancel(self, request_id: str) -> dict[str, Any]:
         """Request cancellation of a Control job identified by ``request_id``.
@@ -386,9 +380,7 @@ class ControlClient:
 
         if not isinstance(active, bool):
             raise TypeError("active must be a boolean")
-        return self._request(
-            "POST", "/v1/control/manual/deadman", body={"active": active}
-        )
+        return self._request("POST", "/v1/control/manual/deadman", body={"active": active})
 
     def _request(
         self,
@@ -417,13 +409,10 @@ class ControlClient:
             )
         except ControlClientError as error:
             if error.status is None:
-                raise ControlTransportError(
-                    str(error), request_id=request_id
-                ) from error
+                raise ControlTransportError(str(error), request_id=request_id) from error
             error_type = (
                 UnsupportedOperation
-                if isinstance(error.payload, Mapping)
-                and error.payload.get("code") == "unsupported"
+                if isinstance(error.payload, Mapping) and error.payload.get("code") == "unsupported"
                 else ControlHTTPError
             )
             raise error_type(
@@ -461,9 +450,7 @@ class _URLTransport:
         headers: Mapping[str, str] | None = None,
     ) -> Any:
         data = (
-            json.dumps(payload, allow_nan=False, separators=(",", ":")).encode("utf-8")
-            if payload is not None
-            else None
+            json.dumps(payload, allow_nan=False, separators=(",", ":")).encode("utf-8") if payload is not None else None
         )
         request_headers = {"Accept": "application/json", **dict(headers or {})}
         if data is not None:

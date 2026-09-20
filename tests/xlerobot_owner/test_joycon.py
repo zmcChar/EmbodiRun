@@ -1,7 +1,6 @@
 from dataclasses import replace
 
 import pytest
-
 from embodirun_xlerobot_owner.control import CAMERAS, JOINT_NAMES, MappingConfig
 from embodirun_xlerobot_owner.joycon_input import (
     JoyconDevice,
@@ -23,9 +22,7 @@ def pair(**changes):
 
 def state_and_limits():
     state = {name: 50 if name.endswith("gripper.pos") else 0 for name in JOINT_NAMES}
-    limits = {
-        name: [0, 100] if name.endswith("gripper.pos") else [-120, 120] for name in JOINT_NAMES
-    }
+    limits = {name: [0, 100] if name.endswith("gripper.pos") else [-120, 120] for name in JOINT_NAMES}
     return state, limits
 
 

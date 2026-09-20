@@ -1,7 +1,7 @@
 """XLeRobot external-owner proxy."""
 
 from ... import RobotDefinition
-from .adapter import XLeRobotAdapter, XLeRobotAdapterError, XLEROBOT_ACTION_SPACE
+from .adapter import XLEROBOT_ACTION_SPACE, XLeRobotAdapter, XLeRobotAdapterError
 from .config import XLeRobotConfig
 
 ROBOT_DEFINITION = RobotDefinition(

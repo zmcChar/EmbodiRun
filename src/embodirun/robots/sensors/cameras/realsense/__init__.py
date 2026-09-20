@@ -27,17 +27,13 @@ def create_source(inputs: Sequence[SensorInput]) -> RealSenseCameraSource:
         unknown = sorted(set(options) - allowed)
         if unknown:
             raise RealSenseCameraError(
-                f"sensor {item.sensor_id!r} contains unknown RealSense fields: "
-                f"{', '.join(unknown)}"
+                f"sensor {item.sensor_id!r} contains unknown RealSense fields: {', '.join(unknown)}"
             )
         try:
-            cameras.append(
-                RealSenseCameraConfig(name=item.name, **options)
-            )
+            cameras.append(RealSenseCameraConfig(name=item.name, **options))
         except (TypeError, ValueError) as error:
             raise RealSenseCameraError(
-                f"sensor {item.sensor_id!r} has invalid RealSense configuration: "
-                f"{error}"
+                f"sensor {item.sensor_id!r} has invalid RealSense configuration: {error}"
             ) from error
     return RealSenseCameraSource(cameras)
 

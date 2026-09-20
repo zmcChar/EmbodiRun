@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from embodirun.deployment.config.robot import parse_robot
 from embodirun.deployment.config.loader import _validate_unique_robot_ports
+from embodirun.deployment.config.robot import parse_robot
 from embodirun.deployment.config.validation import ConfigError
 from embodirun.deployment.executor import CommandResult
 from embodirun.deployment.operations.init import _probe_resources

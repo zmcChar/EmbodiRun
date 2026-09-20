@@ -23,9 +23,7 @@ def parse_inference_client(value: Any, context: str) -> InferenceClientConfig:
             {key: item for key, item in raw.items() if key != "transport_options"},
             context,
         ),
-        transport_options=parse_transport_options(
-            raw.get("transport_options", {}), f"{context}.transport_options"
-        ),
+        transport_options=parse_transport_options(raw.get("transport_options", {}), f"{context}.transport_options"),
     )
 
 

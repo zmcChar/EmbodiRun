@@ -17,9 +17,7 @@ from .config import BiSO101Config
 
 BI_SO101_ACTION_SPACE = "lerobot.bi_so101.position.v1"
 BI_SO101_POSITION_FEATURES = tuple(
-    f"{side}_arm_{feature}"
-    for side in ("left", "right")
-    for feature in SO101_POSITION_FEATURES
+    f"{side}_arm_{feature}" for side in ("left", "right") for feature in SO101_POSITION_FEATURES
 )
 
 
@@ -46,10 +44,7 @@ def _arm_values(value: object, side: str) -> dict[str, object]:
         raise SO101AdapterError(f"{side}.joint_positions_deg must be a sequence")
     if len(joints) != 5:
         raise SO101AdapterError(f"{side}.joint_positions_deg must contain 5 values")
-    values = [
-        _finite_number(item, f"{side}.joint_positions_deg[{index}]")
-        for index, item in enumerate(joints)
-    ]
+    values = [_finite_number(item, f"{side}.joint_positions_deg[{index}]") for index, item in enumerate(joints)]
     gripper = _finite_number(value["gripper_position"], f"{side}.gripper_position")
     if not 0.0 <= gripper <= 100.0:
         raise SO101AdapterError(f"{side}.gripper_position must be in [0, 100]")
@@ -108,9 +103,7 @@ class BiSO101Adapter(RobotAdapter):
         right = self.right.observe()
         left_values = left.values
         right_values = right.values
-        if not isinstance(left_values, Mapping) or not isinstance(
-            right_values, Mapping
-        ):
+        if not isinstance(left_values, Mapping) or not isinstance(right_values, Mapping):
             raise SO101AdapterError("SO-101 observation values must be objects")
         positions = (
             *left_values["joint_positions_deg"],
@@ -150,9 +143,7 @@ class BiSO101Adapter(RobotAdapter):
             "left",
             "right",
         }:
-            raise SO101AdapterError(
-                "dual SO-101 joint_position requires left and right targets"
-            )
+            raise SO101AdapterError("dual SO-101 joint_position requires left and right targets")
         left_values = _arm_values(action.values["left"], "left")
         right_values = _arm_values(action.values["right"], "right")
         actions = [

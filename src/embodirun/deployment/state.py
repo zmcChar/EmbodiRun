@@ -82,16 +82,9 @@ class StateStore:
             "config_digest": state.config_digest,
             "deploy_commit": state.deploy_commit,
             "inference_commit": state.inference_commit,
-            "nodes": {
-                name: asdict(value) for name, value in sorted(state.nodes.items())
-            },
-            "environments": {
-                name: asdict(value)
-                for name, value in sorted(state.environments.items())
-            },
-            "services": {
-                name: asdict(value) for name, value in sorted(state.services.items())
-            },
+            "nodes": {name: asdict(value) for name, value in sorted(state.nodes.items())},
+            "environments": {name: asdict(value) for name, value in sorted(state.environments.items())},
+            "services": {name: asdict(value) for name, value in sorted(state.services.items())},
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary_path: Path | None = None
@@ -121,26 +114,20 @@ def _parse_state(value: Any) -> DeploymentState:
     version = root.get("version")
     if version != _STATE_VERSION:
         raise StateError(f"unsupported state version: {version!r}")
-    nodes = {
-        name: _node_state(name, item)
-        for name, item in _mapping(root.get("nodes", {}), "nodes").items()
-    }
+    nodes = {name: _node_state(name, item) for name, item in _mapping(root.get("nodes", {}), "nodes").items()}
     environments = {
         name: _environment_state(name, item)
         for name, item in _mapping(root.get("environments", {}), "environments").items()
     }
     services = {
-        name: _service_state(name, item)
-        for name, item in _mapping(root.get("services", {}), "services").items()
+        name: _service_state(name, item) for name, item in _mapping(root.get("services", {}), "services").items()
     }
     return DeploymentState(
         name=_string(root, "name", "state"),
         config_digest=_string(root, "config_digest", "state"),
         deploy_commit=_string(root, "deploy_commit", "state"),
         inference_commit=(
-            _string(root, "inference_commit", "state")
-            if root.get("inference_commit") is not None
-            else None
+            _string(root, "inference_commit", "state") if root.get("inference_commit") is not None else None
         ),
         nodes=nodes,
         environments=environments,
@@ -195,9 +182,7 @@ def _service_state(name: str, value: Any) -> ServiceState:
     if status not in {"stopped", "running", "failed"}:
         raise StateError(f"services.{name}.status is invalid")
     pid = item.get("pid")
-    if pid is not None and (
-        isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0
-    ):
+    if pid is not None and (isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0):
         raise StateError(f"services.{name}.pid must be a positive integer")
     endpoint = item.get("endpoint")
     if endpoint is not None and (not isinstance(endpoint, str) or not endpoint):

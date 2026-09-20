@@ -45,13 +45,9 @@ def probe_node(executor: Executor, *, require_init_tools: bool = False) -> NodeP
         uv=uv,
     )
     if require_init_tools:
-        missing = [
-            name for name in ("python", "git", "uv") if getattr(probe, name) is None
-        ]
+        missing = [name for name in ("python", "git", "uv") if getattr(probe, name) is None]
         if missing:
-            raise EnvironmentError(
-                "node is missing tools required by init: " + ", ".join(missing)
-            )
+            raise EnvironmentError("node is missing tools required by init: " + ", ".join(missing))
         if probe.python_version is None:
             raise EnvironmentError("node Python could not report its version")
     return probe

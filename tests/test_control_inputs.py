@@ -8,6 +8,7 @@ import pytest
 from embodirun.robots import RobotObservation
 from embodirun.robots.arx.x5 import ARX5_ACTION_SPACE
 from embodirun.robots.lerobot.so101 import SO101_ACTION_SPACE
+from embodirun.services.control import teleop as teleop_module
 from embodirun.services.control.inputs import (
     ControlInputBridge,
     InputEvent,
@@ -25,7 +26,6 @@ from embodirun.services.control.teleop import (
     intent_action_factory,
     resolve_teleop_action,
 )
-from embodirun.services.control import teleop as teleop_module
 
 
 class FakeArbiter:
@@ -160,8 +160,7 @@ def test_joystick_supports_split_packets_and_deadman_heartbeat() -> None:
     chunks = iter(
         (
             _js_packet(JoystickInput.JS_EVENT_BUTTON, 0, 1)[:3],
-            _js_packet(JoystickInput.JS_EVENT_BUTTON, 0, 1)[3:]
-            + _js_packet(JoystickInput.JS_EVENT_BUTTON, 4, 1),
+            _js_packet(JoystickInput.JS_EVENT_BUTTON, 0, 1)[3:] + _js_packet(JoystickInput.JS_EVENT_BUTTON, 4, 1),
         )
     )
     joystick = JoystickInput(

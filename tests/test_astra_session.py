@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
 import threading
+from pathlib import Path
 from typing import Any
 
-from agents.astra_pi05.reviewer import AstraCodexReviewer, MODEL
 from agents.astra_pi05.recording import SessionRecorder
+from agents.astra_pi05.reviewer import MODEL, AstraCodexReviewer
 from agents.rpent.session import PublicCooperativeSession, normalize_public_proposal
-from embodirun.client import ControlClient, Observation
 
+from embodirun.client import ControlClient, Observation
 
 NAMES = tuple(f"joint_{index}" for index in range(12))
 META = {
@@ -100,10 +100,7 @@ def test_public_session_runs_propose_review_execute_reobserve_and_records(tmp_pa
     assert len(executed) == 1 and len(executed[0][0]) == 3
     assert reviewer_packets[0]["proposal"]["observation_id"] == "obs-1"
     assert result["rounds"][0]["post_observation_id"] == "obs-3"
-    events = [
-        json.loads(line)
-        for line in (tmp_path / "recording" / "events.jsonl").read_text().splitlines()
-    ]
+    events = [json.loads(line) for line in (tmp_path / "recording" / "events.jsonl").read_text().splitlines()]
     assert [event["kind"] for event in events] == [
         "session_started",
         "execute_submitted",
@@ -221,10 +218,13 @@ def test_cancel_targets_request_before_blocking_public_execute() -> None:
         }
 
     client.execute = execute  # type: ignore[method-assign]
-    client.cancel = lambda request_id: cancelled.append(request_id) or {  # type: ignore[method-assign]
-        "status": "cancel_requested",
-        "request_id": request_id,
-    }
+    client.cancel = lambda request_id: (
+        cancelled.append(request_id)
+        or {  # type: ignore[method-assign]
+            "status": "cancel_requested",
+            "request_id": request_id,
+        }
+    )
 
     def reviewer(packet):
         return {
@@ -300,9 +300,7 @@ def test_session_does_not_continue_after_invalid_execution_evidence() -> None:
 
 
 def test_run_skill_rejects_unconfigured_skill() -> None:
-    session = PublicCooperativeSession(
-        _client(), reviewer=lambda _packet: {}, instruction="move"
-    )
+    session = PublicCooperativeSession(_client(), reviewer=lambda _packet: {}, instruction="move")
     try:
         session.run_skill("arbitrary", "move")
     except ValueError as error:

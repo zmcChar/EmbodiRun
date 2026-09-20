@@ -12,10 +12,8 @@ from embodirun.robots.lerobot.so101.config import SO101Config
 def controller(failure=None, present=2000):
     c = object.__new__(_FeetechSO101Controller)
     c.config = SO101Config(port="/dev/fake")
-    c.calibration = {
-        name: _MotorCalibration(i, 0, 0, 1000, 3000) for name, i in _MOTOR_IDS.items()
-    }
-    c.torque = {i: 0 for i in range(1, 7)}
+    c.calibration = {name: _MotorCalibration(i, 0, 0, 1000, 3000) for name, i in _MOTOR_IDS.items()}
+    c.torque = dict.fromkeys(range(1, 7), 0)
     c.writes = []
     c._read_register = lambda motor, register, **kw: present if register[0] == 56 else 0
     failed = False
@@ -27,9 +25,7 @@ def controller(failure=None, present=2000):
             failed = True
             raise SO101AdapterError("injected write failure")
         if register[0] == 42:
-            c.torque[motor] = (
-                1  # Account for the partial activation observed after goal writes.
-            )
+            c.torque[motor] = 1  # Account for the partial activation observed after goal writes.
         if register[0] == 40:
             c.torque[motor] = value
 
@@ -55,9 +51,7 @@ def test_partial_enable_failure_disables_every_motor():
 def test_small_encoder_overshoot_uses_valid_bounded_goal():
     c = controller(present=3004)
     c._configure()
-    assert [(m, v) for m, r, v in c.writes if r == 42] == [
-        (m, 3000) for m in range(1, 7)
-    ]
+    assert [(m, v) for m, r, v in c.writes if r == 42] == [(m, 3000) for m in range(1, 7)]
 
 
 def test_large_overshoot_sends_no_position_goals():
@@ -81,19 +75,13 @@ def test_initial_goals_precede_torque_enable():
     c = controller()
     c._configure()
     last_goal = max(i for i, (_, register, _) in enumerate(c.writes) if register == 42)
-    first_enable = next(
-        i
-        for i, (_, register, value) in enumerate(c.writes)
-        if register == 40 and value == 1
-    )
+    first_enable = next(i for i, (_, register, value) in enumerate(c.writes) if register == 40 and value == 1)
     assert last_goal < first_enable
 
 
 def test_late_invalid_joint_prevents_all_goal_writes():
     c = controller()
-    c._read_register = lambda motor, register, **kw: (
-        (3500 if motor == 5 else 2000) if register[0] == 56 else 0
-    )
+    c._read_register = lambda motor, register, **kw: (3500 if motor == 5 else 2000) if register[0] == 56 else 0
     with pytest.raises(SO101AdapterError, match="configured step limit"):
         c._configure()
     assert not any(register == 42 for _, register, _ in c.writes)
@@ -114,9 +102,7 @@ def test_cleanup_failure_preserves_startup_error():
         original(motor, register, value, **kwargs)
 
     c._write_register = write
-    with pytest.raises(
-        SO101AdapterError, match="original goal write failure"
-    ) as caught:
+    with pytest.raises(SO101AdapterError, match="original goal write failure") as caught:
         c._configure()
     assert "torque shutdown incomplete" in str(caught.value.__cause__)
     assert (6, 55, 0) in c.writes

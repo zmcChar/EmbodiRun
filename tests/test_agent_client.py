@@ -1,26 +1,30 @@
 from __future__ import annotations
 
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import socket
 import threading
 import time
+from collections.abc import Mapping, Sequence
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import pytest
 
 from embodirun.client import ControlClient, ControlHTTPError
-from embodirun.robots import RobotAction
+from embodirun.robots import RobotAction, RobotObservation
+from embodirun.robots.sensors import SensorInput
+from embodirun.robots.sensors.cameras import CameraFrame
 from embodirun.services.control.application import ControlApplication
 from embodirun.services.control.arbitration import RobotControlArbiter
+from embodirun.services.control.contracts import ControlServiceConfig
+from embodirun.services.control.devices import DeviceManager
 from embodirun.services.control.http_api import ControlHTTPAPI
 from embodirun.services.control.io import IOResult, IOStatus
 from embodirun.services.control.observation_store import ObservationStore
 from embodirun.services.control.observation_values import ObservationSnapshot
-from embodirun.robots.sensors.cameras import CameraFrame
-from embodirun.robots.sensors import SensorInput
-from embodirun.robots import RobotObservation
+from embodirun.services.control.proposals import ProposalError, generate_proposal
+from embodirun.services.control.server import ControlHttpServer, ControlService
 from embodirun.services.inference import (
     ImagePayload,
     PolicyAction,
@@ -28,10 +32,6 @@ from embodirun.services.inference import (
     PolicyResult,
     Session,
 )
-from embodirun.services.control.proposals import ProposalError, generate_proposal
-from embodirun.services.control.contracts import ControlServiceConfig
-from embodirun.services.control.devices import DeviceManager
-from embodirun.services.control.server import ControlHttpServer, ControlService
 
 
 class _Port:
@@ -76,9 +76,7 @@ class _Service:
             "observation_id": f"obs-{self.count}",
             "runtime_id": runtime_id,
             "robot": (
-                {"j0": float(len(self.port.actions) if self.port is not None else 0.0)}
-                if include_robot
-                else None
+                {"j0": float(len(self.port.actions) if self.port is not None else 0.0)} if include_robot else None
             ),
         }
 
@@ -102,9 +100,7 @@ class _Handler(BaseHTTPRequestHandler):
     def _call(self, method: str) -> None:
         length = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(length)) if length else None
-        result = self.server.api.dispatch(
-            method, self.path, body=body, headers=dict(self.headers.items())
-        )
+        result = self.server.api.dispatch(method, self.path, body=body, headers=dict(self.headers.items()))
         encoded = json.dumps(result.payload).encode("utf-8")
         self.send_response(result.status)
         self.send_header("Content-Type", "application/json")
@@ -280,9 +276,7 @@ def test_real_http_propose_consumes_exact_snapshot_and_closes_only_session() -> 
 
     inference = FakeInference()
     binding = SimpleNamespace(mapper_factory=lambda: mapper)
-    profile = SimpleNamespace(
-        runtime_id="runtime", robot_id="fake", inference_enabled=True
-    )
+    profile = SimpleNamespace(runtime_id="runtime", robot_id="fake", inference_enabled=True)
 
     class Service:
         def proposal_context(self, observation_id, *, runtime_id=None):
@@ -374,9 +368,7 @@ def test_proposal_rejects_mismatched_non_vvla_result_identity() -> None:
         def close(self, _session_id):
             return None
 
-    profile = SimpleNamespace(
-        runtime_id="runtime", robot_id="fake", inference_enabled=True
-    )
+    profile = SimpleNamespace(runtime_id="runtime", robot_id="fake", inference_enabled=True)
     binding = SimpleNamespace(mapper_factory=Mapper)
     inference = Inference()
 
@@ -508,9 +500,7 @@ def test_real_http_control_and_non_vvla_sglang_proposal_execute_reobserve(
     )
     service = ControlService(
         config,
-        camera_factory=lambda items: _TwoFrameSource(
-            tuple(item.name for item in items)
-        ),
+        camera_factory=lambda items: _TwoFrameSource(tuple(item.name for item in items)),
         device_manager=DeviceManager("local", lock_dir=tmp_path / "locks"),
     )
     api_server = ControlHttpServer(service)
@@ -561,10 +551,7 @@ def test_real_http_control_and_non_vvla_sglang_proposal_execute_reobserve(
         assert client.inspect("sglang-execute")["status"] == "completed"
         deadline = time.monotonic() + 2.0
         after = client.observe(include_robot=True, max_age_ns=2_000_000_000)
-        while (
-            after.observation_id == before.observation_id
-            and time.monotonic() < deadline
-        ):
+        while after.observation_id == before.observation_id and time.monotonic() < deadline:
             time.sleep(0.05)
             after = client.observe(include_robot=True, max_age_ns=2_000_000_000)
         assert after.observation_id != before.observation_id

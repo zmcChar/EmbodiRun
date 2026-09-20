@@ -29,8 +29,8 @@ class RobotTransport(ABC):
     def posture(self, action: str) -> int:
         raise NotImplementedError
 
-    def close(self) -> None:
-        """Release transport resources."""
+    def close(self) -> None:  # noqa: B027 - a default no-op is intentional
+        """Release transport resources; transports that own resources override this."""
 
 
 class DryRunTransport(RobotTransport):

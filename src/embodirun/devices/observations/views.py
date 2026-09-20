@@ -32,23 +32,17 @@ def snapshot_robot_observation(snapshot: ObservationSnapshot) -> RobotObservatio
     """Build the model's state value from the exact shared snapshot."""
 
     if snapshot.state is None:
-        raise ObservationViewError(
-            f"snapshot {snapshot.observation_id!r} has no robot state"
-        )
+        raise ObservationViewError(f"snapshot {snapshot.observation_id!r} has no robot state")
     state_metadata = snapshot.metadata.get("state_metadata", {})
     metadata = dict(state_metadata) if isinstance(state_metadata, Mapping) else {}
     timestamp_s = metadata.get("timestamp_s")
     if isinstance(timestamp_s, bool) or not isinstance(timestamp_s, (int, float)):
-        raise ObservationViewError(
-            f"snapshot {snapshot.observation_id!r} has no robot timestamp_s"
-        )
+        raise ObservationViewError(f"snapshot {snapshot.observation_id!r} has no robot timestamp_s")
     metadata.update(
         {
             "observation_id": snapshot.observation_id,
             "snapshot_id": snapshot.observation_id,
-            "observation_captured_timestamp_ns": snapshot.source_timestamps_ns.get(
-                "state"
-            ),
+            "observation_captured_timestamp_ns": snapshot.source_timestamps_ns.get("state"),
             "observation_clock_domain": snapshot.clock_domains.get("state"),
         }
     )
@@ -102,14 +96,8 @@ def snapshot_payload(
     """Build service output from one immutable snapshot and one runtime view."""
 
     required = tuple(dict.fromkeys(required_source_ids))
-    errors = {
-        source_id: snapshot.errors[source_id]
-        for source_id in required
-        if source_id in snapshot.errors
-    }
-    timestamps = [
-        snapshot.source_timestamps_ns.get(source_id) for source_id in required
-    ]
+    errors = {source_id: snapshot.errors[source_id] for source_id in required if source_id in snapshot.errors}
+    timestamps = [snapshot.source_timestamps_ns.get(source_id) for source_id in required]
     domains = {
         snapshot.clock_domains.get(source_id)
         for source_id in required
@@ -123,32 +111,20 @@ def snapshot_payload(
     aggregate_domain = snapshot.metadata.get("clock_domain")
     view_status = {
         "available": not errors and not missing,
-        "stale": bool(
-            errors
-            or missing
-            or (domains and (len(domains) != 1 or aggregate_domain not in domains))
-        ),
+        "stale": bool(errors or missing or (domains and (len(domains) != 1 or aggregate_domain not in domains))),
         "errors": errors,
         "missing_sources": missing,
-        "captured_timestamp_ns": max(
-            timestamp for timestamp in timestamps if timestamp is not None
-        )
+        "captured_timestamp_ns": max(timestamp for timestamp in timestamps if timestamp is not None)
         if any(timestamp is not None for timestamp in timestamps)
         else None,
         "received_timestamp_ns": max(
             timestamp
             for source_id in required
-            if (timestamp := snapshot.source_received_timestamps_ns.get(source_id))
-            is not None
+            if (timestamp := snapshot.source_received_timestamps_ns.get(source_id)) is not None
         )
-        if any(
-            snapshot.source_received_timestamps_ns.get(source_id) is not None
-            for source_id in required
-        )
+        if any(snapshot.source_received_timestamps_ns.get(source_id) is not None for source_id in required)
         else None,
-        "clock_domains": {
-            source_id: snapshot.clock_domains.get(source_id) for source_id in required
-        },
+        "clock_domains": {source_id: snapshot.clock_domains.get(source_id) for source_id in required},
         "skew_ns": (
             max(timestamp for timestamp in timestamps if timestamp is not None)
             - min(timestamp for timestamp in timestamps if timestamp is not None)
@@ -174,9 +150,7 @@ def snapshot_payload(
             "received_timestamp_ns": snapshot.received_timestamp_ns,
             "published_timestamp_ns": snapshot.published_timestamp_ns,
             "source_timestamps_ns": dict(snapshot.source_timestamps_ns),
-            "source_received_timestamps_ns": dict(
-                snapshot.source_received_timestamps_ns
-            ),
+            "source_received_timestamps_ns": dict(snapshot.source_received_timestamps_ns),
             "clock_domains": dict(snapshot.clock_domains),
             "skew_ns": snapshot.skew_ns,
         },

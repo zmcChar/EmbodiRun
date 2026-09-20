@@ -112,29 +112,19 @@ class DepthStore:
 
         with self._lock:
             next_sequence = self._sequence + 1 if sequence is None else sequence
-            if (
-                isinstance(next_sequence, bool)
-                or not isinstance(next_sequence, int)
-                or next_sequence <= self._sequence
-            ):
+            if isinstance(next_sequence, bool) or not isinstance(next_sequence, int) or next_sequence <= self._sequence:
                 raise ValueError("depth sequence must increase")
             snapshot = DepthSnapshot(
                 center_distance_m=(None if center_distance_m is None else float(center_distance_m)),
-                minimum_distance_m=(
-                    None if minimum_distance_m is None else float(minimum_distance_m)
-                ),
+                minimum_distance_m=(None if minimum_distance_m is None else float(minimum_distance_m)),
                 valid_fraction=float(valid_fraction),
                 sequence=next_sequence,
-                captured_at_unix=(
-                    self._wall_clock() if captured_at_unix is None else float(captured_at_unix)
-                ),
+                captured_at_unix=(self._wall_clock() if captured_at_unix is None else float(captured_at_unix)),
                 captured_at_monotonic=(
                     self._clock() if captured_at_monotonic is None else float(captured_at_monotonic)
                 ),
                 depth_png=normalized_png,
-                source_timestamp_ms=(
-                    None if source_timestamp_ms is None else float(source_timestamp_ms)
-                ),
+                source_timestamp_ms=(None if source_timestamp_ms is None else float(source_timestamp_ms)),
                 source_frame_number=source_frame_number,
             )
             self._sequence = next_sequence
@@ -163,9 +153,7 @@ class DepthStore:
 
         age = None if snapshot is None else self.snapshot_age(snapshot)
         values_valid = (
-            snapshot is not None
-            and snapshot.center_distance_m is not None
-            and snapshot.minimum_distance_m is not None
+            snapshot is not None and snapshot.center_distance_m is not None and snapshot.minimum_distance_m is not None
         )
         available = bool(running and values_valid and age is not None and age <= max_depth_age)
         return {

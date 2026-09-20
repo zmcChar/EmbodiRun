@@ -71,9 +71,7 @@ def _config(
     )
 
 
-def _profile(
-    sensor: SensorInput, runtime_id: str = "runtime-b"
-) -> ControlRuntimeProfile:
+def _profile(sensor: SensorInput, runtime_id: str = "runtime-b") -> ControlRuntimeProfile:
     return ControlRuntimeProfile(
         runtime_id=runtime_id,
         binding_kind="test.binding",
@@ -178,9 +176,7 @@ def test_service_instance_ids_do_not_alias_across_restarts(tmp_path) -> None:
 def test_failed_second_camera_keeps_first_owner_for_healthy_profile(tmp_path) -> None:
     first = SensorInput("camera-a", "front", "v4l2", {"device": "/dev/a"})
     second = SensorInput("camera-b", "wrist", "v4l2", {"device": "/dev/bad"})
-    healthy_profile = _profile(
-        SensorInput("camera-a", "front", "v4l2", {"device": "/dev/a"})
-    )
+    healthy_profile = _profile(SensorInput("camera-a", "front", "v4l2", {"device": "/dev/a"}))
     config = ControlServiceConfig(
         runtime_id="runtime-a",
         binding_kind="test.binding",

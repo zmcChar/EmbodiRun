@@ -32,10 +32,7 @@ def test_replay_source_has_no_actuation_boundary():
     assert len(source.observation(0)["images"]["front"]) == 16 * 16 * 3
     assert not hasattr(source, "execute")
     assert not hasattr(source, "connect")
-    assert (
-        source.observation(0)["images"]["front"]
-        != source.observation(0)["images"]["wrist"]
-    )
+    assert source.observation(0)["images"]["front"] != source.observation(0)["images"]["wrist"]
 
 
 def test_replay_fingerprint_includes_decoded_images_and_state():
@@ -93,9 +90,7 @@ def test_receive_rearm_preserves_sequence_and_other_peer_service(retry):
 
     a, b, c = free_peer("a"), free_peer("b"), free_peer("c")
     sender = WirelessEndpoint(a, [b, c], timeout_s=2)
-    receiver = WirelessEndpoint(
-        b, [a, c], timeout_s=2, retry_disconnected_receive=retry
-    )
+    receiver = WirelessEndpoint(b, [a, c], timeout_s=2, retry_disconnected_receive=retry)
     healthy = WirelessEndpoint(c, [a, b], timeout_s=2)
     outgoing, incoming = StreamSession("same-session"), StreamSession("same-session")
     route = ("observations",)

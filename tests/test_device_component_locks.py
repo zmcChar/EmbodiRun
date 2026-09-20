@@ -1,10 +1,10 @@
 """Multi-identity DeviceManager ownership regressions."""
 
-from pathlib import Path
 import os
 import select
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -137,9 +137,7 @@ def test_component_lock_failure_rolls_back_earlier_component_lock(tmp_path: Path
 def test_close_failure_retains_all_component_locks_and_uncertainty(tmp_path: Path):
     lock_dir = tmp_path / "locks"
     state_path = tmp_path / "state.json"
-    manager = DeviceManager(
-        "node", owner_id="pair", lock_dir=lock_dir, state_path=state_path
-    )
+    manager = DeviceManager("node", owner_id="pair", lock_dir=lock_dir, state_path=state_path)
 
     def fail_close(_value):
         raise OSError("stop unknown")
@@ -149,9 +147,7 @@ def test_close_failure_retains_all_component_locks_and_uncertainty(tmp_path: Pat
     with pytest.raises(DeviceCloseError):
         manager.close()
 
-    other = DeviceManager(
-        "node", owner_id="other", lock_dir=lock_dir, state_path=state_path
-    )
+    other = DeviceManager("node", owner_id="other", lock_dir=lock_dir, state_path=state_path)
     for identity in (primary, *components):
         with pytest.raises(DeviceBusyError):
             other.acquire(DeviceResource(identity, lambda: object()))
@@ -206,9 +202,7 @@ except DeviceCloseError:
             child.kill()
             child.wait(timeout=5)
 
-    manager = DeviceManager(
-        "node", owner_id="restarted", lock_dir=lock_dir, state_path=state_path
-    )
+    manager = DeviceManager("node", owner_id="restarted", lock_dir=lock_dir, state_path=state_path)
     identities = (
         ResourceIdentity("node", "robot", "pair"),
         ResourceIdentity("node", "robot", "/dev/left"),

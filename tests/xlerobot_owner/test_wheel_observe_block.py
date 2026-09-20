@@ -1,5 +1,4 @@
 import pytest
-
 from tests.xlerobot_owner.test_motor_diagnostics import setup
 
 
@@ -29,7 +28,10 @@ def test_observe_uses_one_packet_per_wheel_without_filtering_or_waiting(tmp_path
         observation, _ = robot.read()
         assert packet.calls == [(9, 56, 11), (10, 56, 11)]
         assert observation["raw"]["base_left_wheel"] == {
-            "Present_Position": 2544, "Present_Velocity": velocity, "Moving": moving}
+            "Present_Position": 2544,
+            "Present_Velocity": velocity,
+            "Moving": moving,
+        }
         assert observation["raw_fields"] == observation["raw"]
         assert observation["state"]["x.vel"] == robot._wheel_raw_to_body(velocity, 0)["x.vel"]
         assert observation["control_state"]["base"] is True
@@ -42,11 +44,21 @@ def test_observe_uses_one_packet_per_wheel_without_filtering_or_waiting(tmp_path
         robot.close()
 
 
-@pytest.mark.parametrize("response", [
-    ([0] * 10, 0, 0), ([0] * 12, 0, 0), ([0] * 11, -3002, 0),
-    ([0] * 11, 0, 8), ([0] * 11, None, 0), ([0] * 11, 0, None),
-    ([True] * 11, 0, 0), ([256] * 11, 0, 0), (None, 0, 0), OSError("bad packet"),
-])
+@pytest.mark.parametrize(
+    "response",
+    [
+        ([0] * 10, 0, 0),
+        ([0] * 12, 0, 0),
+        ([0] * 11, -3002, 0),
+        ([0] * 11, 0, 8),
+        ([0] * 11, None, 0),
+        ([0] * 11, 0, None),
+        ([True] * 11, 0, 0),
+        ([256] * 11, 0, 0),
+        (None, 0, 0),
+        OSError("bad packet"),
+    ],
+)
 def test_bad_observe_reply_stays_unknown_without_scalar_retry(tmp_path, monkeypatch, response):
     robot, buses, packet = setup(tmp_path)
     forbid_wheel_scalar_reads(buses["right"], monkeypatch)

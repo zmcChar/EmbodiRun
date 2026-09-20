@@ -2,17 +2,17 @@ import os
 import subprocess
 import sys
 import time
-from threading import Barrier, Lock, Thread, current_thread
-from threading import Event
+from threading import Barrier, Event, Lock, Thread, current_thread
 
 import pytest
 
+from embodirun.application import control_service as control_service_impl
+from embodirun.robots import RobotAdapter, RobotDefinition, RobotObservation
 from embodirun.robots.lerobot.so101 import (
     SO101Adapter,
     SO101AdapterError,
     SO101Config,
 )
-from embodirun.robots import RobotDefinition, RobotObservation, RobotAdapter
 from embodirun.robots.sensors import SensorInput
 from embodirun.robots.sensors.cameras import CameraFrame
 from embodirun.services.control.contracts import (
@@ -20,22 +20,21 @@ from embodirun.services.control.contracts import (
     ControlServiceConfig,
     TaskRequest,
 )
-from embodirun.application import control_service as control_service_impl
+from embodirun.services.control.devices import (
+    DeviceBusyError,
+    DeviceCloseError,
+    DeviceManager,
+    DeviceOpenError,
+    DeviceResource,
+    DeviceStateError,
+    DeviceUncertainError,
+    ResourceIdentity,
+    canonical_resource_identity,
+)
 from embodirun.services.control.server import (
     ControlService,
     ControlServiceError,
     ControlTaskRejected,
-)
-from embodirun.services.control.devices import (
-    DeviceBusyError,
-    DeviceCloseError,
-    DeviceOpenError,
-    DeviceStateError,
-    DeviceManager,
-    DeviceResource,
-    DeviceUncertainError,
-    ResourceIdentity,
-    canonical_resource_identity,
 )
 
 
@@ -114,9 +113,7 @@ def test_aliases_share_canonical_identity_and_process_lock(tmp_path):
     assert resolved == direct
 
     manager = DeviceManager("node-a", lock_dir=tmp_path / "locks")
-    lease = manager.acquire(
-        DeviceResource(resolved, lambda: object(), closer=lambda _value: None)
-    )
+    lease = manager.acquire(DeviceResource(resolved, lambda: object(), closer=lambda _value: None))
     with pytest.raises(DeviceBusyError):
         DeviceManager("node-a", lock_dir=tmp_path / "locks").acquire(
             DeviceResource(direct, lambda: object(), closer=lambda _value: None)
@@ -129,9 +126,7 @@ def test_default_lifecycle_state_uses_durable_xdg_path(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg-state"))
     monkeypatch.setenv("RLINF_DEPLOY_DEVICE_LOCK_DIR", str(tmp_path / "locks"))
     manager = DeviceManager("node-a")
-    assert manager.state_store.path == (
-        tmp_path / "xdg-state" / "rlinf-deploy" / "device-state.json"
-    )
+    assert manager.state_store.path == (tmp_path / "xdg-state" / "rlinf-deploy" / "device-state.json")
 
 
 def test_process_lock_releases_after_owner_crash(tmp_path):
@@ -201,9 +196,7 @@ def test_close_failure_survives_read_only_reopen(tmp_path):
     def fail_close(_value):
         raise RuntimeError("stop unknown")
 
-    failed = first.acquire(
-        DeviceResource(identity, lambda: object(), closer=fail_close)
-    )
+    failed = first.acquire(DeviceResource(identity, lambda: object(), closer=fail_close))
     with pytest.raises(RuntimeError, match="stop unknown"):
         failed.close()
     second = DeviceManager("node-a", lock_dir=tmp_path / "locks", state_path=state)
@@ -213,25 +206,19 @@ def test_close_failure_survives_read_only_reopen(tmp_path):
     # A separate resource demonstrates the persisted-fault behavior once the
     # original owner really did release its OS lock.
     recovered_identity = _resource(tmp_path, "serial1")
-    first_recovered = DeviceManager(
-        "node-a", lock_dir=tmp_path / "locks", state_path=state
-    )
+    first_recovered = DeviceManager("node-a", lock_dir=tmp_path / "locks", state_path=state)
     recovered = first_recovered.acquire(
         DeviceResource(recovered_identity, lambda: object(), closer=lambda _value: None)
     )
     first_recovered.mark_uncertain(recovered_identity, "stop unknown")
     recovered.close()
     second = DeviceManager("node-a", lock_dir=tmp_path / "locks", state_path=state)
-    passive = second.acquire(
-        DeviceResource(recovered_identity, lambda: object(), closer=lambda _value: None)
-    )
+    passive = second.acquire(DeviceResource(recovered_identity, lambda: object(), closer=lambda _value: None))
     assert second.status(recovered_identity).state == "uncertain"
     passive.close()
     assert second.status(recovered_identity).state == "uncertain"
     with pytest.raises(DeviceUncertainError):
-        second.acquire(
-            DeviceResource(recovered_identity, lambda: object()), prepare=True
-        )
+        second.acquire(DeviceResource(recovered_identity, lambda: object()), prepare=True)
     second.clear_uncertainty(recovered_identity)
     assert second.status(recovered_identity).state == "closed"
 
@@ -244,15 +231,11 @@ def test_manager_close_retries_quarantined_handle_after_sdk_release(tmp_path):
         if not released.wait(0.05):
             raise RuntimeError("SDK still in flight")
 
-    manager = DeviceManager(
-        "node-a", lock_dir=tmp_path / "locks", state_path=tmp_path / "state.json"
-    )
+    manager = DeviceManager("node-a", lock_dir=tmp_path / "locks", state_path=tmp_path / "state.json")
     manager.acquire(DeviceResource(identity, lambda: object(), closer=closer))
     with pytest.raises(DeviceCloseError, match="SDK still in flight"):
         manager.close()
-    other = DeviceManager(
-        "node-a", lock_dir=tmp_path / "locks", state_path=tmp_path / "state.json"
-    )
+    other = DeviceManager("node-a", lock_dir=tmp_path / "locks", state_path=tmp_path / "state.json")
     with pytest.raises(DeviceBusyError):
         other.acquire(DeviceResource(identity, lambda: object()))
     released.set()
@@ -271,25 +254,19 @@ def test_prepare_failure_with_failed_rollback_retains_live_lock(tmp_path):
         if len(close_calls) == 1:
             raise RuntimeError("cleanup still owns SDK")
 
-    manager = DeviceManager(
-        "node-a", lock_dir=tmp_path / "locks", state_path=tmp_path / "state.json"
-    )
+    manager = DeviceManager("node-a", lock_dir=tmp_path / "locks", state_path=tmp_path / "state.json")
     with pytest.raises(DeviceOpenError, match="prepare failed"):
         manager.acquire(
             DeviceResource(
                 identity,
                 lambda: object(),
                 closer=closer,
-                preparer=lambda _value: (_ for _ in ()).throw(
-                    RuntimeError("prepare failed")
-                ),
+                preparer=lambda _value: (_ for _ in ()).throw(RuntimeError("prepare failed")),
             ),
             prepare=True,
         )
     assert manager.status(identity).state == "uncertain"
-    other = DeviceManager(
-        "node-a", lock_dir=tmp_path / "locks", state_path=tmp_path / "state.json"
-    )
+    other = DeviceManager("node-a", lock_dir=tmp_path / "locks", state_path=tmp_path / "state.json")
     with pytest.raises(DeviceBusyError):
         other.acquire(DeviceResource(identity, lambda: object()))
     manager.close()
@@ -410,9 +387,7 @@ def test_device_only_config_describes_and_observes_without_inference(monkeypatch
         adapter_type=FakeAdapter,
         environment_group="test",
     )
-    monkeypatch.setattr(
-        control_service_impl, "robot_definition", lambda _kind: definition
-    )
+    monkeypatch.setattr(control_service_impl, "robot_definition", lambda _kind: definition)
     config = ControlServiceConfig.device_only(
         runtime_id="device-runtime",
         bind="127.0.0.1",
@@ -427,9 +402,7 @@ def test_device_only_config_describes_and_observes_without_inference(monkeypatch
     parsed = ControlServiceConfig.from_json(encoded)
     service = ControlService(
         parsed,
-        client_factory=lambda *_args: (_ for _ in ()).throw(
-            AssertionError("inference called")
-        ),
+        client_factory=lambda *_args: (_ for _ in ()).throw(AssertionError("inference called")),
     )
     assert service.health()["inference"] == "disabled"
     result = service.observe(include_robot=True)
@@ -439,9 +412,7 @@ def test_device_only_config_describes_and_observes_without_inference(monkeypatch
         "metadata": {},
     }
     with pytest.raises(ControlTaskRejected, match="no inference"):
-        service.execute(
-            TaskRequest("request", "device-runtime", "move", 1, 1, 1.0, 1.0)
-        )
+        service.execute(TaskRequest("request", "device-runtime", "move", 1, 1, 1.0, 1.0))
     service.close()
 
 
@@ -513,12 +484,8 @@ def test_shared_camera_runtime_alias_reuses_bytes_and_open(tmp_path):
 
 
 def test_shared_camera_profile_conflict_is_rejected_before_reopen(tmp_path):
-    first_input = SensorInput(
-        "camera", "front-a", "v4l2", {"device": "/dev/camera-profile", "width": 640}
-    )
-    second_input = SensorInput(
-        "camera", "front-b", "v4l2", {"device": "/dev/camera-profile", "width": 320}
-    )
+    first_input = SensorInput("camera", "front-a", "v4l2", {"device": "/dev/camera-profile", "width": 640})
+    second_input = SensorInput("camera", "front-b", "v4l2", {"device": "/dev/camera-profile", "width": 320})
     profile = ControlRuntimeProfile(
         runtime_id="runtime-b",
         binding_kind="test.binding",
@@ -575,9 +542,7 @@ def test_shared_camera_profile_conflict_is_rejected_before_reopen(tmp_path):
 
 def test_shared_camera_alias_rejects_unmapped_multi_frame_source(tmp_path):
     first_input = SensorInput("camera", "rgb", "realsense", {"serial": "serial-1"})
-    alias_input = SensorInput(
-        "camera", "runtime-role", "realsense", {"serial": "serial-1"}
-    )
+    alias_input = SensorInput("camera", "runtime-role", "realsense", {"serial": "serial-1"})
     profile = ControlRuntimeProfile(
         runtime_id="runtime-b",
         binding_kind="test.binding",
@@ -634,9 +599,7 @@ def test_shared_camera_alias_rejects_unmapped_multi_frame_source(tmp_path):
     service.close()
 
 
-def test_configured_control_service_uses_default_manager_and_reuses_robot_owner(
-    monkeypatch, tmp_path
-):
+def test_configured_control_service_uses_default_manager_and_reuses_robot_owner(monkeypatch, tmp_path):
     events = []
 
     class FakeAdapter(RobotAdapter):
@@ -679,9 +642,7 @@ def test_configured_control_service_uses_default_manager_and_reuses_robot_owner(
             "mapper_factory": lambda self: object(),
         },
     )()
-    monkeypatch.setattr(
-        control_service_impl, "_definitions", lambda _config: (binding, definition)
-    )
+    monkeypatch.setattr(control_service_impl, "_definitions", lambda _config: (binding, definition))
     resource = {
         "identity": f"node-a:robot:{tmp_path / 'arm'}",
         "node": "node-a",
@@ -761,9 +722,7 @@ def test_first_robot_observe_is_atomic_and_reuses_one_arbiter(monkeypatch, tmp_p
         adapter_type=FakeAdapter,
         environment_group="test",
     )
-    monkeypatch.setattr(
-        control_service_impl, "robot_definition", lambda _kind: definition
-    )
+    monkeypatch.setattr(control_service_impl, "robot_definition", lambda _kind: definition)
     config = ControlServiceConfig.device_only(
         runtime_id="device-runtime",
         bind="127.0.0.1",
@@ -807,9 +766,7 @@ def test_first_robot_observe_is_atomic_and_reuses_one_arbiter(monkeypatch, tmp_p
         service.close()
 
 
-def test_passive_robot_upgrades_through_its_observation_scheduler(
-    monkeypatch, tmp_path
-):
+def test_passive_robot_upgrades_through_its_observation_scheduler(monkeypatch, tmp_path):
     events = []
 
     class FakeAdapter(RobotAdapter):
@@ -843,9 +800,7 @@ def test_passive_robot_upgrades_through_its_observation_scheduler(
         adapter_type=FakeAdapter,
         environment_group="test",
     )
-    monkeypatch.setattr(
-        control_service_impl, "robot_definition", lambda _kind: definition
-    )
+    monkeypatch.setattr(control_service_impl, "robot_definition", lambda _kind: definition)
     config = ControlServiceConfig.device_only(
         runtime_id="device-runtime",
         bind="127.0.0.1",

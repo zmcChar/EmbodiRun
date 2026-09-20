@@ -1,5 +1,4 @@
 import pytest
-
 from tests.xlerobot_owner.test_motor_diagnostics import setup
 from tests.xlerobot_owner.test_wheel_observe_block import forbid_wheel_scalar_reads
 
@@ -22,12 +21,22 @@ def test_stop_one_packet_per_wheel_two_zeros_and_unchanged_write_set(tmp_path, m
         robot.close()
 
 
-@pytest.mark.parametrize("reply", [
-    ([0] * 10, 0, 0), ([0] * 12, 0, 0), ([0] * 11, -3002, 0),
-    ([0] * 11, 0, 8), ([0] * 11, None, 0), ([0] * 11, 0, None),
-    ([True] * 11, 0, 0), ([256] * 11, 0, 0), ([0] * 11, False, 0),
-    (None, 0, 0), OSError("checksum failure"),
-])
+@pytest.mark.parametrize(
+    "reply",
+    [
+        ([0] * 10, 0, 0),
+        ([0] * 12, 0, 0),
+        ([0] * 11, -3002, 0),
+        ([0] * 11, 0, 8),
+        ([0] * 11, None, 0),
+        ([0] * 11, 0, None),
+        ([True] * 11, 0, 0),
+        ([256] * 11, 0, 0),
+        ([0] * 11, False, 0),
+        (None, 0, 0),
+        OSError("checksum failure"),
+    ],
+)
 def test_one_bad_packet_cannot_be_erased_by_later_two_zero_samples(tmp_path, monkeypatch, reply):
     robot, buses, packet = setup(tmp_path)
     forbid_wheel_scalar_reads(buses["right"], monkeypatch)
@@ -58,16 +67,18 @@ def test_one_bad_packet_cannot_be_erased_by_later_two_zero_samples(tmp_path, mon
 @pytest.mark.parametrize("velocity,moving", [(50, 0), (0, 1), (-50, 1), (50, 1)])
 def test_nonzero_pairs_never_pass_and_keep_point_four_deadline(tmp_path, monkeypatch, velocity, moving):
     robot, buses, packet = setup(tmp_path)
-    robot._stop_timeout_s, robot._stop_poll_s = .4, .02
+    robot._stop_timeout_s, robot._stop_poll_s = 0.4, 0.02
     # Fake clock measures the configured polling budget, not real SDK latency.
     clock = [0.0]
     monkeypatch.setattr("embodirun_xlerobot_owner.hardware.time.monotonic", lambda: clock[0])
-    monkeypatch.setattr("embodirun_xlerobot_owner.hardware.time.sleep", lambda dt: clock.__setitem__(0, clock[0] + max(dt, .000001)))
+    monkeypatch.setattr(
+        "embodirun_xlerobot_owner.hardware.time.sleep", lambda dt: clock.__setitem__(0, clock[0] + max(dt, 0.000001))
+    )
     buses["right"].values["base_left_wheel"].update(Present_Velocity=velocity, Moving=moving)
     forbid_wheel_scalar_reads(buses["right"], monkeypatch)
     try:
         result = robot._stop_locked("watchdog", scope="base")
-        assert not result["stop_confirmed"] and .4 <= clock[0] < .421
+        assert not result["stop_confirmed"] and 0.4 <= clock[0] < 0.421
         assert result["feedback_available"] and len(result["writes"]) == 2
         assert len(packet.calls) == 2 * len(result["samples"])
         assert all(s["motors"]["base_left_wheel"]["Present_Velocity"] == velocity for s in result["samples"])

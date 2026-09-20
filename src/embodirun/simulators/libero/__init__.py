@@ -4,7 +4,6 @@ from .. import SimulatorDefinition
 from .adapter import LIBERO_ACTION_DIM, LiberoAdapter
 from .config import LIBERO_SUITES, LiberoConfig
 
-
 SIMULATOR_DEFINITION = SimulatorDefinition(
     kind="libero",
     embodiment_kind="franka.panda.eef",

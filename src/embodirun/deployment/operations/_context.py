@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
 from pathlib import Path
-from typing import ContextManager, Protocol
+from typing import Protocol
 
 from embodirun.deployment.config import DeploymentConfig
 from embodirun.deployment.executor import Executor
@@ -20,9 +21,7 @@ class Progress(Protocol):
 
     def begin(self, operation: str, deployment: str) -> None: ...
     def add_node(self, node_id: str, *, total: int) -> None: ...
-    def update(
-        self, node_id: str, message: str, *, detail: str | None = None
-    ) -> None: ...
+    def update(self, node_id: str, message: str, *, detail: str | None = None) -> None: ...
     def advance(self, node_id: str) -> None: ...
     def fail(self, node_id: str, error: Exception) -> None: ...
     def succeed(self, node_id: str, *, detail: str | None = None) -> None: ...
@@ -42,7 +41,7 @@ class DeploymentContext(Protocol):
     state_path: Path
     progress: Progress
 
-    def executor(self, node_id: str) -> ContextManager[Executor]: ...
+    def executor(self, node_id: str) -> AbstractContextManager[Executor]: ...
 
 
 __all__ = ["DeploymentContext", "Progress"]

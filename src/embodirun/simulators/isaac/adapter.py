@@ -15,8 +15,7 @@ class IsaacAdapter(NavigationSimulatorAdapter):
         self,
         config: IsaacConfig,
         *,
-        environment_factory: Callable[[IsaacConfig], NavigationEnvironment]
-        | None = None,
+        environment_factory: Callable[[IsaacConfig], NavigationEnvironment] | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         if not isinstance(config, IsaacConfig):

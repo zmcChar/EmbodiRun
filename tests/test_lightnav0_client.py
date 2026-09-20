@@ -66,9 +66,7 @@ def test_lightnav0_client_preserves_rgb_and_remote_session_order():
     async def run():
         await client.start()
         await client.reset_session("local")
-        prediction = await client.predict(
-            rgb, instruction="go", session_id="local", timestamp_s=2.5
-        )
+        prediction = await client.predict(rgb, instruction="go", session_id="local", timestamp_s=2.5)
         assert prediction.output.metadata["stop"] is False
         await client.predict(rgb, instruction="go", session_id="local", timestamp_s=3.0)
         await client.reset_session("local")

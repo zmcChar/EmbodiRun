@@ -28,9 +28,7 @@ class MotionLease:
         self.worker: threading.Thread | None = None
         self.started_at_unix = time.time()
         self.updated_at_unix: float | None = None
-        self.heartbeat_at_monotonic: float | None = (
-            time.monotonic() if self.action == "stream_move" else None
-        )
+        self.heartbeat_at_monotonic: float | None = time.monotonic() if self.action == "stream_move" else None
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:

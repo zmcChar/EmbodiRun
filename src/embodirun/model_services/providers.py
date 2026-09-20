@@ -124,9 +124,7 @@ class InferenceProvider:
         if isinstance(packages, (str, bytes)) or any(
             not isinstance(item, str) or not item.strip() for item in packages
         ):
-            raise ValueError(
-                f"provider {self.name!r} returned invalid environment package arguments"
-            )
+            raise ValueError(f"provider {self.name!r} returned invalid environment package arguments")
         return tuple(packages)
 
     def build_options(self, context: ProviderOptionsContext) -> dict[str, Any]:
@@ -178,9 +176,7 @@ def _register_builtins() -> None:
     from .backends.sglang import SglangHttpClient
     from .backends.vvla import VvlaHttpClient, VvlaWirelessClient
 
-    def vvla_builder(
-        endpoint: str, options: Mapping[str, Any], timeout_s: float
-    ) -> InferenceClient:
+    def vvla_builder(endpoint: str, options: Mapping[str, Any], timeout_s: float) -> InferenceClient:
         token = options.get("token")
         if token is not None and not isinstance(token, str):
             raise ValueError("inference token must be a string")
@@ -193,9 +189,7 @@ def _register_builtins() -> None:
             )
         return VvlaHttpClient(endpoint, token=token, timeout_s=timeout_s)
 
-    def sglang_builder(
-        endpoint: str, options: Mapping[str, Any], timeout_s: float
-    ) -> InferenceClient:
+    def sglang_builder(endpoint: str, options: Mapping[str, Any], timeout_s: float) -> InferenceClient:
         token = options.get("token")
         if token is not None and not isinstance(token, str):
             raise ValueError("inference token must be a string")
@@ -224,9 +218,7 @@ def _register_builtins() -> None:
             "adapter_config": options.adapter_config,
         }
         if options.transport == "http":
-            return vvla_http_server_command(
-                bind=options.bind, port=options.port, **common
-            )
+            return vvla_http_server_command(bind=options.bind, port=options.port, **common)
         return vvla_wireless_server_command(comm_config=options.comm_config, **common)
 
     def sglang_command(options: ManagedCommandOptions) -> tuple[str, ...]:
@@ -275,18 +267,13 @@ def _register_builtins() -> None:
         configured = model_options.get("image_keys")
         if configured is not None:
             if not isinstance(configured, Mapping) or any(
-                not isinstance(key, str)
-                or not isinstance(value, str)
-                or not value.strip()
+                not isinstance(key, str) or not isinstance(value, str) or not value.strip()
                 for key, value in configured.items()
             ):
                 raise ValueError("image_keys must map non-empty field names to strings")
             unknown = sorted(set(configured) - set(context.image_fields))
             if unknown:
-                raise ValueError(
-                    "image_keys contains fields not produced by the runtime: "
-                    + ", ".join(unknown)
-                )
+                raise ValueError("image_keys contains fields not produced by the runtime: " + ", ".join(unknown))
             image_keys.update(configured)
         if len(image_keys.values()) != len(set(image_keys.values())):
             raise ValueError("image_keys values must be unique")
@@ -302,9 +289,7 @@ def _register_builtins() -> None:
             or not isinstance(action_horizon, int)
             or not 1 <= action_horizon <= context.maximum_chunk_steps
         ):
-            raise ValueError(
-                "parameters.action_horizon must be between 1 and the binding chunk limit"
-            )
+            raise ValueError("parameters.action_horizon must be between 1 and the binding chunk limit")
         options["parameters"] = parameters
         runtime = model_options.get("runtime", {})
         if not isinstance(runtime, Mapping):
@@ -312,11 +297,7 @@ def _register_builtins() -> None:
         options["runtime"] = dict(runtime)
         output_action_dim = model_options.get("output_action_dim")
         if output_action_dim is not None:
-            if (
-                isinstance(output_action_dim, bool)
-                or not isinstance(output_action_dim, int)
-                or output_action_dim <= 0
-            ):
+            if isinstance(output_action_dim, bool) or not isinstance(output_action_dim, int) or output_action_dim <= 0:
                 raise ValueError("output_action_dim must be a positive integer")
             options["output_action_dim"] = output_action_dim
         return options

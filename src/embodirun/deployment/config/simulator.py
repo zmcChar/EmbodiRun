@@ -21,9 +21,7 @@ class SimulatorConfig:
 def parse_simulator(simulator_id: str, value: dict[str, Any]) -> SimulatorConfig:
     context = f"simulators.{simulator_id}"
     kind = string(value, "type", context)
-    options = {
-        name: option for name, option in value.items() if name not in {"type", "node"}
-    }
+    options = {name: option for name, option in value.items() if name not in {"type", "node"}}
     try:
         definition = simulator_definition(kind)
     except (KeyError, TypeError):

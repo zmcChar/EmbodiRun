@@ -1,6 +1,6 @@
-import time
 import json
 import sys
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -163,14 +163,25 @@ def test_feetech_read_only_capture_never_writes_motor_registers(tmp_path, monkey
             return 2000
 
     port = Port()
-    monkeypatch.setitem(sys.modules, "scservo_sdk", SimpleNamespace(
-        PortHandler=lambda _: port, PacketHandler=lambda _: Packet(), GroupSyncRead=Reader, COMM_SUCCESS=0))
-    calibration = {name.removesuffix(".pos"): {"id": index, "drive_mode": 0, "homing_offset": 0,
-                                              "range_min": 1000, "range_max": 3000}
-                   for index, name in enumerate(SO101_POSITION_FEATURES, 1)}
+    monkeypatch.setitem(
+        sys.modules,
+        "scservo_sdk",
+        SimpleNamespace(
+            PortHandler=lambda _: port, PacketHandler=lambda _: Packet(), GroupSyncRead=Reader, COMM_SUCCESS=0
+        ),
+    )
+    calibration = {
+        name.removesuffix(".pos"): {
+            "id": index,
+            "drive_mode": 0,
+            "homing_offset": 0,
+            "range_min": 1000,
+            "range_max": 3000,
+        }
+        for index, name in enumerate(SO101_POSITION_FEATURES, 1)
+    }
     (tmp_path / "arm.json").write_text(json.dumps(calibration))
-    robot = SO101Adapter(SO101Config(port="/dev/fake", robot_id="arm", calibration_dir=tmp_path),
-                         read_only=read_only)
+    robot = SO101Adapter(SO101Config(port="/dev/fake", robot_id="arm", calibration_dir=tmp_path), read_only=read_only)
     robot.connect()
     observation = robot.observe()
     assert observation.values == {"joint_positions_deg": [0.0] * 5, "gripper_position": 50.0}

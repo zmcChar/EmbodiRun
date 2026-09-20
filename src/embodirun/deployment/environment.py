@@ -6,9 +6,9 @@ import posixpath
 from dataclasses import dataclass, replace
 from typing import Literal
 
+from embodirun.model_services.providers import provider
 from embodirun.robots import robot_definition
 from embodirun.simulators import simulator_definition
-from embodirun.model_services.providers import provider
 
 from .config import DeploymentConfig
 from .executor import Command, CommandResult, Executor
@@ -62,8 +62,7 @@ def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, 
             group, python = robot_environment_profile(robot.kind)
         except EnvironmentError:
             raise EnvironmentError(
-                f"robot {robot.robot_id!r} has no environment profile for type "
-                f"{robot.kind!r}"
+                f"robot {robot.robot_id!r} has no environment profile for type {robot.kind!r}"
             ) from None
         profiles.append(
             EnvironmentProfile(
@@ -77,31 +76,22 @@ def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, 
             )
         )
 
-    for simulator in sorted(
-        config.simulators.values(), key=lambda item: item.simulator_id
-    ):
+    for simulator in sorted(config.simulators.values(), key=lambda item: item.simulator_id):
         try:
             definition = simulator_definition(simulator.kind)
         except (KeyError, TypeError):
             raise EnvironmentError(
-                f"simulator {simulator.simulator_id!r} has no environment profile "
-                f"for type {simulator.kind!r}"
+                f"simulator {simulator.simulator_id!r} has no environment profile for type {simulator.kind!r}"
             ) from None
         profiles.append(
             EnvironmentProfile(
-                environment_id=(
-                    f"{simulator.node}:deploy:{definition.environment_group}"
-                ),
+                environment_id=(f"{simulator.node}:deploy:{definition.environment_group}"),
                 node=simulator.node,
                 project="deploy",
                 group=definition.environment_group,
                 path=f".venv-{definition.environment_group}",
                 python=definition.python,
-                extras=(
-                    ("wireless",)
-                    if simulator.simulator_id in wireless_simulators
-                    else ()
-                ),
+                extras=(("wireless",) if simulator.simulator_id in wireless_simulators else ()),
             )
         )
 
@@ -113,13 +103,10 @@ def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, 
         except ValueError as error:
             raise EnvironmentError(str(error)) from error
         if descriptor.managed_command is None:
-            raise EnvironmentError(
-                f"provider {model.backend!r} has no managed service descriptor"
-            )
+            raise EnvironmentError(f"provider {model.backend!r} has no managed service descriptor")
         if descriptor.requires_environment_packages and not model.environment_packages:
             raise EnvironmentError(
-                f"model {model.model_id!r} must set environment_packages for "
-                f"provider {model.backend!r}"
+                f"model {model.model_id!r} must set environment_packages for provider {model.backend!r}"
             )
         assert model.node is not None
         group = descriptor.environment_group or model.kind
@@ -135,17 +122,11 @@ def environment_profiles(config: DeploymentConfig) -> tuple[EnvironmentProfile, 
                 project=descriptor.source_project,
                 group=group,
                 path=path,
-                python=model.python
-                or descriptor.default_python
-                or _MODEL_PYTHON.get(group),
+                python=model.python or descriptor.default_python or _MODEL_PYTHON.get(group),
                 package_index=model.environment_index,
                 packages=package_requirements,
                 extras=("wireless",) if model.transport == "wireless" else (),
-                install=(
-                    "project-group"
-                    if not descriptor.requires_environment_packages
-                    else "packages"
-                ),
+                install=("project-group" if not descriptor.requires_environment_packages else "packages"),
             )
         )
 
@@ -167,12 +148,9 @@ def _deduplicate(profiles: list[EnvironmentProfile]) -> tuple[EnvironmentProfile
     for profile in profiles:
         identity = (profile.node, profile.path)
         previous = by_identity.get(identity)
-        if previous is not None and replace(previous, extras=()) != replace(
-            profile, extras=()
-        ):
+        if previous is not None and replace(previous, extras=()) != replace(profile, extras=()):
             raise EnvironmentError(
-                f"environment path {profile.path!r} on node {profile.node!r} is "
-                "assigned incompatible profiles"
+                f"environment path {profile.path!r} on node {profile.node!r} is assigned incompatible profiles"
             )
         if previous is None:
             by_identity[identity] = profile
@@ -234,15 +212,9 @@ class UvEnvironmentManager:
     ) -> CommandResult:
         """Synchronize a project group or a pinned standalone package set."""
 
-        result = (
-            self._existing_environment(profile, project_dir=project_dir)
-            if profile.install == "packages"
-            else None
-        )
+        result = self._existing_environment(profile, project_dir=project_dir) if profile.install == "packages" else None
         if result is None:
-            result = self.executor.run(
-                self.sync_command(profile, project_dir=project_dir)
-            )
+            result = self.executor.run(self.sync_command(profile, project_dir=project_dir))
         if not profile.packages:
             return result
         return self.executor.run(self.package_command(profile, project_dir=project_dir))
@@ -292,10 +264,7 @@ class UvEnvironmentManager:
                 ),
                 check=False,
             )
-            if (
-                requested.exit_code != 0
-                or requested.stdout.strip() != actual.stdout.strip()
-            ):
+            if requested.exit_code != 0 or requested.stdout.strip() != actual.stdout.strip():
                 raise EnvironmentError(
                     f"environment {path!r} does not match configured Python "
                     f"{profile.python!r}; choose a different environment path or "

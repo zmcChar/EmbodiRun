@@ -9,6 +9,7 @@ visible to callers so cleanup cannot fabricate a confirmed stopped state.
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 import json
 import os
@@ -29,7 +30,6 @@ from embodirun.devices import (
     ResourceIdentity,
     canonical_resource_identity,
 )
-from embodirun.devices.execution.teleop import resolve_teleop_action
 from embodirun.devices.execution.arbitration import (
     ArbiterCommandSink,
     AuthorityState,
@@ -37,11 +37,16 @@ from embodirun.devices.execution.arbitration import (
     RobotAdapterCommandPort,
     RobotControlArbiter,
 )
+from embodirun.devices.execution.teleop import resolve_teleop_action
 from embodirun.devices.observations import ObservationRecorder, ObservationSnapshot
 from embodirun.devices.observations.hub import SharedSensorError, SharedSensorHub
 from embodirun.devices.observations.views import (
     ObservationViewError,
+)
+from embodirun.devices.observations.views import (
     snapshot_payload as _snapshot_payload,
+)
+from embodirun.devices.observations.views import (
     snapshot_robot_observation as _snapshot_robot_observation,
 )
 from embodirun.devices.recording import ActionEvent
@@ -101,9 +106,7 @@ def _manual_owner_key(
         or not isinstance(session_id, str)
         or not session_id.strip()
     ):
-        raise ControlTaskRejected(
-            "manual ownership requires both caller_id and session_id"
-        )
+        raise ControlTaskRejected("manual ownership requires both caller_id and session_id")
     return caller_id, session_id
 
 
@@ -144,9 +147,7 @@ class _CameraNameView:
     def capture(self) -> tuple[CameraFrame, ...]:
         frames = tuple(self._source.capture())
         if len(frames) > 1 and self._name not in {frame.name for frame in frames}:
-            raise ControlServiceError(
-                "multi-frame camera sources require an explicit frame-name mapping"
-            )
+            raise ControlServiceError("multi-frame camera sources require an explicit frame-name mapping")
         if len(frames) != 1 or frames[0].name == self._name:
             return frames
         return (replace(frames[0], name=self._name),)
@@ -163,9 +164,7 @@ class ControlService:
         self,
         config: ControlServiceConfig,
         *,
-        camera_factory: Callable[[Sequence[SensorInput]], CameraSource] = (
-            create_camera_source
-        ),
+        camera_factory: Callable[[Sequence[SensorInput]], CameraSource] = (create_camera_source),
         client_factory: Callable[[ControlServiceConfig, float], Any] | None = None,
         runtime_factory: Callable[..., Any] = ControlRuntime,
         device_manager: DeviceManager | None = None,
@@ -220,10 +219,7 @@ class ControlService:
         self._shared_observations = SharedSensorHub(
             self._read_shared_state,
         )
-        if (
-            recorder is not None
-            and recorder.store is not self._shared_observations.store
-        ):
+        if recorder is not None and recorder.store is not self._shared_observations.store:
             raise ValueError("recorder must use the service observation store")
         self._recorder = recorder
 
@@ -245,9 +241,7 @@ class ControlService:
         finally:
             self._release_inference_client(client, profile_config)
         if health.get("status") != "ok":
-            raise ControlServiceError(
-                f"inference service at {self.config.inference_endpoint} is not healthy"
-            )
+            raise ControlServiceError(f"inference service at {self.config.inference_endpoint} is not healthy")
         return {"status": "ok", "runtime_id": self.config.runtime_id}
 
     def execute(
@@ -265,9 +259,7 @@ class ControlService:
             self.config.runtime_id,
             *self.config.runtime_profiles,
         }:
-            raise ControlTaskRejected(
-                f"runtime {request.runtime_id!r} is not served by this control service"
-            )
+            raise ControlTaskRejected(f"runtime {request.runtime_id!r} is not served by this control service")
         if not self.config.inference_enabled:
             raise ControlTaskRejected("control service has no inference runtime")
         try:
@@ -313,9 +305,7 @@ class ControlService:
         try:
             health = client.health()
             if health.get("status") != "ok":
-                raise ControlServiceError(
-                    f"inference service at {self.config.inference_endpoint} is not healthy"
-                )
+                raise ControlServiceError(f"inference service at {self.config.inference_endpoint} is not healthy")
             cameras, _ = self._acquire_cameras(profile_config)
             robot, arbiter = self._ensure_robot_arbiter(
                 robot_definition_value,
@@ -327,9 +317,7 @@ class ControlService:
 
             def observation_source() -> RobotObservation:
                 if current_snapshot is None:
-                    raise ControlServiceError(
-                        "shared observation was not published before model input"
-                    )
+                    raise ControlServiceError("shared observation was not published before model input")
                 try:
                     return _snapshot_robot_observation(current_snapshot)
                 except ObservationViewError as error:
@@ -388,17 +376,12 @@ class ControlService:
             if robot is not None and arbiter is not None:
                 if self._closed:
                     raise ControlTaskRejected("control service is closed")
-                if (
-                    not self._robot_prepared
-                    or getattr(robot, "prepared", True) is False
-                ):
+                if not self._robot_prepared or getattr(robot, "prepared", True) is False:
                     self._prepare_existing_robot(robot, profile_config)
                 return robot, arbiter
             with self._control_lock:
                 if self._closed or self._estop_latched:
-                    raise ControlTaskRejected(
-                        "service is closed or emergency stop is latched"
-                    )
+                    raise ControlTaskRejected("service is closed or emergency stop is latched")
             try:
                 robot_config = robot_definition_value.config_factory(
                     profile_config.robot_id,
@@ -416,13 +399,9 @@ class ControlService:
                 ) from error
             lease: DeviceLease | None = None
             robot_resource = _configured_resource(profile_config, kind="robot")
-            external_owner = bool(
-                robot_resource and robot_resource.get("external_owner")
-            )
+            external_owner = bool(robot_resource and robot_resource.get("external_owner"))
             if profile_config.robot_kind == "lerobot.xlerobot" and not external_owner:
-                raise ControlServiceError(
-                    "lerobot.xlerobot requires an external_owner robot resource"
-                )
+                raise ControlServiceError("lerobot.xlerobot requires an external_owner robot resource")
             if self.device_manager is not None:
                 if external_owner and profile_config.robot_kind not in {
                     "unitree.go2",
@@ -435,9 +414,7 @@ class ControlService:
 
                 def open_robot() -> Any:
                     try:
-                        if not _supports_passive_connect(
-                            robot
-                        ) or not _supports_prepare_operation(robot):
+                        if not _supports_passive_connect(robot) or not _supports_prepare_operation(robot):
                             # A legacy adapter with no passive boundary may be
                             # opened only for an explicit control request.  It
                             # is never used by the observation path.
@@ -447,16 +424,12 @@ class ControlService:
                             _connect_robot(robot, prepare=False)
                             robot._rlinf_prepared_on_connect = False
                     except BaseException:
-                        try:
+                        with contextlib.suppress(BaseException):
                             robot.close()
-                        except BaseException:
-                            pass
                         raise
                     return robot
 
-                identity = _resource_identity_from_config(
-                    profile_config, robot_resource
-                )
+                identity = _resource_identity_from_config(profile_config, robot_resource)
                 try:
                     lease = self.device_manager.acquire(
                         DeviceResource(
@@ -465,9 +438,7 @@ class ControlService:
                             closer=lambda value: value.close(),
                             preparer=None if external_owner else _prepare_adapter,
                             external_owner=external_owner,
-                            component_identities=_robot_component_identities(
-                                profile_config
-                            ),
+                            component_identities=_robot_component_identities(profile_config),
                         ),
                         role="control",
                         prepare=not external_owner,
@@ -477,10 +448,8 @@ class ControlService:
                         # physical adapter.  The newly constructed candidate
                         # was never opened by DeviceManager and must not be
                         # retained as a second bus handle.
-                        try:
+                        with contextlib.suppress(BaseException):
                             robot.close()
-                        except BaseException:
-                            pass
                         robot = lease.value
                 except BaseException:
                     # DeviceManager owns rollback after it invokes open_robot;
@@ -500,23 +469,17 @@ class ControlService:
                     finally:
                         self._robot_lease = None
                 else:
-                    try:
+                    with contextlib.suppress(BaseException):
                         robot.close()
-                    except BaseException:
-                        pass
                 raise
             with self._control_lock:
                 self._robot = robot
                 self._current_arbiter = arbiter
-                self._robot_prepared = not external_owner or bool(
-                    getattr(robot, "_rlinf_prepared_on_connect", False)
-                )
+                self._robot_prepared = not external_owner or bool(getattr(robot, "_rlinf_prepared_on_connect", False))
                 stopped = self._estop_latched or self._closed
             if stopped:
                 arbiter.emergency_stop()
-                raise ControlTaskRejected(
-                    "connection interrupted by emergency stop or shutdown"
-                )
+                raise ControlTaskRejected("connection interrupted by emergency stop or shutdown")
             if external_owner and not self._robot_prepared:
                 self._prepare_existing_robot(robot, profile_config)
             return robot, arbiter
@@ -662,17 +625,11 @@ class ControlService:
         if snapshot.state is None:
             raise ControlServiceError(f"snapshot {observation_id!r} has no robot state")
         if any(
-            source_id not in snapshot.source_timestamps_ns
-            or source_id in snapshot.errors
-            for source_id, _ in requested
+            source_id not in snapshot.source_timestamps_ns or source_id in snapshot.errors for source_id, _ in requested
         ):
-            raise ControlServiceError(
-                f"snapshot {observation_id!r} is missing a configured camera source"
-            )
+            raise ControlServiceError(f"snapshot {observation_id!r} is missing a configured camera source")
         if requested and len(frames) != len(requested):
-            raise ControlServiceError(
-                f"snapshot {observation_id!r} is missing a configured camera frame"
-            )
+            raise ControlServiceError(f"snapshot {observation_id!r} is missing a configured camera frame")
         binding, _ = _definitions(profile_config)
         try:
             robot_observation = _snapshot_robot_observation(snapshot)
@@ -697,9 +654,7 @@ class ControlService:
         for frame in self._shared_observations.frames_for(snapshot, requested):
             if frame.name == frame_name:
                 return frame
-        raise SharedSensorError(
-            f"snapshot {observation_id!r} has no frame named {frame_name!r}"
-        )
+        raise SharedSensorError(f"snapshot {observation_id!r} has no frame named {frame_name!r}")
 
     def subscribe(self, max_queue: int = 8, *, replay_latest: bool = False):
         """Subscribe to immutable snapshots without owning camera lifecycle."""
@@ -719,9 +674,7 @@ class ControlService:
         selected_runtime = runtime_id or self.config.runtime_id
         if not self.config.inference_enabled:
             if selected_runtime != self.config.runtime_id:
-                raise ControlTaskRejected(
-                    f"runtime {selected_runtime!r} is not served by this device service"
-                )
+                raise ControlTaskRejected(f"runtime {selected_runtime!r} is not served by this device service")
             return self.config
         try:
             profile = self.config.profile_for_runtime(selected_runtime)
@@ -792,10 +745,7 @@ class ControlService:
         try:
             snapshot = self._shared_observations.snapshot(
                 require_state=include_robot,
-                required_source_ids=[
-                    source_id
-                    for source_id, _ in _runtime_camera_requests(profile_config)
-                ],
+                required_source_ids=[source_id for source_id, _ in _runtime_camera_requests(profile_config)],
             )
             requested, frames = self._snapshot_frame_view(profile_config, snapshot)
             try:
@@ -840,14 +790,10 @@ class ControlService:
                 profile = _camera_capture_profile(item)
                 existing = self._camera_profiles.get(identity.key)
                 if existing is not None and existing != profile:
-                    raise ControlServiceError(
-                        f"camera {identity.key!r} has incompatible capture profiles"
-                    )
+                    raise ControlServiceError(f"camera {identity.key!r} has incompatible capture profiles")
                 local_existing = profiles.get(identity.key)
                 if local_existing is not None and local_existing != profile:
-                    raise ControlServiceError(
-                        f"camera {identity.key!r} has incompatible capture profiles"
-                    )
+                    raise ControlServiceError(f"camera {identity.key!r} has incompatible capture profiles")
                 profiles[identity.key] = profile
                 pending.append((item, identity, profile))
             to_register: list[str] = []
@@ -855,8 +801,7 @@ class ControlService:
                 resource = _configured_resource(profile_config, identity=identity)
                 if resource is not None and resource.get("external_owner"):
                     raise ControlServiceError(
-                        f"sensor {identity.key!r} is externally owned; "
-                        "a proxy camera source is required"
+                        f"sensor {identity.key!r} is externally owned; a proxy camera source is required"
                     )
                 source = self._camera_sources.get(identity.key)
                 if source is None:
@@ -885,9 +830,7 @@ class ControlService:
                     key,
                     self._camera_sources[key],
                 )
-        source: CameraSource = (
-            sources[0] if len(sources) == 1 else CameraSources(tuple(sources))
-        )
+        source: CameraSource = sources[0] if len(sources) == 1 else CameraSources(tuple(sources))
         return source, None
 
     def _make_robot_arbiter(
@@ -925,25 +868,13 @@ class ControlService:
                     stage=str(payload.get("stage", "")),
                     executed=bool(payload.get("executed", False)),
                     observation_id=(
-                        payload.get("observation_id")
-                        if isinstance(payload.get("observation_id"), str)
-                        else None
+                        payload.get("observation_id") if isinstance(payload.get("observation_id"), str) else None
                     ),
-                    outcome=(
-                        payload.get("outcome")
-                        if isinstance(payload.get("outcome"), str)
-                        else None
-                    ),
+                    outcome=(payload.get("outcome") if isinstance(payload.get("outcome"), str) else None),
                     timestamp_ns=(
-                        payload.get("timestamp_ns")
-                        if isinstance(payload.get("timestamp_ns"), int)
-                        else None
+                        payload.get("timestamp_ns") if isinstance(payload.get("timestamp_ns"), int) else None
                     ),
-                    payload=(
-                        payload.get("payload")
-                        if isinstance(payload.get("payload"), Mapping)
-                        else {}
-                    ),
+                    payload=(payload.get("payload") if isinstance(payload.get("payload"), Mapping) else {}),
                 )
             )
         except BaseException:
@@ -973,9 +904,7 @@ class ControlService:
                 closer=lambda value: value.close(),
                 preparer=self._prepare_via_arbiter,
                 external_owner=bool(
-                    (_configured_resource(profile_config, kind="robot") or {}).get(
-                        "external_owner", False
-                    )
+                    (_configured_resource(profile_config, kind="robot") or {}).get("external_owner", False)
                 ),
                 component_identities=_robot_component_identities(profile_config),
             ),
@@ -1023,9 +952,7 @@ class ControlService:
                 try:
                     definition = robot_definition(profile_config.robot_kind)
                 except (KeyError, TypeError):
-                    raise ControlServiceError(
-                        f"robot type {profile_config.robot_kind!r} is not available"
-                    ) from None
+                    raise ControlServiceError(f"robot type {profile_config.robot_kind!r} is not available") from None
             try:
                 robot_config = definition.config_factory(
                     profile_config.robot_id,
@@ -1034,27 +961,19 @@ class ControlService:
                 adapter = definition.adapter_type(robot_config)
             except TypeError as error:
                 raise ControlServiceError(
-                    f"{profile_config.robot_kind!r} has no verified passive connection; "
-                    "explicit prepare is required"
+                    f"{profile_config.robot_kind!r} has no verified passive connection; explicit prepare is required"
                 ) from error
-            if not _supports_passive_connect(
-                adapter
-            ) or not _supports_prepare_operation(adapter):
-                try:
+            if not _supports_passive_connect(adapter) or not _supports_prepare_operation(adapter):
+                with contextlib.suppress(BaseException):
                     adapter.close()
-                except BaseException:
-                    pass
                 raise ControlServiceError(
-                    f"{profile_config.robot_kind!r} has no verified passive connection; "
-                    "explicit prepare is required"
+                    f"{profile_config.robot_kind!r} has no verified passive connection; explicit prepare is required"
                 )
             resource = _configured_resource(profile_config, kind="robot")
             external_owner = bool(resource and resource.get("external_owner"))
             if profile_config.robot_kind == "lerobot.xlerobot" and not external_owner:
                 adapter.close()
-                raise ControlServiceError(
-                    "lerobot.xlerobot requires an external_owner robot resource"
-                )
+                raise ControlServiceError("lerobot.xlerobot requires an external_owner robot resource")
             if self.device_manager is None:
                 try:
                     _connect_robot(adapter, prepare=False)
@@ -1065,10 +984,8 @@ class ControlService:
                         self._robot_prepared = False
                     return _observation_payload(arbiter.observe()) if read else None
                 except BaseException:
-                    try:
+                    with contextlib.suppress(BaseException):
                         adapter.close()
-                    except BaseException:
-                        pass
                     raise
             identity = _resource_identity_from_config(
                 profile_config,
@@ -1087,10 +1004,8 @@ class ControlService:
                 prepare=False,
             )
             if lease.value is not adapter:
-                try:
+                with contextlib.suppress(BaseException):
                     adapter.close()
-                except BaseException:
-                    pass
             robot = lease.value
             try:
                 arbiter = self._make_robot_arbiter(robot, profile_config)
@@ -1127,9 +1042,7 @@ class ControlService:
             try:
                 definition = robot_definition(profile_config.robot_kind)
             except (KeyError, TypeError):
-                raise ControlServiceError(
-                    f"robot type {profile_config.robot_kind!r} is not available"
-                ) from None
+                raise ControlServiceError(f"robot type {profile_config.robot_kind!r} is not available") from None
         return definition
 
     def emergency_stop(self) -> dict[str, Any]:
@@ -1175,9 +1088,7 @@ class ControlService:
                     raise ControlTaskRejected("control service is closed")
                 current_owner = self._manual_owner
                 if current_owner is not None and current_owner != owner:
-                    raise ControlTaskRejected(
-                        "manual control is owned by another caller"
-                    )
+                    raise ControlTaskRejected("manual control is owned by another caller")
                 reserved = current_owner is None
                 if reserved:
                     # Reserve before opening/preparing the adapter.  Otherwise
@@ -1277,9 +1188,7 @@ class ControlService:
                 "status": "ok",
                 "runtime_id": self.config.runtime_id,
                 "robot_id": self.config.robot_id,
-                "authority": AuthorityState.ESTOP_LATCHED.value
-                if estop_latched
-                else AuthorityState.MODEL.value,
+                "authority": AuthorityState.ESTOP_LATCHED.value if estop_latched else AuthorityState.MODEL.value,
                 "active_task": False,
                 "last_error": None,
                 "closed": self._closed,
@@ -1312,7 +1221,7 @@ class ControlService:
             except BaseException as error:
                 arbiter_failed = True
                 if self.device_manager is not None:
-                    try:
+                    with contextlib.suppress(BaseException):
                         self.device_manager.mark_uncertain(
                             _resource_identity_from_config(
                                 self.config,
@@ -1320,8 +1229,6 @@ class ControlService:
                             ),
                             f"robot stop/hold failed during close: {error}",
                         )
-                    except BaseException:
-                        pass
                 if primary_error is None:
                     primary_error = error
         if robot is not None and self.device_manager is None and not arbiter_failed:
@@ -1332,10 +1239,7 @@ class ControlService:
                     primary_error = error
         with self._client_lock:
             clients = tuple(self._wireless_clients.values())
-            if (
-                self._wireless_client is not None
-                and self._wireless_client not in clients
-            ):
+            if self._wireless_client is not None and self._wireless_client not in clients:
                 clients += (self._wireless_client,)
             self._wireless_clients.clear()
             self._wireless_client = None
@@ -1353,11 +1257,7 @@ class ControlService:
                     primary_error = error
         self._camera_observers.clear()
         observations_closed = self._shared_observations.close(timeout_s=1.0)
-        if (
-            self.device_manager is not None
-            and not arbiter_failed
-            and observations_closed
-        ):
+        if self.device_manager is not None and not arbiter_failed and observations_closed:
             try:
                 self.device_manager.close()
             except BaseException as error:
@@ -1427,16 +1327,13 @@ def _control_job_database(
                 "a persistent control state directory is required when no device manager is configured"
             )
         state_path = manager.state_store.path
-        configured = (
-            state_path.parent if state_path is not None else Path(manager.lock_dir)
-        )
+        configured = state_path.parent if state_path is not None else Path(manager.lock_dir)
     root = Path(configured).expanduser()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     runtime_id = service.config.runtime_id
     safe_runtime_id = (
         "".join(
-            character if character.isalnum() or character in {"-", "_", "."} else "_"
-            for character in runtime_id
+            character if character.isalnum() or character in {"-", "_", "."} else "_" for character in runtime_id
         ).strip(".")
         or "service"
     )
@@ -1455,9 +1352,7 @@ def _load_auth_policy(token_file: Path | None) -> AuthPolicy:
     try:
         value = json.loads(configured.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError(
-            f"cannot read control token file {configured}: {error}"
-        ) from error
+        raise ValueError(f"cannot read control token file {configured}: {error}") from error
     if not isinstance(value, Mapping):
         raise ValueError("control token file must contain a JSON object")
     if "tokens" in value:
@@ -1478,14 +1373,10 @@ def _configured_recorder(
     configured_dir = recording_dir
     if configured_dir is None:
         environment_path = os.environ.get("RLINF_DEPLOY_CONTROL_RECORDING_DIR")
-        configured_dir = (
-            Path(environment_path).expanduser() if environment_path else None
-        )
+        configured_dir = Path(environment_path).expanduser() if environment_path else None
     if configured_dir is None:
         return None
-    configured_id = recording_id or os.environ.get(
-        "RLINF_DEPLOY_CONTROL_RECORDING_ID", config.runtime_id
-    )
+    configured_id = recording_id or os.environ.get("RLINF_DEPLOY_CONTROL_RECORDING_ID", config.runtime_id)
     expected_frames = tuple(item.name for item in config.inputs)
     return ObservationRecorder(
         store,
@@ -1501,19 +1392,13 @@ def _definitions(
     try:
         binding = binding_definition(config.binding_kind)
     except (KeyError, TypeError):
-        raise ControlServiceError(
-            f"binding {config.binding_kind!r} is not available"
-        ) from None
+        raise ControlServiceError(f"binding {config.binding_kind!r} is not available") from None
     if binding.robot_kind != config.robot_kind:
-        raise ControlServiceError(
-            f"binding {config.binding_kind!r} does not target {config.robot_kind!r}"
-        )
+        raise ControlServiceError(f"binding {config.binding_kind!r} does not target {config.robot_kind!r}")
     try:
         robot = robot_definition(config.robot_kind)
     except (KeyError, TypeError):
-        raise ControlServiceError(
-            f"robot type {config.robot_kind!r} is not available"
-        ) from None
+        raise ControlServiceError(f"robot type {config.robot_kind!r} is not available") from None
     return binding, robot
 
 
@@ -1538,10 +1423,7 @@ def _binding_description(config: ControlServiceConfig) -> dict[str, Any]:
         }
     adapter = binding.adapter_config or {}
     features = adapter.get("action_feature_names")
-    if isinstance(features, (list, tuple)):
-        names = [str(name) for name in features]
-    else:
-        names = []
+    names = [str(name) for name in features] if isinstance(features, (list, tuple)) else []
     return {
         "kind": binding.kind,
         "maximum_chunk_steps": binding.maximum_chunk_steps,
@@ -1564,9 +1446,7 @@ def _connect_robot(robot: Any, *, prepare: bool) -> None:
     elif prepare:
         connect()
     else:
-        raise ControlServiceError(
-            "robot adapter does not expose a side-effect-free passive connection"
-        )
+        raise ControlServiceError("robot adapter does not expose a side-effect-free passive connection")
 
 
 def _supports_passive_connect(robot: Any) -> bool:
@@ -1595,9 +1475,7 @@ def _prepare_adapter(value: Any) -> None:
         return
     prepare = getattr(value, "prepare", None)
     if not callable(prepare):
-        raise ControlServiceError(
-            f"{type(value).__name__} does not expose explicit prepare"
-        )
+        raise ControlServiceError(f"{type(value).__name__} does not expose explicit prepare")
     prepare()
 
 
@@ -1605,10 +1483,8 @@ def _connect_and_return(robot: Any) -> Any:
     try:
         _connect_robot(robot, prepare=False)
     except BaseException:
-        try:
+        with contextlib.suppress(BaseException):
             robot.close()
-        except BaseException:
-            pass
         raise
     return robot
 
@@ -1672,9 +1548,7 @@ def _robot_component_identities(
     """Return physical robot components attached to the primary descriptor."""
 
     resources = _configured_resources(config, kind="robot")
-    primary = _resource_identity_from_config(
-        config, resources[0] if resources else None
-    )
+    primary = _resource_identity_from_config(config, resources[0] if resources else None)
     identities: dict[str, ResourceIdentity] = {}
     for item in resources[1:]:
         identity = _resource_identity_from_config(config, item)
@@ -1725,43 +1599,31 @@ def _sensor_identity(
     # represented in Host resource metadata.
     source = input_value.options.get("device") or input_value.options.get("path")
     if source is None:
-        source = input_value.options.get("serial") or input_value.options.get(
-            "serial_number"
-        )
+        source = input_value.options.get("serial") or input_value.options.get("serial_number")
     if isinstance(source, str) and source.strip():
         return canonical_resource_identity(config.node_id, "sensor", source)
 
-    resources = tuple(
-        item for item in config.device_resources if item.get("kind") == "sensor"
-    )
+    resources = tuple(item for item in config.device_resources if item.get("kind") == "sensor")
     matches: list[Mapping[str, Any]] = []
     for resource in resources:
         aliases = resource.get("sensor_ids")
         if isinstance(aliases, str):
             aliases = (aliases,)
-        elif not isinstance(aliases, Sequence) or isinstance(
-            aliases, (bytes, bytearray)
-        ):
+        elif not isinstance(aliases, Sequence) or isinstance(aliases, (bytes, bytearray)):
             aliases = ()
         candidate_ids = tuple(
-            value
-            for value in (*aliases, resource.get("sensor_id"))
-            if isinstance(value, str) and value.strip()
+            value for value in (*aliases, resource.get("sensor_id")) if isinstance(value, str) and value.strip()
         )
         if input_value.sensor_id in candidate_ids:
             matches.append(resource)
     if len(matches) == 1:
         return _resource_identity_from_config(config, matches[0])
     if len(matches) > 1:
-        raise ControlServiceError(
-            f"sensor input {input_value.sensor_id!r} matches multiple resources"
-        )
+        raise ControlServiceError(f"sensor input {input_value.sensor_id!r} matches multiple resources")
     if not resources:
         # A legacy config without Host resource metadata uses the logical
         # sensor id as its stable source identity.
-        return canonical_resource_identity(
-            config.node_id, "sensor", input_value.sensor_id
-        )
+        return canonical_resource_identity(config.node_id, "sensor", input_value.sensor_id)
     if len(resources) == 1:
         # Preserve the old fallback only for genuinely aliasless static
         # configurations.  Generated Host metadata names its logical sensor
@@ -1770,20 +1632,16 @@ def _sensor_identity(
         resource = resources[0]
         if "sensor_id" in resource or "sensor_ids" in resource:
             raise ControlServiceError(
-                f"sensor input {input_value.sensor_id!r} does not identify the "
-                "configured sensor resource"
+                f"sensor input {input_value.sensor_id!r} does not identify the configured sensor resource"
             )
         return _resource_identity_from_config(config, resource)
     raise ControlServiceError(
-        f"sensor input {input_value.sensor_id!r} does not identify one of "
-        f"{len(resources)} configured sensor resources"
+        f"sensor input {input_value.sensor_id!r} does not identify one of {len(resources)} configured sensor resources"
     )
 
 
 def _camera_group_key(config: ControlServiceConfig) -> str:
-    identities = sorted(
-        f"{_sensor_identity(config, item).key}={item.name}" for item in config.inputs
-    )
+    identities = sorted(f"{_sensor_identity(config, item).key}={item.name}" for item in config.inputs)
     return "|".join(identities)
 
 
@@ -1792,9 +1650,7 @@ def _runtime_camera_requests(
 ) -> tuple[tuple[str, str], ...]:
     """Map configured runtime names to physical source IDs in input order."""
 
-    return tuple(
-        (_sensor_identity(config, item).key, item.name) for item in config.inputs
-    )
+    return tuple((_sensor_identity(config, item).key, item.name) for item in config.inputs)
 
 
 def _observation_payload(value: Any) -> Any:

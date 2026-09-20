@@ -12,7 +12,6 @@ import math
 import threading
 import time
 from collections.abc import Mapping, Sequence
-from typing import Any
 
 from ...adapter import RobotAction, RobotAdapter, RobotObservation
 from .config import FAKE_JOINTS, FakeJointsConfig
@@ -112,8 +111,7 @@ class FakeJointsAdapter(RobotAdapter):
             declared_space = action.metadata.get("action_space")
             if declared_space is not None and declared_space != FAKE_ACTION_SPACE:
                 raise FakeJointsAdapterError(
-                    f"unsupported action space {declared_space!r}; "
-                    f"expected {FAKE_ACTION_SPACE!r}"
+                    f"unsupported action space {declared_space!r}; expected {FAKE_ACTION_SPACE!r}"
                 )
             if not isinstance(action.values, Mapping):
                 raise FakeJointsAdapterError("fake joints action values must be an object")
@@ -124,14 +122,9 @@ class FakeJointsAdapter(RobotAdapter):
                     raise FakeJointsAdapterError("stop action must not contain parameters")
                 return
             if action_type != "joint_position":
-                raise FakeJointsAdapterError(
-                    f"unsupported fake joints action type: {action_type!r}"
-                )
+                raise FakeJointsAdapterError(f"unsupported fake joints action type: {action_type!r}")
             if set(values) != {"joint_positions_deg", "gripper_position"}:
-                raise FakeJointsAdapterError(
-                    "fake joints action must contain joint_positions_deg and "
-                    "gripper_position"
-                )
+                raise FakeJointsAdapterError("fake joints action must contain joint_positions_deg and gripper_position")
             target_joints = _numbers(
                 values["joint_positions_deg"],
                 "joint_positions_deg",
@@ -142,10 +135,7 @@ class FakeJointsAdapter(RobotAdapter):
                 raise FakeJointsAdapterError("joint_positions_deg must be in [-180, 180]")
             if not 0.0 <= target_gripper <= 100.0:
                 raise FakeJointsAdapterError("gripper_position must be in [0, 100]")
-            joint_deltas = tuple(
-                abs(target - current)
-                for target, current in zip(target_joints, self._joint_positions)
-            )
+            joint_deltas = tuple(abs(target - current) for target, current in zip(target_joints, self._joint_positions))
             gripper_delta = abs(target_gripper - self._gripper_position)
             if self.config.step_limit_mode == "reject" and (
                 max(joint_deltas, default=0.0) > self.config.max_joint_step_deg

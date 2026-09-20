@@ -8,8 +8,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from embodirun.robots.sensors import SensorInput
 from embodirun.model_services.providers import provider
+from embodirun.robots.sensors import SensorInput
 
 CONTROL_CONFIG_SCHEMA = "rlinf.control.config.v1"
 TASK_REQUEST_SCHEMA = "rlinf.control.task.v1"
@@ -51,13 +51,10 @@ class ControlRuntimeProfile:
             raise ControlContractError(str(error)) from error
         if not selected_provider.supports(self.inference_transport):
             raise ControlContractError(
-                f"inference provider {self.inference_backend!r} does not support "
-                f"transport {self.inference_transport!r}"
+                f"inference provider {self.inference_backend!r} does not support transport {self.inference_transport!r}"
             )
         if not selected_provider.action_capable:
-            raise ControlContractError(
-                f"inference provider {self.inference_backend!r} has no action capability"
-            )
+            raise ControlContractError(f"inference provider {self.inference_backend!r} has no action capability")
         object.__setattr__(
             self,
             "inference_options",
@@ -69,16 +66,12 @@ class ControlRuntimeProfile:
             _mapping(self.runtime_options, "profile.runtime_options"),
         )
         if not isinstance(self.inputs, tuple) or not self.inputs:
-            raise ControlContractError(
-                "control runtime profile inputs must be non-empty"
-            )
+            raise ControlContractError("control runtime profile inputs must be non-empty")
         if any(not isinstance(item, SensorInput) for item in self.inputs):
             raise ControlContractError("control runtime profile inputs are invalid")
         names = [item.name for item in self.inputs]
         if len(names) != len(set(names)):
-            raise ControlContractError(
-                "control runtime profile input names must be unique"
-            )
+            raise ControlContractError("control runtime profile input names must be unique")
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -105,9 +98,7 @@ class ControlRuntimeProfile:
     def from_payload(cls, runtime_id: str, value: object) -> ControlRuntimeProfile:
         item = _mapping(value, f"control config.runtime_profiles.{runtime_id}")
         context = f"control config.runtime_profiles.{runtime_id}"
-        _reject_unknown(
-            item, {"binding", "inference", "inputs", "runtime_options"}, context
-        )
+        _reject_unknown(item, {"binding", "inference", "inputs", "runtime_options"}, context)
         inference = _mapping(item.get("inference"), f"{context}.inference")
         _reject_unknown(
             inference,
@@ -121,22 +112,13 @@ class ControlRuntimeProfile:
             runtime_id=runtime_id,
             binding_kind=_string(item, "binding", context),
             inference_backend=(
-                _string(inference, "backend", f"{context}.inference")
-                if "backend" in inference
-                else "vvla"
+                _string(inference, "backend", f"{context}.inference") if "backend" in inference else "vvla"
             ),
             inference_transport=_string(inference, "transport", f"{context}.inference"),
             inference_endpoint=_string(inference, "endpoint", f"{context}.inference"),
-            inference_options=_mapping(
-                inference.get("options", {}), f"{context}.inference.options"
-            ),
-            inputs=tuple(
-                _sensor_input(input_value, index)
-                for index, input_value in enumerate(inputs)
-            ),
-            runtime_options=_mapping(
-                item.get("runtime_options", {}), f"{context}.runtime_options"
-            ),
+            inference_options=_mapping(inference.get("options", {}), f"{context}.inference.options"),
+            inputs=tuple(_sensor_input(input_value, index) for index, input_value in enumerate(inputs)),
+            runtime_options=_mapping(item.get("runtime_options", {}), f"{context}.runtime_options"),
         )
 
 
@@ -186,26 +168,16 @@ class ControlServiceConfig:
             if not isinstance(value, str) or not value.strip():
                 raise ControlContractError(f"{name} must not be empty")
         if self.bind not in {"127.0.0.1", "localhost", "::1"}:
-            raise ControlContractError(
-                "control service must bind to a loopback address"
-            )
-        if (
-            isinstance(self.port, bool)
-            or not isinstance(self.port, int)
-            or not 1 <= self.port <= 65535
-        ):
-            raise ControlContractError(
-                "control service port must be between 1 and 65535"
-            )
+            raise ControlContractError("control service must bind to a loopback address")
+        if isinstance(self.port, bool) or not isinstance(self.port, int) or not 1 <= self.port <= 65535:
+            raise ControlContractError("control service port must be between 1 and 65535")
         if self.inference_enabled and self.inference_transport not in {
             "http",
             "wireless",
         }:
             raise ControlContractError("inference transport must be http or wireless")
         if not self.inference_enabled and self.inference_transport != "disabled":
-            raise ControlContractError(
-                "a device-only control service must use disabled inference"
-            )
+            raise ControlContractError("a device-only control service must use disabled inference")
         if self.inference_enabled:
             try:
                 selected_provider = provider(self.inference_backend)
@@ -217,9 +189,7 @@ class ControlServiceConfig:
                     f"transport {self.inference_transport!r}"
                 )
             if not selected_provider.action_capable:
-                raise ControlContractError(
-                    f"inference provider {self.inference_backend!r} has no action capability"
-                )
+                raise ControlContractError(f"inference provider {self.inference_backend!r} has no action capability")
         for name in ("inference_options", "robot_options", "runtime_options"):
             value = _mapping(getattr(self, name), name)
             object.__setattr__(self, name, value)
@@ -227,41 +197,24 @@ class ControlServiceConfig:
             raise ControlContractError("device_resources must be a tuple")
         for index, resource in enumerate(self.device_resources):
             item = _mapping(resource, f"device_resources[{index}]")
-            if (
-                not isinstance(item.get("identity"), str)
-                or not item["identity"].strip()
-            ):
-                raise ControlContractError(
-                    f"device_resources[{index}].identity must not be empty"
-                )
+            if not isinstance(item.get("identity"), str) or not item["identity"].strip():
+                raise ControlContractError(f"device_resources[{index}].identity must not be empty")
             if not isinstance(item.get("kind"), str) or not item["kind"].strip():
-                raise ControlContractError(
-                    f"device_resources[{index}].kind must not be empty"
-                )
+                raise ControlContractError(f"device_resources[{index}].kind must not be empty")
         if not isinstance(self.inference_enabled, bool):
             raise ControlContractError("inference_enabled must be a boolean")
         profiles = _mapping(self.runtime_profiles, "runtime_profiles")
         if any(not isinstance(key, str) or not key.strip() for key in profiles):
             raise ControlContractError("runtime_profiles keys must not be empty")
-        if any(
-            not isinstance(value, ControlRuntimeProfile) for value in profiles.values()
-        ):
-            raise ControlContractError(
-                "runtime_profiles values must be ControlRuntimeProfile"
-            )
+        if any(not isinstance(value, ControlRuntimeProfile) for value in profiles.values()):
+            raise ControlContractError("runtime_profiles values must be ControlRuntimeProfile")
         if any(key != value.runtime_id for key, value in profiles.items()):
             raise ControlContractError("runtime_profiles keys must match runtime_id")
         object.__setattr__(self, "runtime_profiles", profiles)
-        if not isinstance(self.inputs, tuple) or (
-            self.inference_enabled and not self.inputs
-        ):
-            raise ControlContractError(
-                "control service inputs must be a non-empty tuple when inference is enabled"
-            )
+        if not isinstance(self.inputs, tuple) or (self.inference_enabled and not self.inputs):
+            raise ControlContractError("control service inputs must be a non-empty tuple when inference is enabled")
         if any(not isinstance(item, SensorInput) for item in self.inputs):
-            raise ControlContractError(
-                "control service inputs must contain SensorInput values"
-            )
+            raise ControlContractError("control service inputs must contain SensorInput values")
         names = [item.name for item in self.inputs]
         if len(names) != len(set(names)):
             raise ControlContractError("control service input names must be unique")
@@ -347,8 +300,7 @@ class ControlServiceConfig:
             payload["device_resources"] = [dict(item) for item in self.device_resources]
         if self.runtime_profiles:
             payload["runtime_profiles"] = {
-                runtime_id: profile.to_payload()
-                for runtime_id, profile in sorted(self.runtime_profiles.items())
+                runtime_id: profile.to_payload() for runtime_id, profile in sorted(self.runtime_profiles.items())
             }
         if not self.inference_enabled:
             payload["inference"]["enabled"] = False
@@ -366,9 +318,7 @@ class ControlServiceConfig:
         try:
             root = _mapping(json.loads(value), "control config")
         except json.JSONDecodeError as error:
-            raise ControlContractError(
-                f"control config is invalid JSON: {error}"
-            ) from error
+            raise ControlContractError(f"control config is invalid JSON: {error}") from error
         if root.get("schema") != CONTROL_CONFIG_SCHEMA:
             raise ControlContractError("unsupported control config schema")
         _reject_unknown(
@@ -400,14 +350,10 @@ class ControlServiceConfig:
         _reject_unknown(robot, {"id", "type", "options"}, "control config.robot")
         inference_enabled = inference.get("enabled", True)
         if not isinstance(inference_enabled, bool):
-            raise ControlContractError(
-                "control config.inference.enabled must be boolean"
-            )
+            raise ControlContractError("control config.inference.enabled must be boolean")
         inputs = root.get("inputs")
         if not isinstance(inputs, list) or (inference_enabled and not inputs):
-            raise ControlContractError(
-                "control config.inputs must be a non-empty list when inference is enabled"
-            )
+            raise ControlContractError("control config.inputs must be a non-empty list when inference is enabled")
         resources = root.get("device_resources", [])
         if not isinstance(resources, list):
             raise ControlContractError("control config.device_resources must be a list")
@@ -419,21 +365,13 @@ class ControlServiceConfig:
         }
         if inference_enabled:
             inference_backend = (
-                _string(inference, "backend", "control config.inference")
-                if "backend" in inference
-                else "vvla"
+                _string(inference, "backend", "control config.inference") if "backend" in inference else "vvla"
             )
-            inference_transport = _string(
-                inference, "transport", "control config.inference"
-            )
-            inference_endpoint = _string(
-                inference, "endpoint", "control config.inference"
-            )
+            inference_transport = _string(inference, "transport", "control config.inference")
+            inference_endpoint = _string(inference, "endpoint", "control config.inference")
         else:
             inference_backend = (
-                _string(inference, "backend", "control config.inference")
-                if "backend" in inference
-                else "vvla"
+                _string(inference, "backend", "control config.inference") if "backend" in inference else "vvla"
             )
             inference_transport = "disabled"
             inference_endpoint = ""
@@ -445,28 +383,15 @@ class ControlServiceConfig:
             inference_backend=inference_backend,
             inference_transport=inference_transport,
             inference_endpoint=inference_endpoint,
-            inference_options=_mapping(
-                inference.get("options", {}), "control config.inference.options"
-            ),
+            inference_options=_mapping(inference.get("options", {}), "control config.inference.options"),
             robot_id=_string(robot, "id", "control config.robot"),
             robot_kind=_string(robot, "type", "control config.robot"),
-            robot_options=_mapping(
-                robot.get("options", {}), "control config.robot.options"
-            ),
-            inputs=tuple(
-                _sensor_input(item, index) for index, item in enumerate(inputs)
-            ),
-            runtime_options=_mapping(
-                root.get("runtime_options", {}), "control config.runtime_options"
-            ),
-            node_id=(
-                _string(root, "node_id", "control config")
-                if "node_id" in root
-                else "local"
-            ),
+            robot_options=_mapping(robot.get("options", {}), "control config.robot.options"),
+            inputs=tuple(_sensor_input(item, index) for index, item in enumerate(inputs)),
+            runtime_options=_mapping(root.get("runtime_options", {}), "control config.runtime_options"),
+            node_id=(_string(root, "node_id", "control config") if "node_id" in root else "local"),
             device_resources=tuple(
-                _mapping(item, f"control config.device_resources[{index}]")
-                for index, item in enumerate(resources)
+                _mapping(item, f"control config.device_resources[{index}]") for index, item in enumerate(resources)
             ),
             runtime_profiles=profiles,
             inference_enabled=inference_enabled,
@@ -476,9 +401,7 @@ class ControlServiceConfig:
         """Return the selected runtime profile without opening inference/robot IO."""
 
         if not self.inference_enabled:
-            raise ControlContractError(
-                "device-only control service has no runtime profile"
-            )
+            raise ControlContractError("device-only control service has no runtime profile")
         profile = self.runtime_profiles.get(runtime_id)
         if profile is not None:
             return profile
@@ -534,12 +457,7 @@ class TaskRequest:
                 raise ControlContractError(f"{name} must be a positive integer")
         for name in ("control_hz", "inference_timeout_s"):
             value = getattr(self, name)
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not math.isfinite(value)
-                or value <= 0
-            ):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
                 raise ControlContractError(f"{name} must be a finite positive number")
 
     def to_payload(self) -> dict[str, Any]:
@@ -691,9 +609,7 @@ def _reject_unknown(
 ) -> None:
     unknown = sorted(set(value) - allowed)
     if unknown:
-        raise ControlContractError(
-            f"{context} contains unknown fields: {', '.join(unknown)}"
-        )
+        raise ControlContractError(f"{context} contains unknown fields: {', '.join(unknown)}")
 
 
 __all__ = [

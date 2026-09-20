@@ -5,9 +5,8 @@ from __future__ import annotations
 import struct
 import time
 import zlib
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Callable
 
 from ..camera import CameraFrame
 
@@ -33,18 +32,14 @@ class FakeCameraConfig:
         if len(self.color) != 3:
             raise ValueError("camera color must contain three channels")
         if any(
-            isinstance(channel, bool)
-            or not isinstance(channel, int)
-            or not 0 <= channel <= 255
+            isinstance(channel, bool) or not isinstance(channel, int) or not 0 <= channel <= 255
             for channel in self.color
         ):
             raise ValueError("camera color channels must be integers in [0, 255]")
 
 
 def _chunk(kind: bytes, payload: bytes) -> bytes:
-    return struct.pack(">I", len(payload)) + kind + payload + struct.pack(
-        ">I", zlib.crc32(kind + payload) & 0xFFFFFFFF
-    )
+    return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
 
 
 def _static_png(config: FakeCameraConfig) -> bytes:
@@ -53,9 +48,12 @@ def _static_png(config: FakeCameraConfig) -> bytes:
     row = bytes(config.color) * config.width
     raw = b"".join(b"\x00" + row for _ in range(config.height))
     header = struct.pack(">IIBBBBB", config.width, config.height, 8, 2, 0, 0, 0)
-    return b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", header) + _chunk(
-        b"IDAT", zlib.compress(raw, level=1)
-    ) + _chunk(b"IEND", b"")
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _chunk(b"IHDR", header)
+        + _chunk(b"IDAT", zlib.compress(raw, level=1))
+        + _chunk(b"IEND", b"")
+    )
 
 
 class FakeCameraSource:
@@ -77,9 +75,7 @@ class FakeCameraSource:
     def _now_ns(self) -> int:
         value = self._clock_ns()
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-            raise FakeCameraError(
-                "fake camera clock must return a non-negative integer nanosecond value"
-            )
+            raise FakeCameraError("fake camera clock must return a non-negative integer nanosecond value")
         return value
 
     def capture(self) -> tuple[CameraFrame, ...]:

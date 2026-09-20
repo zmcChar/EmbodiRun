@@ -6,10 +6,10 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from embodirun.robots.lerobot.bi_so101 import BI_SO101_POSITION_FEATURES
 from embodirun.deployment.config import ConfigError, load_config
 from embodirun.deployment.operations.init import InitError, _probe_resources
 from embodirun.deployment.plan import ServiceError, _binding_adapter_config, build_plan
+from embodirun.robots.lerobot.bi_so101 import BI_SO101_POSITION_FEATURES
 
 EXAMPLE = Path(__file__).parents[1] / "configs/pi05/bi-so101-vvla.yaml"
 
@@ -28,12 +28,16 @@ def test_dual_so101_plan_generates_mixed_precision_vvla_config():
     assert adapter["state_fields"] == list(BI_SO101_POSITION_FEATURES)
     assert adapter["action_feature_names"] == list(BI_SO101_POSITION_FEATURES)
     assert adapter["image_fields"] == [
-        "observation.images.front", "observation.images.left_wrist", "observation.images.right_wrist"
+        "observation.images.front",
+        "observation.images.left_wrist",
+        "observation.images.right_wrist",
     ]
     assert adapter["return_steps"] == 50
     assert adapter["policy_kwargs"] == {
-        "attention": "eager", "vision_attention": "sdpa",
-        "native_embeddings": True, "low_cpu_mem_usage": True,
+        "attention": "eager",
+        "vision_attention": "sdpa",
+        "native_embeddings": True,
+        "low_cpu_mem_usage": True,
     }
     argv = service.command.argv
     assert argv[argv.index("--dtype") + 1] == "auto"
@@ -87,7 +91,8 @@ def test_generated_adapter_rejects_external_file_conflict(tmp_path):
 def test_both_arm_ports_participate_in_existing_conflict_check(tmp_path, side):
     document = yaml.safe_load(EXAMPLE.read_text())
     document["robots"]["single"] = {
-        "type": "lerobot.so101", "node": "robot-compute",
+        "type": "lerobot.so101",
+        "node": "robot-compute",
         "port": document["robots"]["bi-so101"][f"{side}_port"],
     }
     with pytest.raises(ConfigError, match="share port"):
@@ -105,7 +110,8 @@ def test_init_probes_both_ports_before_using_hardware():
 
     with pytest.raises(InitError, match="REPLACE_RIGHT_ARM"):
         _probe_resources(
-            SimpleNamespace(config=config), Executor(),
+            SimpleNamespace(config=config),
+            Executor(),
             SimpleNamespace(node_id="robot-compute", deploy_project="/deploy", inference_project="/inference"),
         )
     assert commands == [

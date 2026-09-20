@@ -91,13 +91,9 @@ class NixlTensorTransport:
 
     def _check(self):
         if self.failed:
-            raise RuntimeError(
-                "NIXL connection failed; restart the worker before resynchronizing"
-            )
+            raise RuntimeError("NIXL connection failed; restart the worker before resynchronizing")
         if self.closed or self._busy:
-            raise RuntimeError(
-                "NIXL connection is closed or has another active operation"
-            )
+            raise RuntimeError("NIXL connection is closed or has another active operation")
 
     async def _guard(self, operation):
         self._check()
@@ -166,18 +162,14 @@ class NixlTensorTransport:
                 or peer["name"] == self.name
             ):
                 raise ValueError("invalid NIXL peer metadata")
-            loaded = self.agent.add_remote_agent(
-                base64.b64decode(peer["metadata"], validate=True)
-            )
+            loaded = self.agent.add_remote_agent(base64.b64decode(peer["metadata"], validate=True))
             if isinstance(loaded, bytes):
                 loaded = loaded.decode()
             if loaded != peer["name"]:
                 raise ValueError("NIXL metadata identity differs from control peer")
             self.peer = peer
             self.capacity = min(self.chunk_bytes, peer["capacity"])
-            self.session = hashlib.sha256(
-                "\0".join(sorted((self.name, peer["name"]))).encode()
-            ).hexdigest()
+            self.session = hashlib.sha256("\0".join(sorted((self.name, peer["name"]))).encode()).hexdigest()
 
         await self._guard(operation)
 
@@ -198,9 +190,7 @@ class NixlTensorTransport:
                 or tensor.device != self.device
                 or str(tensor.dtype) not in self.dtypes
             ):
-                raise ValueError(
-                    "tensor dtype/device differs from configured NIXL transport"
-                )
+                raise ValueError("tensor dtype/device differs from configured NIXL transport")
             value = tensor.detach().contiguous()
             view = value.reshape(-1).view(self.torch.uint8)
             views.append(view)
@@ -227,10 +217,7 @@ class NixlTensorTransport:
                 or item.get("dtype") not in self.dtypes
             ):
                 raise ValueError("invalid NIXL tensor shape or dtype")
-            size = (
-                math.prod(shape)
-                * self.torch.empty(0, dtype=self.dtypes[item["dtype"]]).element_size()
-            )
+            size = math.prod(shape) * self.torch.empty(0, dtype=self.dtypes[item["dtype"]]).element_size()
             if type(item.get("bytes")) is not int or size != item["bytes"]:
                 raise ValueError("NIXL tensor byte length differs from shape/dtype")
             total += size
@@ -253,16 +240,12 @@ class NixlTensorTransport:
             position = end
 
     async def _write_chunk(self, size, token):
-        local = self.agent.get_xfer_descs(
-            [(self.arena.data_ptr(), size, self.device_id)], self.mem_type
-        )
+        local = self.agent.get_xfer_descs([(self.arena.data_ptr(), size, self.device_id)], self.mem_type)
         remote = self.agent.get_xfer_descs(
             [(self.peer["address"], size, self.peer["device_id"])],
             self.peer["mem_type"],
         )
-        handle = self.agent.initialize_xfer(
-            "WRITE", local, remote, self.peer["name"], backends=["UCX"]
-        )
+        handle = self.agent.initialize_xfer("WRITE", local, remote, self.peer["name"], backends=["UCX"])
         self._handles.append(handle)
         # On cancellation/timeout, retain the handle and arena for process exit.
         # NIXL can refuse to release a transfer that has not finished aborting.
@@ -284,9 +267,7 @@ class NixlTensorTransport:
                     name = name.decode()
                 for message in messages:
                     if name != self.peer["name"] or message != token or found:
-                        raise ValueError(
-                            "unexpected or duplicate NIXL completion notification"
-                        )
+                        raise ValueError("unexpected or duplicate NIXL completion notification")
                     found = True
             if found:
                 return
@@ -301,9 +282,7 @@ class NixlTensorTransport:
             started = time.perf_counter()
             specs, views = self._describe(tensors)
             total = sum(item["bytes"] for item in specs)
-            await self._send(
-                {**self._stamp("offer"), "tensors": specs, "metadata": metadata}
-            )
+            await self._send({**self._stamp("offer"), "tensors": specs, "metadata": metadata})
             metrics = {
                 "pack_wait_s": 0.0,
                 "transfer_wait_s": 0.0,
@@ -344,15 +323,11 @@ class NixlTensorTransport:
                 raise RuntimeError("NIXL connection is not initialized")
             started = time.perf_counter()
             offer = await self._recv()
-            if {
-                key: offer.get(key) for key in ("kind", "session", "sequence")
-            } != self._stamp("offer"):
+            if {key: offer.get(key) for key in ("kind", "session", "sequence")} != self._stamp("offer"):
                 raise ValueError("NIXL offer session or sequence differs")
             total = self._validate_specs(offer["tensors"])
             tensors = [
-                self.torch.empty(
-                    item["shape"], dtype=self.dtypes[item["dtype"]], device=self.device
-                )
+                self.torch.empty(item["shape"], dtype=self.dtypes[item["dtype"]], device=self.device)
                 for item in offer["tensors"]
             ]
             views = [tensor.reshape(-1).view(self.torch.uint8) for tensor in tensors]

@@ -14,8 +14,8 @@ import threading
 from collections.abc import Mapping
 
 import pytest
-
 from examples import run_shared_device_inference as experiment
+
 from embodirun.services.inference import PolicyAction, PolicyObservation, PolicyResult, Session
 
 
@@ -193,10 +193,7 @@ def test_run_experiment_uses_present_then_shared_readback_and_records_actions(
     assert report["shared_consumer_observation_ids"]
 
     raw_results = json.loads((output_dir / "raw-model-results.json").read_text(encoding="utf-8"))
-    assert [
-        tuple(raw["actions"][0]["values"]["data"][2])
-        for raw in raw_results["results"]
-    ] == [
+    assert [tuple(raw["actions"][0]["values"]["data"][2]) for raw in raw_results["results"]] == [
         (10.0, 11.0, 12.0, 13.0, 14.0, 15.0),
         (20.0, 21.0, 22.0, 23.0, 24.0, 25.0),
     ]

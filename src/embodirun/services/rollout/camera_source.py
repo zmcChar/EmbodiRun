@@ -34,9 +34,7 @@ class CameraObservationSource:
     Capture monotonic timestamps may only be compared on the camera's own host.
     """
 
-    def __init__(
-        self, urls, *, image_size=224, state_dim=6, mode="recorded", timeout_s=5
-    ):
+    def __init__(self, urls, *, image_size=224, state_dim=6, mode="recorded", timeout_s=5):
         if mode not in {"recorded", "live"} or not urls:
             raise ValueError("camera source requires URLs and recorded/live mode")
         if image_size <= 0 or state_dim <= 0 or timeout_s <= 0:
@@ -66,31 +64,15 @@ class CameraObservationSource:
                         probe.connect((address, parsed.port or 80))
                         self.local_clocks.append(address == probe.getsockname()[0])
                 health = self._get(url + "/health")
-                if (
-                    parsed.scheme == "shm"
-                    and health.get("clock_identity")
-                    != self.shared_stores[url].clock_identity()
-                ):
-                    raise ValueError(
-                        "Shared camera timestamps belong to another host or time namespace"
-                    )
-                if (
-                    health.get("state") != "running"
-                    or health.get("motor_access") is not False
-                ):
+                if parsed.scheme == "shm" and health.get("clock_identity") != self.shared_stores[url].clock_identity():
+                    raise ValueError("Shared camera timestamps belong to another host or time namespace")
+                if health.get("state") != "running" or health.get("motor_access") is not False:
                     raise ValueError("camera-only publisher must be running")
                 if mode == "recorded":
                     count = health.get("recorded", 0)
                     if not count or count != health.get("record_count_target"):
-                        raise ValueError(
-                            "camera recording must finish before paired trials"
-                        )
-                    self.recorded.append(
-                        [
-                            self._decode(self._get(url + f"/frame/{index}"))
-                            for index in range(count)
-                        ]
-                    )
+                        raise ValueError("camera recording must finish before paired trials")
+                    self.recorded.append([self._decode(self._get(url + f"/frame/{index}")) for index in range(count)])
         except BaseException:
             self.close()
             raise
@@ -113,9 +95,7 @@ class CameraObservationSource:
         if packet.get("schema") != "embodirun.camera-only.v1":
             raise ValueError("unexpected camera observation schema")
         if packet.get("state_source") != "fixed-fixture-no-robot-read":
-            raise ValueError(
-                "camera experiment requires explicitly labelled fixture state"
-            )
+            raise ValueError("camera experiment requires explicitly labelled fixture state")
         state = packet["state"]
         if len(state) != self.state_dim or not all(math.isfinite(x) for x in state):
             raise ValueError("invalid camera fixture state")
@@ -131,10 +111,7 @@ class CameraObservationSource:
             if value["mime_type"] == "application/x-embodirun-raw-image":
                 width, height = value.get("width"), value.get("height")
                 if (
-                    any(
-                        type(n) is not int or not 0 < n <= 16384
-                        for n in (width, height)
-                    )
+                    any(type(n) is not int or not 0 < n <= 16384 for n in (width, height))
                     or value.get("pixel_format") not in {"bgr8", "rgb8"}
                     or value.get("row_stride_bytes") != width * 3
                     or len(data) != width * height * 3
@@ -152,11 +129,7 @@ class CameraObservationSource:
             else:
                 raise ValueError("unsupported camera image MIME type")
             with image:
-                images[name] = (
-                    image.convert("RGB")
-                    .resize((self.image_size, self.image_size))
-                    .tobytes()
-                )
+                images[name] = image.convert("RGB").resize((self.image_size, self.image_size)).tobytes()
         if not images:
             raise ValueError("camera packet has no images")
         return {"state": state, "instruction": packet["instruction"], "images": images}
@@ -179,32 +152,21 @@ class CameraObservationSource:
                 frame_times = acquisition.get("frames", {})
                 if set(frame_times) != set(packet["images"]):
                     raise ValueError("GStreamer timestamps do not cover every camera")
-                timestamps = [
-                    frame["sample_time_monotonic_estimate_s"]
-                    for frame in frame_times.values()
-                ]
-                if not all(
-                    isinstance(t, (int, float)) and math.isfinite(t) for t in timestamps
-                ):
+                timestamps = [frame["sample_time_monotonic_estimate_s"] for frame in frame_times.values()]
+                if not all(isinstance(t, (int, float)) and math.isfinite(t) for t in timestamps):
                     raise ValueError("invalid GStreamer pipeline timestamp")
                 pipeline_age = time.monotonic() - min(timestamps)
                 if self.mode == "live" and not 0 <= pipeline_age <= 1.0:
-                    raise ValueError(
-                        "live GStreamer frame has a stale pipeline timestamp"
-                    )
+                    raise ValueError("live GStreamer frame has a stale pipeline timestamp")
         if self.mode == "recorded":
             expected = self.recorded[source][frame % len(self.recorded[source])]
             if value != expected:
-                raise ValueError(
-                    "recorded camera observation changed during paired trial"
-                )
+                raise ValueError("recorded camera observation changed during paired trial")
         self.last_metadata = {
             "source": self.urls[source],
             "mode": self.mode,
             "frame_index": packet["index"],
-            "image_encodings": {
-                name: image["mime_type"] for name, image in packet["images"].items()
-            },
+            "image_encodings": {name: image["mime_type"] for name, image in packet["images"].items()},
             "image_payload_bytes": image_payload_bytes(packet),
             "read_decode_s": time.perf_counter() - started,
             "capture_started_monotonic_s": packet["capture_started_monotonic_s"],
@@ -227,8 +189,7 @@ class CameraObservationSource:
                 value = {
                     **frame,
                     "images": {
-                        name: hashlib.sha256(data).hexdigest()
-                        for name, data in sorted(frame["images"].items())
+                        name: hashlib.sha256(data).hexdigest() for name, data in sorted(frame["images"].items())
                     },
                 }
                 digest.update(json.dumps(value, sort_keys=True).encode())

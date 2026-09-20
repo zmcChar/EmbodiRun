@@ -7,13 +7,13 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from embodirun.robots import RobotAction, RobotObservation
-from embodirun.robots.sensors.cameras import CameraFrame
 from embodirun.model_services import (
     ImagePayload,
     PolicyObservation,
     PolicyResult,
 )
+from embodirun.robots import RobotAction, RobotObservation
+from embodirun.robots.sensors.cameras import CameraFrame
 
 from .contract import (
     ACTION_FEATURE_NAMES,
@@ -53,12 +53,8 @@ class DM05ARX5MapperConfig:
             or not math.isfinite(self.gripper_close_threshold_m)
             or self.gripper_close_threshold_m < 0
         ):
-            raise ValueError(
-                "gripper_close_threshold_m must be finite and non-negative"
-            )
-        if isinstance(self.speed, bool) or not isinstance(
-            self.speed, (str, int, float)
-        ):
+            raise ValueError("gripper_close_threshold_m must be finite and non-negative")
+        if isinstance(self.speed, bool) or not isinstance(self.speed, (str, int, float)):
             raise TypeError("speed must be a string or number")
         if isinstance(self.speed, str) and not self.speed.strip():
             raise ValueError("speed must not be empty")
@@ -95,12 +91,8 @@ class DM05ARX5Mapper:
                 "values": list(state),
                 "representation": STATE_REPRESENTATION,
                 "state_desc": list(STATE_DESCRIPTION),
-                "source": observation.metadata.get(
-                    "state_source", "robot_observation"
-                ),
-                "units": observation.metadata.get(
-                    "state_units", "m_rad_robot_gripper_units"
-                ),
+                "source": observation.metadata.get("state_source", "robot_observation"),
+                "units": observation.metadata.get("state_units", "m_rad_robot_gripper_units"),
             },
             images=images,
             reset=False,
@@ -118,8 +110,7 @@ class DM05ARX5Mapper:
     def map_result(self, result: PolicyResult) -> tuple[RobotAction, ...]:
         rows = self._validated_rows(result)
         indices = tuple(
-            int(step * (len(rows) - 1) / self.config.target_steps)
-            for step in range(1, self.config.target_steps + 1)
+            int(step * (len(rows) - 1) / self.config.target_steps) for step in range(1, self.config.target_steps + 1)
         )
         selected = [list(rows[index]) for index in indices]
         _unwrap_euler_angles(selected)
@@ -154,40 +145,26 @@ class DM05ARX5Mapper:
     def _validated_rows(self, result: PolicyResult) -> tuple[tuple[float, ...], ...]:
         if result.action_space != POLICY_ACTION_SPACE:
             raise DM05ARX5MapperError(
-                f"policy action_space mismatch: got {result.action_space!r}, "
-                f"expected {POLICY_ACTION_SPACE!r}"
+                f"policy action_space mismatch: got {result.action_space!r}, expected {POLICY_ACTION_SPACE!r}"
             )
         if len(result.actions) != 1 or result.actions[0].kind != "action_chunk":
-            raise DM05ARX5MapperError(
-                "DM0.5 result must contain exactly one action_chunk"
-            )
+            raise DM05ARX5MapperError("DM0.5 result must contain exactly one action_chunk")
         values = result.actions[0].values
         if tuple(values.get("feature_names", ())) != ACTION_FEATURE_NAMES:
-            raise DM05ARX5MapperError(
-                f"action feature_names must be {ACTION_FEATURE_NAMES!r}"
-            )
+            raise DM05ARX5MapperError(f"action feature_names must be {ACTION_FEATURE_NAMES!r}")
         if values.get("representation") != ACTION_REPRESENTATION:
-            raise DM05ARX5MapperError(
-                f"action representation must be {ACTION_REPRESENTATION!r}"
-            )
+            raise DM05ARX5MapperError(f"action representation must be {ACTION_REPRESENTATION!r}")
         if values.get("output_transform_applied") is not True:
-            raise DM05ARX5MapperError(
-                "DM0.5 output transform must be applied by RLinf Inference"
-            )
+            raise DM05ARX5MapperError("DM0.5 output transform must be applied by RLinf Inference")
         if values.get("internal_action_dim_exposed", False) is not False:
-            raise DM05ARX5MapperError(
-                "DM0.5 internal flow state must not cross the service boundary"
-            )
+            raise DM05ARX5MapperError("DM0.5 internal flow state must not cross the service boundary")
         data = values.get("data")
         if isinstance(data, (str, bytes)) or not isinstance(data, Sequence):
             raise DM05ARX5MapperError("action data must be a sequence")
         if len(data) != self.config.expected_horizon:
-            raise DM05ARX5MapperError(
-                f"action data must contain {self.config.expected_horizon} rows"
-            )
+            raise DM05ARX5MapperError(f"action data must contain {self.config.expected_horizon} rows")
         return tuple(
-            _finite_vector(row, f"action row {index}", len(ACTION_FEATURE_NAMES))
-            for index, row in enumerate(data)
+            _finite_vector(row, f"action row {index}", len(ACTION_FEATURE_NAMES)) for index, row in enumerate(data)
         )
 
 
@@ -231,25 +208,16 @@ def _model_images(
     if set(by_name) == set(VIEW_ORDER):
         replicated_roles: tuple[str, ...] = ()
     elif len(by_name) == 2 and "cam_global" in by_name:
-        present_wrist = next(
-            (role for role in ("cam_side", "cam_arm") if role in by_name), None
-        )
+        present_wrist = next((role for role in ("cam_side", "cam_arm") if role in by_name), None)
         if present_wrist is None:
-            raise DM05ARX5MapperError(
-                "two-camera DM0.5 input requires cam_global and one wrist role"
-            )
+            raise DM05ARX5MapperError("two-camera DM0.5 input requires cam_global and one wrist role")
         missing_wrist = "cam_arm" if present_wrist == "cam_side" else "cam_side"
         by_name[missing_wrist] = by_name[present_wrist]
         replicated_roles = (missing_wrist,)
     else:
-        raise DM05ARX5MapperError(
-            "DM0.5 requires cam_global plus one wrist camera, or all three roles"
-        )
+        raise DM05ARX5MapperError("DM0.5 requires cam_global plus one wrist camera, or all three roles")
     return (
-        tuple(
-            ImagePayload(role, by_name[role].mime_type, by_name[role].data)
-            for role in VIEW_ORDER
-        ),
+        tuple(ImagePayload(role, by_name[role].mime_type, by_name[role].data) for role in VIEW_ORDER),
         replicated_roles,
     )
 

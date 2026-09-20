@@ -24,12 +24,8 @@ from embodirun.simulators.navigation import (
 )
 
 
-@pytest.mark.parametrize(
-    "selection", ["CUDA_HOME", "CUDA_PATH", "nvcc", "pip", "missing"]
-)
-def test_sglang_environment_preserves_or_discovers_toolkit(
-    tmp_path, monkeypatch, selection
-):
+@pytest.mark.parametrize("selection", ["CUDA_HOME", "CUDA_PATH", "nvcc", "pip", "missing"])
+def test_sglang_environment_preserves_or_discovers_toolkit(tmp_path, monkeypatch, selection):
     from embodirun.services.inference.backends import sglang
 
     monkeypatch.delenv("CUDA_HOME", raising=False)
@@ -49,17 +45,9 @@ def test_sglang_environment_preserves_or_discovers_toolkit(
 
     sglang.prepare_sglang_environment()
 
-    expected_home = (
-        "/selected/cuda"
-        if selection == "CUDA_HOME"
-        else str(toolkit)
-        if selection == "pip"
-        else None
-    )
+    expected_home = "/selected/cuda" if selection == "CUDA_HOME" else str(toolkit) if selection == "pip" else None
     assert sglang.os.environ.get("CUDA_HOME") == expected_home
-    assert sglang.os.environ.get("CUDA_PATH") == (
-        "/selected/cuda" if selection == "CUDA_PATH" else None
-    )
+    assert sglang.os.environ.get("CUDA_PATH") == ("/selected/cuda" if selection == "CUDA_PATH" else None)
 
 
 def test_sglang_lerobot_statistics_preserve_mean_std_math():
@@ -72,12 +60,8 @@ def test_sglang_lerobot_statistics_preserve_mean_std_math():
     std = torch.tensor([0.0, 0.5])
     statistics = _Statistics(mean, std, 1e-8)
     values = torch.tensor([[1.0, 3.0]])
-    torch.testing.assert_close(
-        statistics.normalize(values), (values - mean) / (std + 1e-8), rtol=0, atol=0
-    )
-    torch.testing.assert_close(
-        statistics.denormalize(values), values * std + mean, rtol=0, atol=0
-    )
+    torch.testing.assert_close(statistics.normalize(values), (values - mean) / (std + 1e-8), rtol=0, atol=0)
+    torch.testing.assert_close(statistics.denormalize(values), values * std + mean, rtol=0, atol=0)
     with pytest.raises(ValueError, match="dimensions"):
         statistics.normalize([1.0])
     with pytest.raises(ValueError, match="finite"):
@@ -100,18 +84,12 @@ def test_sglang_lerobot_manifest_excludes_duplicate_processor_tensors(tmp_path):
         str(tmp_path / "model.safetensors"),
     )
     for name in ("policy_preprocessor", "policy_postprocessor"):
-        save_file(
-            {"action.mean": torch.zeros(7)}, str(tmp_path / f"{name}.safetensors")
-        )
-    manifest = _LeRobotPolicyModel._inspect_checkpoint(
-        str(tmp_path), Pi05PipelineConfig()
-    )
+        save_file({"action.mean": torch.zeros(7)}, str(tmp_path / f"{name}.safetensors"))
+    manifest = _LeRobotPolicyModel._inspect_checkpoint(str(tmp_path), Pi05PipelineConfig())
     assert manifest.safetensor_files == [str(tmp_path / "model.safetensors")]
 
 
-@pytest.mark.parametrize(
-    "problem", [None, "normalization", "processor", "rename", "eps", "std", "shape"]
-)
+@pytest.mark.parametrize("problem", [None, "normalization", "processor", "rename", "eps", "std", "shape"])
 def test_sglang_lerobot_statistics_load_checkpoint_contract(tmp_path, problem):
     pytest.importorskip("sglang.multimodal_gen")
     import torch
@@ -137,9 +115,7 @@ def test_sglang_lerobot_statistics_load_checkpoint_contract(tmp_path, problem):
             "STATE": "MIN_MAX" if problem == "normalization" else "MEAN_STD",
             "VISUAL": "IDENTITY",
         },
-        "features": {
-            "observation.state": {"shape": [3] if problem == "shape" else [2]}
-        },
+        "features": {"observation.state": {"shape": [3] if problem == "shape" else [2]}},
         "eps": 0.0 if problem == "eps" else 1e-8,
     }
     steps = [
@@ -176,9 +152,7 @@ def test_sglang_lerobot_statistics_load_checkpoint_contract(tmp_path, problem):
             "observation.state",
             "STATE",
         )
-        torch.testing.assert_close(
-            stats.normalize([1.0, 2.0]), torch.tensor([0.0, 2.0]), rtol=0, atol=0
-        )
+        torch.testing.assert_close(stats.normalize([1.0, 2.0]), torch.tensor([0.0, 2.0]), rtol=0, atol=0)
 
 
 def test_sglang_lerobot_pipeline_preserves_native_parallel_layout_rejection():
@@ -187,9 +161,7 @@ def test_sglang_lerobot_pipeline_preserves_native_parallel_layout_rejection():
 
     pipeline = object.__new__(LeRobotPi05Pipeline)
     args = SimpleNamespace(
-        pipeline_config=SimpleNamespace(
-            prefix_parallel_strategy="tp", action_parallel_strategy="tp"
-        )
+        pipeline_config=SimpleNamespace(prefix_parallel_strategy="tp", action_parallel_strategy="tp")
     )
     with pytest.raises(ValueError, match="TP layout"):
         pipeline.load_modules(args)

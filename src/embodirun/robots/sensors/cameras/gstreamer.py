@@ -75,9 +75,7 @@ class GStreamerCameraConfig:
         """Build only the declared camera path; no arbitrary user pipeline text."""
         rate = Fraction(str(self.fps)).limit_denominator(1001)
         width, height = self.output_size
-        caps = (
-            "image/jpeg" if self.input_format == "mjpeg" else "video/x-raw,format=YUY2"
-        )
+        caps = "image/jpeg" if self.input_format == "mjpeg" else "video/x-raw,format=YUY2"
         parts = [
             f"v4l2src name=camera device={self.device} do-timestamp=true",
             f"{caps},width={self.width},height={self.height},framerate={rate.numerator}/{rate.denominator}",
@@ -155,14 +153,9 @@ class GStreamerFrameStream:
                 (camera.get_static_pad("src"), "source"),
                 (self.sink.get_static_pad("sink"), "sink"),
             ):
-                identifier = pad.add_probe(
-                    self.Gst.PadProbeType.BUFFER, self._probe, label
-                )
+                identifier = pad.add_probe(self.Gst.PadProbeType.BUFFER, self._probe, label)
                 self.probes.append((pad, identifier))
-        if (
-            pipeline.set_state(self.Gst.State.PLAYING)
-            == self.Gst.StateChangeReturn.FAILURE
-        ):
+        if pipeline.set_state(self.Gst.State.PLAYING) == self.Gst.StateChangeReturn.FAILURE:
             self.close()
             raise CameraError("GStreamer pipeline failed to enter PLAYING")
 
@@ -195,15 +188,11 @@ class GStreamerFrameStream:
     def _read(self):
         self._error()
         before = time.monotonic()
-        sample = self.sink.emit(
-            "try-pull-sample", int(self.timeout_s * self.Gst.SECOND)
-        )
+        sample = self.sink.emit("try-pull-sample", int(self.timeout_s * self.Gst.SECOND))
         pulled = time.monotonic()
         self._error()
         if sample is None:
-            state = (
-                "end of stream" if self.sink.get_property("eos") else "sample timeout"
-            )
+            state = "end of stream" if self.sink.get_property("eos") else "sample timeout"
             raise CameraError(f"GStreamer {self.name}: {state}")
         buffer, caps = sample.get_buffer(), sample.get_caps()
         info = self.GstVideo.VideoInfo.new_from_caps(caps)
@@ -221,9 +210,7 @@ class GStreamerFrameStream:
         clock = self.pipeline.get_clock()
         if running == self.Gst.CLOCK_TIME_NONE or clock is None:
             raise CameraError("GStreamer sample has no valid running-time clock")
-        age = (
-            clock.get_time() - self.pipeline.get_base_time() - running
-        ) / self.Gst.SECOND
+        age = (clock.get_time() - self.pipeline.get_base_time() - running) / self.Gst.SECOND
         if not 0 <= age <= self.max_age_s:
             raise CameraError(f"GStreamer sample is stale or in the future: age={age}")
         video_meta = self.GstVideo.buffer_get_video_meta(buffer)
@@ -243,15 +230,10 @@ class GStreamerFrameStream:
         try:
             data = memoryview(mapped.data)
             row_bytes = self.width * 3
-            if (
-                stride < row_bytes
-                or offset < 0
-                or offset + (self.height - 1) * stride + row_bytes > len(data)
-            ):
+            if stride < row_bytes or offset < 0 or offset + (self.height - 1) * stride + row_bytes > len(data):
                 raise CameraError("GStreamer mapped sample has an invalid row layout")
             packed = b"".join(
-                data[offset + row * stride : offset + row * stride + row_bytes]
-                for row in range(self.height)
+                data[offset + row * stride : offset + row * stride + row_bytes] for row in range(self.height)
             )
             del data
         finally:
@@ -278,9 +260,7 @@ class GStreamerFrameStream:
                 timing = self.timings.pop(buffer.pts, {})
                 counts = dict(self.probe_counts)
             self.last_metrics.update(
-                native_pipeline_s=timing["sink"] - timing["source"]
-                if set(timing) == {"source", "sink"}
-                else None,
+                native_pipeline_s=timing["sink"] - timing["source"] if set(timing) == {"source", "sink"} else None,
                 native_pipeline_semantics="source pad to appsink pad; includes queue/decode/convert/resize and probe overhead",
                 stage_probe_counts=counts,
             )
@@ -303,24 +283,15 @@ class GStreamerCameraSource:
         self.last_metrics = {}
         cameras = tuple(cameras)
         if not cameras or len({camera.name for camera in cameras}) != len(cameras):
-            raise ValueError(
-                "GStreamer cameras must have unique names and not be empty"
-            )
+            raise ValueError("GStreamer cameras must have unique names and not be empty")
         Gst, _ = load_gstreamer()
         plans = []
         for camera in cameras:
             resolved = Path(camera.device).resolve(strict=True)
-            if (
-                str(resolved) != camera.device
-                or not (Path("/sys/class/video4linux") / resolved.name).exists()
-            ):
-                raise CameraError(
-                    "GStreamer capture requires a registered resolved V4L2 device"
-                )
+            if str(resolved) != camera.device or not (Path("/sys/class/video4linux") / resolved.name).exists():
+                raise CameraError("GStreamer capture requires a registered resolved V4L2 device")
             description, required = camera.pipeline()
-            missing = [
-                name for name in required if Gst.ElementFactory.find(name) is None
-            ]
+            missing = [name for name in required if Gst.ElementFactory.find(name) is None]
             if missing:
                 raise CameraError(f"missing GStreamer plugins: {', '.join(missing)}")
             plans.append((camera, description, required))
@@ -356,9 +327,7 @@ class GStreamerCameraSource:
             frames = tuple(stream.read() for stream in self.streams)
             if not frames:
                 raise CameraError("GStreamer camera source is closed")
-            self.last_metrics = {
-                stream.name: dict(stream.last_metrics) for stream in self.streams
-            }
+            self.last_metrics = {stream.name: dict(stream.last_metrics) for stream in self.streams}
             return frames
         except BaseException:
             self.close()

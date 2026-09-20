@@ -21,13 +21,13 @@ from embodirun.services.control.arbitration import (
 )
 from embodirun.services.control.auth import AuthPolicy
 from embodirun.services.control.contracts import (
-    ControlServiceConfig,
     TASK_REQUEST_SCHEMA,
+    ControlServiceConfig,
     TaskResult,
 )
 from embodirun.services.control.devices import DeviceManager
-from embodirun.services.control.http_api import ControlHTTPAPI
 from embodirun.services.control.direct_execution import DirectExecutionError, DirectExecutionRunner
+from embodirun.services.control.http_api import ControlHTTPAPI
 from embodirun.services.control.io import IOResult, IOStatus
 from embodirun.services.control.jobs import JobConflict, JobRegistry
 from embodirun.services.control.observation_store import ObservationStore
@@ -170,9 +170,7 @@ def test_shared_observation_is_consistent_and_direct_segment_holds_owned_token()
             f"/v1/media/{snapshot.observation_id}?frame=front&include_data=true",
         )
         assert media_response.status == 200
-        assert media_response.payload["media"][0]["data_base64"] == base64.b64encode(
-            b"jpeg"
-        ).decode("ascii")
+        assert media_response.payload["media"][0]["data_base64"] == base64.b64encode(b"jpeg").decode("ascii")
 
         record = app.execute(
             caller_id="caller",
@@ -336,15 +334,18 @@ def test_configured_token_binds_caller_and_describe_does_not_open_provider() -> 
     )
     app = ControlApplication(service, arbiter_provider=provider, auth_policy=auth)
     api = ControlHTTPAPI(app)
-    assert api.dispatch(
-        "GET",
-        "/v1/describe",
-        headers={
-            "Authorization": "Bearer token-a",
-            "X-RLinf-Caller-ID": "caller-a",
-            "X-RLinf-Session-ID": "session-a",
-        },
-    ).status == 200
+    assert (
+        api.dispatch(
+            "GET",
+            "/v1/describe",
+            headers={
+                "Authorization": "Bearer token-a",
+                "X-RLinf-Caller-ID": "caller-a",
+                "X-RLinf-Session-ID": "session-a",
+            },
+        ).status
+        == 200
+    )
     assert calls == 0
     spoofed = api.dispatch(
         "GET",
@@ -539,9 +540,7 @@ def test_device_only_direct_and_manual_commands_share_prepared_arbiter(tmp_path)
         registry=JobRegistry(tmp_path / "jobs.sqlite"),
     )
     try:
-        assert app.describe(caller_id="caller", session_id="session")["application"][
-            "execute"
-        ]
+        assert app.describe(caller_id="caller", session_id="session")["application"]["execute"]
         action = {
             "timestamp_s": 1.0,
             "values": {
@@ -633,9 +632,7 @@ def test_manual_scope_rejects_late_old_owner_without_touching_new_owner(
         service.close()
 
 
-def test_manual_transition_waits_for_inflight_old_owner_operation(
-    tmp_path, monkeypatch
-) -> None:
+def test_manual_transition_waits_for_inflight_old_owner_operation(tmp_path, monkeypatch) -> None:
     config = ControlServiceConfig.device_only(
         runtime_id="manual-race",
         bind="127.0.0.1",

@@ -30,7 +30,7 @@ class ARX5Config:
         cls,
         robot_id: str,
         options: Mapping[str, Any],
-    ) -> "ARX5Config":
+    ) -> ARX5Config:
         """Build one ARX5 configuration from deployment options."""
 
         if not isinstance(options, Mapping):
@@ -55,10 +55,7 @@ class ARX5Config:
             key=str,
         )
         if unknown:
-            raise ValueError(
-                "unknown ARX5 configuration fields: "
-                f"{', '.join(map(str, unknown))}"
-            )
+            raise ValueError(f"unknown ARX5 configuration fields: {', '.join(map(str, unknown))}")
         return cls(robot_id=robot_id, **values)
 
     def __post_init__(self) -> None:
@@ -72,9 +69,7 @@ class ARX5Config:
             raise TypeError("operator_confirmed must be a boolean")
         if not isinstance(self.sdk_module, str) or not self.sdk_module.strip():
             raise ValueError("sdk_module must not be empty")
-        if self.sdk_path is not None and (
-            not isinstance(self.sdk_path, str) or not Path(self.sdk_path).is_absolute()
-        ):
+        if self.sdk_path is not None and (not isinstance(self.sdk_path, str) or not Path(self.sdk_path).is_absolute()):
             raise ValueError("sdk_path must be an absolute path on the control node")
         for name in (
             "max_translation_step_m",
@@ -82,12 +77,7 @@ class ARX5Config:
             "max_gripper_step_m",
         ):
             value = getattr(self, name)
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not math.isfinite(value)
-                or value <= 0
-            ):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be positive and finite")
         for name in (
             "gripper_width_min_m",
@@ -96,11 +86,7 @@ class ARX5Config:
             "sdk_gripper_open_position",
         ):
             value = getattr(self, name)
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not math.isfinite(value)
-            ):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                 raise ValueError(f"{name} must be finite")
         if self.gripper_width_min_m >= self.gripper_width_max_m:
             raise ValueError("gripper_width_min_m must be less than gripper_width_max_m")

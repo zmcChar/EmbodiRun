@@ -70,9 +70,7 @@ class SglangHttpClient:
         if token is not None and not isinstance(token, str):
             raise TypeError("token must be a string or None")
         if output_action_dim is not None and (
-            isinstance(output_action_dim, bool)
-            or not isinstance(output_action_dim, int)
-            or output_action_dim <= 0
+            isinstance(output_action_dim, bool) or not isinstance(output_action_dim, int) or output_action_dim <= 0
         ):
             raise ValueError("output_action_dim must be a positive integer")
 
@@ -91,9 +89,7 @@ class SglangHttpClient:
             and self.action_feature_names
             and output_action_dim != len(self.action_feature_names)
         ):
-            raise ValueError(
-                "output_action_dim must match action_feature_names when both are set"
-            )
+            raise ValueError("output_action_dim must match action_feature_names when both are set")
         self.output_action_dim = output_action_dim or (
             len(self.action_feature_names) if self.action_feature_names else None
         )
@@ -142,8 +138,7 @@ class SglangHttpClient:
         with state.lock:
             if observation.step_id != state.next_step:
                 raise SglangHttpError(
-                    f"session {observation.session_id!r} expected step "
-                    f"{state.next_step}, got {observation.step_id}"
+                    f"session {observation.session_id!r} expected step {state.next_step}, got {observation.step_id}"
                 )
             reset = state.reset_pending or observation.reset
             payload = self._request_json(
@@ -266,9 +261,7 @@ class SglangHttpClient:
             action_space=state.action_space,
             actions=(PolicyAction("action_chunk", action_values),),
             timing=_timing(payload.get("timings", {})),
-            policy_revision=(
-                str(payload["model"]) if payload.get("model") is not None else None
-            ),
+            policy_revision=(str(payload["model"]) if payload.get("model") is not None else None),
         )
 
     def _request_json(
@@ -395,10 +388,7 @@ def _action_rows(value: Sequence[Any], dimension: int | None) -> list[Any]:
         result = list(row)
         if dimension is not None:
             if len(result) < dimension:
-                raise SglangHttpError(
-                    f"action row {index} has {len(result)} values, expected at "
-                    f"least {dimension}"
-                )
+                raise SglangHttpError(f"action row {index} has {len(result)} values, expected at least {dimension}")
             result = result[:dimension]
         rows.append(result)
     if not rows:

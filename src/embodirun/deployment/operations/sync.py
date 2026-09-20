@@ -66,10 +66,7 @@ def synchronize_deploy(source: Path, context: DeploymentContext) -> int:
             raise
         progress.succeed(
             node_id,
-            detail=(
-                "Deploy overlay active"
-                + ("; dependencies updated" if result.dependencies_updated else "")
-            ),
+            detail=("Deploy overlay active" + ("; dependencies updated" if result.dependencies_updated else "")),
         )
         return result
 
@@ -99,16 +96,11 @@ def _require_control_services_stopped(
     context: DeploymentContext,
     state: DeploymentState,
 ) -> None:
-    control_ids = {
-        service.service_id
-        for service in context.deployment.services
-        if service.kind == "control"
-    }
+    control_ids = {service.service_id for service in context.deployment.services if service.kind == "control"}
     running = sorted(
         service_id
         for service_id in control_ids
-        if service_id in state.services
-        and state.services[service_id].status == "running"
+        if service_id in state.services and state.services[service_id].status == "running"
     )
     if running:
         raise SyncError(
@@ -128,20 +120,13 @@ def _deploy_profiles_by_node(
             continue
         environment = state.environments.get(profile.environment_id)
         if environment is None or environment.status != "ready":
-            raise SyncError(
-                f"environment {profile.environment_id!r} is not ready; run init again"
-            )
+            raise SyncError(f"environment {profile.environment_id!r} is not ready; run init again")
         if profile.node not in state.nodes:
             raise SyncError(f"initialized state is missing node {profile.node!r}")
-        profiles.setdefault(profile.node, []).append(
-            replace(profile, path=environment.path)
-        )
+        profiles.setdefault(profile.node, []).append(replace(profile, path=environment.path))
     if not profiles:
         raise SyncError("deployment has no Deploy environments to synchronize")
-    return {
-        node_id: tuple(node_profiles)
-        for node_id, node_profiles in sorted(profiles.items())
-    }
+    return {node_id: tuple(node_profiles) for node_id, node_profiles in sorted(profiles.items())}
 
 
 def _sync_node(

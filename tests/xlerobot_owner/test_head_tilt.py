@@ -5,10 +5,18 @@ from tests.xlerobot_owner.test_hardware import _config
 
 
 def station(tmp_path):
-    config = _config(tmp_path, enable_base=True, enable_head_tilt=True,
-                     wheel_directions={"base_left_wheel": -1, "base_right_wheel": 1})
+    config = _config(
+        tmp_path,
+        enable_base=True,
+        enable_head_tilt=True,
+        wheel_directions={"base_left_wheel": -1, "base_right_wheel": 1},
+    )
     config["calibration"][HEAD_TILT_NAME] = {
-        "id": 8, "drive_mode": 0, "homing_offset": 0, "range_min": 1000, "range_max": 3000,
+        "id": 8,
+        "drive_mode": 0,
+        "homing_offset": 0,
+        "range_min": 1000,
+        "range_max": 3000,
     }
     robot = HardwareRobot(config)
     robot.connect()
@@ -36,7 +44,8 @@ def test_enable_base_holds_current_camera_before_torque_without_arm_writes(tmp_p
         writes = buses["left"].writes
         assert all(motor == HEAD_TILT_NAME for _, motor, _ in writes)
         assert writes.index(("Goal_Position", HEAD_TILT_NAME, 2000)) < writes.index(
-            ("Torque_Enable", HEAD_TILT_NAME, 1))
+            ("Torque_Enable", HEAD_TILT_NAME, 1)
+        )
         assert result["held_positions"] == {HEAD_TILT_NAME + ".pos": 0}
         assert robot.control_state() == {"arms": False, "base": True}
     finally:
@@ -94,10 +103,15 @@ def test_adopt_stationary_head_goal_without_writes_or_zeroing(tmp_path):
         head = buses["left"].values[HEAD_TILT_NAME]
         head.update(Torque_Enable=1, Goal_Position=2090, Present_Position=2091, Goal_Velocity=120)
         positions = [n for n in robot._motor_names_for_control() if not n.startswith("base_")]
-        snapshot = {"source": "physical", "stop_confirmed": True,
-                    "created_monotonic_s": time.monotonic(), "ports": robot._ports,
-                    "enable_base": False, "goals": {HEAD_TILT_NAME: 2090},
-                    "cold_motors": [n for n in positions if n != HEAD_TILT_NAME]}
+        snapshot = {
+            "source": "physical",
+            "stop_confirmed": True,
+            "created_monotonic_s": time.monotonic(),
+            "ports": robot._ports,
+            "enable_base": False,
+            "goals": {HEAD_TILT_NAME: 2090},
+            "cold_motors": [n for n in positions if n != HEAD_TILT_NAME],
+        }
         result = robot.restore_held_state(snapshot)
         assert result["restored"], result
         assert not buses["left"].writes and not buses["right"].writes

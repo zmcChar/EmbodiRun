@@ -107,9 +107,7 @@ class PolicyResult:
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
         actions = tuple(self.actions)
-        if not actions or any(
-            not isinstance(action, PolicyAction) for action in actions
-        ):
+        if not actions or any(not isinstance(action, PolicyAction) for action in actions):
             raise ValueError("actions must contain at least one PolicyAction")
         object.__setattr__(self, "actions", actions)
         timing: dict[str, float] = {}
@@ -134,11 +132,7 @@ class PolicyResult:
             action_space=_identifier(value.get("action_space"), "action_space"),
             actions=tuple(PolicyAction.from_payload(action) for action in actions),
             timing=_mapping(value.get("timing", {}), "timing"),
-            policy_revision=(
-                str(value["policy_revision"])
-                if value.get("policy_revision") is not None
-                else None
-            ),
+            policy_revision=(str(value["policy_revision"]) if value.get("policy_revision") is not None else None),
         )
 
 

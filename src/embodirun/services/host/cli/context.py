@@ -10,6 +10,7 @@ from pathlib import Path
 from embodirun.deployment.config import DeploymentConfig, NodeConfig
 from embodirun.deployment.executor import Executor
 from embodirun.deployment.plan import DeploymentPlan
+
 from .progress import ProgressReporter
 
 
@@ -33,11 +34,7 @@ class CommandContext:
 
 
 def state_path(directory: Path | None, deployment_name: str) -> Path:
-    root = (
-        Path.home() / ".local" / "state" / "rlinf-deploy"
-        if directory is None
-        else directory.expanduser()
-    )
+    root = Path.home() / ".local" / "state" / "rlinf-deploy" if directory is None else directory.expanduser()
     return root / f"{deployment_name}.json"
 
 

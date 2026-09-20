@@ -1,29 +1,38 @@
 import time
 
 import pytest
-
 from embodirun_xlerobot_owner.hardware import WHEEL_NAMES
 from tests.xlerobot_owner.test_hardware import _held_snapshot, _robot
 
 
 def station(tmp_path, monkeypatch):
-    robot, buses = _robot(tmp_path, enable_base=True,
-                         wheel_directions={"left": -1, "right": 1})
+    robot, buses = _robot(tmp_path, enable_base=True, wheel_directions={"left": -1, "right": 1})
     monkeypatch.setattr(robot, "_boot_id", lambda: "test-boot")
     snapshot = _held_snapshot(robot, buses)
     for name in WHEEL_NAMES:
         snapshot["goals"].pop(name)
-    status = {"connected": True, "armed": False, "control_owner": None,
-              "control_state": {"arms": False, "base": False}, "stop_unconfirmed": False,
-              "recording": False, "error": None, "observation_errors": [],
-              "feedback": {"stop_confirmed": True, "errors": []}}
-    raw = {n: {"Present_Position": 2000, "Present_Velocity": 0, "Moving": 0}
-           for n in robot._motor_names_for_control("all")}
-    evidence = {"source": "physical", "boot_id": "test-boot",
-                "created_monotonic_s": time.monotonic(),
-                "status_before": dict(status), "status_after": dict(status),
-                "samples": [{"state_timestamp_ns": i + 1, "state_cached": False,
-                             "errors": [], "raw": raw} for i in range(3)]}
+    status = {
+        "connected": True,
+        "armed": False,
+        "control_owner": None,
+        "control_state": {"arms": False, "base": False},
+        "stop_unconfirmed": False,
+        "recording": False,
+        "error": None,
+        "observation_errors": [],
+        "feedback": {"stop_confirmed": True, "errors": []},
+    }
+    raw = {
+        n: {"Present_Position": 2000, "Present_Velocity": 0, "Moving": 0} for n in robot._motor_names_for_control("all")
+    }
+    evidence = {
+        "source": "physical",
+        "boot_id": "test-boot",
+        "created_monotonic_s": time.monotonic(),
+        "status_before": dict(status),
+        "status_after": dict(status),
+        "samples": [{"state_timestamp_ns": i + 1, "state_cached": False, "errors": [], "raw": raw} for i in range(3)],
+    }
     snapshot.update(wheel_torque=dict.fromkeys(WHEEL_NAMES, 1), prior_idle=evidence)
     for name in WHEEL_NAMES:
         buses["right"].values[name].update(Torque_Enable=1, Goal_Velocity=0)
@@ -49,8 +58,9 @@ def test_prior_readonly_restore_counts_only_without_later_feedback(tmp_path, mon
     robot, _, snapshot = station(tmp_path, monkeypatch)
     for key in ("status_before", "status_after"):
         status = snapshot["prior_idle"][key]
-        status["metadata"] = {"holding_resume": {"restored": True, "register_writes": 0,
-                                                  "stop_confirmed": True, "errors": []}}
+        status["metadata"] = {
+            "holding_resume": {"restored": True, "register_writes": 0, "stop_confirmed": True, "errors": []}
+        }
         status["feedback"] = {"stop_confirmed": False} if bad_feedback else None
     try:
         assert robot.restore_held_state(snapshot)["restored"] is not bad_feedback
@@ -58,13 +68,35 @@ def test_prior_readonly_restore_counts_only_without_later_feedback(tmp_path, mon
         robot.close()
 
 
-@pytest.mark.parametrize("fault", [
-    "missing_prior", "wrong_boot", "stale", "owner", "active", "uncertain_stop",
-    "missing_stop", "recording", "incomplete_samples", "cached", "duplicate_time",
-    "prior_moving", "prior_missing_motor", "goal_nonzero", "torque_changed",
-    "live_moving", "live_velocity", "mode_changed", "bad_calibration", "missing_wheel",
-    "bool_torque", "existing_stop_latch", "existing_torque_latch", "missing_goal_read",
-])
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "missing_prior",
+        "wrong_boot",
+        "stale",
+        "owner",
+        "active",
+        "uncertain_stop",
+        "missing_stop",
+        "recording",
+        "incomplete_samples",
+        "cached",
+        "duplicate_time",
+        "prior_moving",
+        "prior_missing_motor",
+        "goal_nonzero",
+        "torque_changed",
+        "live_moving",
+        "live_velocity",
+        "mode_changed",
+        "bad_calibration",
+        "missing_wheel",
+        "bool_torque",
+        "existing_stop_latch",
+        "existing_torque_latch",
+        "missing_goal_read",
+    ],
+)
 def test_powered_handoff_refuses_invalid_evidence_without_writes(tmp_path, monkeypatch, fault):
     robot, buses, snapshot = station(tmp_path, monkeypatch)
     prior = snapshot["prior_idle"]

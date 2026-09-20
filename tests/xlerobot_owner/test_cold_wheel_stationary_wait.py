@@ -13,9 +13,7 @@ def _sequence_reader(packet, bus, sequence):
             seen.append(sample)
             if sample is None:
                 return [], -3002, 0
-            bus.values["base_left_wheel"].update(
-                Present_Velocity=sample[0], Moving=sample[1]
-            )
+            bus.values["base_left_wheel"].update(Present_Velocity=sample[0], Moving=sample[1])
         return original(port, motor_id, address, length)
 
     return read, seen

@@ -6,8 +6,9 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from .server import ServerConfig, parse_server
 from embodirun.model_services.providers import provider
+
+from .server import ServerConfig, parse_server
 from .transport import parse_transport_options
 from .validation import (
     ConfigError,
@@ -68,19 +69,11 @@ def parse_model(model_id: str, value: dict[str, Any]) -> ModelConfig:
     backend = value.get("backend", value.get("provider"))
     if not isinstance(backend, str) or not backend.strip():
         raise ConfigError(f"{context}.backend (or provider) must be a non-empty string")
-    if (
-        "backend" in value
-        and "provider" in value
-        and value["backend"] != value["provider"]
-    ):
+    if "backend" in value and "provider" in value and value["backend"] != value["provider"]:
         raise ConfigError(f"{context}.backend and provider must match")
     service_value = value.get("service")
     lifecycle_value = value.get("lifecycle")
-    if (
-        service_value is not None
-        and lifecycle_value is not None
-        and service_value != lifecycle_value
-    ):
+    if service_value is not None and lifecycle_value is not None and service_value != lifecycle_value:
         raise ConfigError(f"{context}.service and lifecycle must match")
     lifecycle = value.get("service", value.get("lifecycle", "managed"))
     if lifecycle not in {"managed", "external"}:
@@ -96,15 +89,11 @@ def parse_model(model_id: str, value: dict[str, Any]) -> ModelConfig:
         context,
     )
     if not selected_provider.supports(transport):
-        raise ConfigError(
-            f"{context}.transport {transport!r} is not supported by provider {backend!r}"
-        )
+        raise ConfigError(f"{context}.transport {transport!r} is not supported by provider {backend!r}")
     if not selected_provider.action_capable:
         raise ConfigError(f"{context}.backend {backend!r} has no action capability")
     if lifecycle == "managed" and selected_provider.managed_command is None:
-        raise ConfigError(
-            f"{context}.backend {backend!r} has no managed service descriptor"
-        )
+        raise ConfigError(f"{context}.backend {backend!r} has no managed service descriptor")
     if (
         lifecycle == "managed"
         and selected_provider.requires_checkpoint
@@ -114,33 +103,19 @@ def parse_model(model_id: str, value: dict[str, Any]) -> ModelConfig:
     if lifecycle == "external":
         try:
             parsed_endpoint = urlparse(endpoint or "")
-            parsed_endpoint.port
+            _ = parsed_endpoint.port
         except ValueError as error:
             raise ConfigError(f"{context}.endpoint is not a valid URL") from error
-        if (
-            not parsed_endpoint.scheme
-            or not parsed_endpoint.netloc
-            or not parsed_endpoint.hostname
-        ):
-            raise ConfigError(
-                f"{context}.endpoint must be an absolute URL for an external service"
-            )
+        if not parsed_endpoint.scheme or not parsed_endpoint.netloc or not parsed_endpoint.hostname:
+            raise ConfigError(f"{context}.endpoint must be an absolute URL for an external service")
         if parsed_endpoint.query or parsed_endpoint.fragment:
-            raise ConfigError(
-                f"{context}.endpoint must not contain a query or fragment"
-            )
+            raise ConfigError(f"{context}.endpoint must not contain a query or fragment")
         if parsed_endpoint.username is not None or parsed_endpoint.password is not None:
-            raise ConfigError(
-                f"{context}.endpoint must not embed credentials; use the token option"
-            )
+            raise ConfigError(f"{context}.endpoint must not embed credentials; use the token option")
         if transport == "http" and parsed_endpoint.scheme not in {"http", "https"}:
-            raise ConfigError(
-                f"{context}.endpoint must use http or https for http transport"
-            )
+            raise ConfigError(f"{context}.endpoint must use http or https for http transport")
         if transport == "wireless":
-            raise ConfigError(
-                f"{context}.external wireless services are unsupported; use an http endpoint"
-            )
+            raise ConfigError(f"{context}.external wireless services are unsupported; use an http endpoint")
         if any(
             name in value
             for name in {
@@ -160,8 +135,7 @@ def parse_model(model_id: str, value: dict[str, Any]) -> ModelConfig:
             }
         ):
             raise ConfigError(
-                f"{context}: external services cannot declare managed node, "
-                "environment, checkpoint, or server fields"
+                f"{context}: external services cannot declare managed node, environment, checkpoint, or server fields"
             )
     elif endpoint is not None:
         raise ConfigError(f"{context}.endpoint is only valid for an external service")
@@ -172,11 +146,7 @@ def parse_model(model_id: str, value: dict[str, Any]) -> ModelConfig:
     if environment_index is not None and not environment_packages:
         raise ConfigError(f"{context}.environment_index requires environment_packages")
     server_value = value.get("server")
-    server = (
-        parse_server(server_value, f"{context}.server")
-        if server_value is not None
-        else None
-    )
+    server = parse_server(server_value, f"{context}.server") if server_value is not None else None
     if lifecycle == "managed" and server is None:
         raise ConfigError(f"{context}.server is required for a managed service")
     return ModelConfig(
@@ -186,20 +156,14 @@ def parse_model(model_id: str, value: dict[str, Any]) -> ModelConfig:
         kind=string(value, "type", context),
         lifecycle=lifecycle,
         endpoint=endpoint,
-        node=(
-            string(value, "node", context)
-            if lifecycle == "managed" or "node" in value
-            else None
-        ),
+        node=(string(value, "node", context) if lifecycle == "managed" or "node" in value else None),
         environment=optional_string(value, "environment", context),
         python=optional_string(value, "python", context),
         environment_index=environment_index,
         environment_packages=environment_packages,
         server=server,
         options=dict(value),
-        transport_options=parse_transport_options(
-            value.get("transport_options", {}), f"{context}.transport_options"
-        ),
+        transport_options=parse_transport_options(value.get("transport_options", {}), f"{context}.transport_options"),
     )
 
 
@@ -214,14 +178,8 @@ def _environment_packages(
         raise ConfigError(f"{context}.environment_packages must be a non-empty list")
     result: list[str] = []
     for index, package in enumerate(packages):
-        if (
-            not isinstance(package, str)
-            or not package.strip()
-            or package.startswith("-")
-        ):
-            raise ConfigError(
-                f"{context}.environment_packages[{index}] must be a package requirement"
-            )
+        if not isinstance(package, str) or not package.strip() or package.startswith("-"):
+            raise ConfigError(f"{context}.environment_packages[{index}] must be a package requirement")
         result.append(package)
     return tuple(result)
 

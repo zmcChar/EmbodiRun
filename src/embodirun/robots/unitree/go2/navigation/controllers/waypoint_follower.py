@@ -124,8 +124,7 @@ class WorldWaypointFollower:
         self.latest_sequence = plan.observation_sequence
         self.sequence = plan.observation_sequence
         self._world_targets = tuple(
-            compose_relative_pose(capture_pose, Pose2D(item.x_m, item.y_m, item.yaw_rad))
-            for item in plan.waypoints
+            compose_relative_pose(capture_pose, Pose2D(item.x_m, item.y_m, item.yaw_rad)) for item in plan.waypoints
         )
         self._index = 0
         self._terminal = plan.terminal

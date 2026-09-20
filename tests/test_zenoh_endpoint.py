@@ -4,6 +4,7 @@ import uuid
 from dataclasses import dataclass
 
 import pytest
+
 from embodirun.services.rollout.segmented_codec import SegmentedCodec
 from embodirun.services.rollout.stream import StreamError, StreamSession
 from embodirun.services.rollout.zenoh_endpoint import ZenohEndpoint
@@ -60,17 +61,13 @@ def test_segmented_codec_preserves_registered_tensor_bytes_and_rejects_truncatio
         tensor: object
         state: tuple
 
-    codec = SegmentedCodec(
-        lambda registry: registry.register_dataclass(Sample, type_id="sample")
-    )
+    codec = SegmentedCodec(lambda registry: registry.register_dataclass(Sample, type_id="sample"))
     value = Sample(torch.tensor([0.0, -0.0, 1.5], dtype=torch.bfloat16), (1, b"jpeg"))
     raw = codec.encode(value)
     restored = codec.decode(raw)
     assert type(restored) is Sample
     assert restored.state == value.state
-    assert torch.equal(
-        restored.tensor.view(torch.uint8), value.tensor.view(torch.uint8)
-    )
+    assert torch.equal(restored.tensor.view(torch.uint8), value.tensor.view(torch.uint8))
     for bad in (raw[:-1], raw + b"extra", b"badmagic" + raw[8:]):
         with pytest.raises(ValueError):
             codec.decode(bad)
@@ -111,13 +108,7 @@ def test_slow_consumer_queue_overflow_is_explicit_and_other_body_continues():
         a.send("c", ("healthy",), "new request").result(4)
         assert healthy.result(4) == "new request"
         b.close()
-        wait_until(
-            lambda: any(
-                "DELETE" in event["kind"]
-                for event in a.events
-                if event["event"] == "liveliness"
-            )
-        )
+        wait_until(lambda: any("DELETE" in event["kind"] for event in a.events if event["event"] == "liveliness"))
         healthy = c.recv("a", ("healthy",))
         a.send("c", ("healthy",), "after other body closed").result(4)
         assert healthy.result(4) == "after other body closed"

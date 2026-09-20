@@ -65,9 +65,7 @@ class PolicyVectorAdapter(RobotAdapter):
 
         with self._lock:
             if not self._connected:
-                raise PolicyVectorAdapterError(
-                    "policy-vector robot is not connected"
-                )
+                raise PolicyVectorAdapterError("policy-vector robot is not connected")
             self._prepared = True
 
     def _state_payload(self) -> dict[str, object]:
@@ -81,9 +79,7 @@ class PolicyVectorAdapter(RobotAdapter):
 
         with self._lock:
             if not self._connected:
-                raise PolicyVectorAdapterError(
-                    "policy-vector robot is not connected"
-                )
+                raise PolicyVectorAdapterError("policy-vector robot is not connected")
             state = list(self._state)
         return RobotObservation(
             timestamp_s=time.time(),
@@ -106,34 +102,22 @@ class PolicyVectorAdapter(RobotAdapter):
 
         with self._lock:
             if not self._connected:
-                raise PolicyVectorAdapterError(
-                    "policy-vector robot is not connected"
-                )
+                raise PolicyVectorAdapterError("policy-vector robot is not connected")
             if not self._prepared:
-                raise PolicyVectorAdapterError(
-                    "policy-vector robot is not prepared"
-                )
+                raise PolicyVectorAdapterError("policy-vector robot is not prepared")
             if not isinstance(action, RobotAction):
                 raise TypeError("policy-vector action must be a RobotAction")
             if action.metadata.get("action_space") != POLICY_VECTOR_ACTION_SPACE:
                 raise PolicyVectorAdapterError(
-                    "policy-vector action must declare action_space "
-                    f"{POLICY_VECTOR_ACTION_SPACE!r}"
+                    f"policy-vector action must declare action_space {POLICY_VECTOR_ACTION_SPACE!r}"
                 )
             if not isinstance(action.values, Mapping):
-                raise PolicyVectorAdapterError(
-                    "policy-vector action values must be an object"
-                )
+                raise PolicyVectorAdapterError("policy-vector action values must be an object")
             values = dict(action.values)
             if values.pop("type", None) != POLICY_VECTOR_ACTION_TYPE:
-                raise PolicyVectorAdapterError(
-                    "policy-vector action type must be "
-                    f"{POLICY_VECTOR_ACTION_TYPE!r}"
-                )
+                raise PolicyVectorAdapterError(f"policy-vector action type must be {POLICY_VECTOR_ACTION_TYPE!r}")
             if set(values) != {STATE_FIELD}:
-                raise PolicyVectorAdapterError(
-                    f"policy-vector action must contain only {STATE_FIELD!r}"
-                )
+                raise PolicyVectorAdapterError(f"policy-vector action must contain only {STATE_FIELD!r}")
             try:
                 requested = finite_vector(values[STATE_FIELD], STATE_FIELD)
             except ValueError as error:
@@ -153,9 +137,7 @@ class PolicyVectorAdapter(RobotAdapter):
 
         with self._lock:
             if not self._connected:
-                raise PolicyVectorAdapterError(
-                    "policy-vector robot is not connected"
-                )
+                raise PolicyVectorAdapterError("policy-vector robot is not connected")
             state = self._state_payload()
             return {
                 "requested": "stop",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 import uuid
 from collections.abc import Callable
@@ -75,10 +76,8 @@ class NavigationSession:
         if delay_s <= 0:
             await asyncio.sleep(0)
             return
-        try:
+        with contextlib.suppress(asyncio.TimeoutError):
             await asyncio.wait_for(stop_event.wait(), timeout=delay_s)
-        except asyncio.TimeoutError:
-            pass
 
     async def _capture(
         self,
@@ -128,9 +127,7 @@ class NavigationSession:
             if not isinstance(plan, WaypointPlan):
                 raise NavigationSessionError("policy must return a WaypointPlan")
             if plan.observation_sequence != observation.sequence:
-                raise NavigationSessionError(
-                    "waypoint plan sequence must match its navigation observation"
-                )
+                raise NavigationSessionError("waypoint plan sequence must match its navigation observation")
             self.follower.replace(plan, anchor, time.monotonic())
             self._telemetry.plans_accepted += 1
             self._telemetry.emit(

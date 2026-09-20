@@ -12,7 +12,6 @@ from embodirun.services.inference import (
     VvlaHttpClient,
 )
 
-
 VVLA_ROOT = Path(__file__).parents[1] / "third_party" / "vvla"
 sys.path.insert(0, str(VVLA_ROOT))
 pytest.importorskip("torch", reason="pinned VVLA integration requires Torch")

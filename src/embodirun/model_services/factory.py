@@ -23,9 +23,7 @@ def build_inference_client(
     if not selected.action_capable:
         raise ValueError(f"inference provider {backend!r} has no action capability")
     if not selected.supports(protocol):
-        raise ValueError(
-            f"inference provider {backend!r} does not support {protocol!r} transport"
-        )
+        raise ValueError(f"inference provider {backend!r} does not support {protocol!r} transport")
     merged = dict(options)
     merged.setdefault("transport", protocol)
     return selected.client_builder(endpoint, merged, timeout_s)

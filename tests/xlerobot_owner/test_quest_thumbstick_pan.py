@@ -1,7 +1,6 @@
 from dataclasses import replace
 
 import pytest
-
 from embodirun_xlerobot_owner.control import MappingConfig, QuestMapper
 
 from .test_mapping_regression import _frame, _state
@@ -9,10 +8,13 @@ from .test_mapping_regression import _frame, _state
 
 def packet(seq, side, stick, *, grip=True, position=(0, 1, -0.5)):
     frame = _frame(seq)
-    return replace(frame, controllers={
-        **frame.controllers,
-        side: replace(frame.controllers[side], grip=grip, thumbstick=stick, position=position),
-    })
+    return replace(
+        frame,
+        controllers={
+            **frame.controllers,
+            side: replace(frame.controllers[side], grip=grip, thumbstick=stick, position=position),
+        },
+    )
 
 
 @pytest.mark.parametrize("side", ["left", "right"])

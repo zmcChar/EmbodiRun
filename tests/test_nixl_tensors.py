@@ -3,6 +3,7 @@
 import asyncio
 
 import pytest
+
 from embodirun.services.rollout.nixl_tensors import NixlTensorTransport
 
 torch = pytest.importorskip("torch")
@@ -42,26 +43,20 @@ def test_registered_chunks_preserve_bytes_ownership_and_reverse_direction(device
         try:
             for version in range(3):
                 values = [
-                    (
-                        torch.arange(48, dtype=torch.float32, device=device) + version
-                    ).reshape(4, 12)[:, ::2],
+                    (torch.arange(48, dtype=torch.float32, device=device) + version).reshape(4, 12)[:, ::2],
                     torch.tensor(-0.0, device=device),
                     torch.tensor([1.25, 2.5], dtype=torch.bfloat16, device=device),
                     torch.empty(0, dtype=torch.int64, device=device),
                 ]
                 assert not values[0].is_contiguous()
-                _, (received, metadata) = await asyncio.gather(
-                    a.send(values, {"version": version}), b.recv()
-                )
+                _, (received, metadata) = await asyncio.gather(a.send(values, {"version": version}), b.recv())
                 assert metadata == {"version": version}
                 assert all(equal_bytes(x, y) for x, y in zip(values, received))
                 for actual, previous in retained:
                     assert all(equal_bytes(x, y) for x, y in zip(actual, previous))
                 retained.append((received, [tensor.clone() for tensor in received]))
                 assert a.last_metrics["chunks"] == b.last_metrics["chunks"] == 4
-            _, (received, metadata) = await asyncio.gather(
-                b.send(values, {"reverse": True}), a.recv()
-            )
+            _, (received, metadata) = await asyncio.gather(b.send(values, {"reverse": True}), a.recv())
             assert metadata == {"reverse": True}
             assert all(equal_bytes(x, y) for x, y in zip(values, received))
             _, (empty, _) = await asyncio.gather(a.send([values[-1]], {}), b.recv())
@@ -87,9 +82,7 @@ def test_timeout_quarantines_registered_memory_and_forbids_connection_reuse():
             await original(message)
 
         b._send = stop_credit
-        result = await asyncio.gather(
-            a.send([torch.arange(50)], {}), b.recv(), return_exceptions=True
-        )
+        result = await asyncio.gather(a.send([torch.arange(50)], {}), b.recv(), return_exceptions=True)
         assert all(isinstance(error, TimeoutError) for error in result)
         assert a.failed and b.failed
         assert a.arena is not None and b.arena is not None
@@ -114,9 +107,7 @@ def test_foreign_sequence_is_rejected_before_receiving_any_payload():
             await original(message)
 
         a._send = corrupt
-        result = await asyncio.gather(
-            a.send([torch.arange(50)], {}), b.recv(), return_exceptions=True
-        )
+        result = await asyncio.gather(a.send([torch.arange(50)], {}), b.recv(), return_exceptions=True)
         assert isinstance(result[0], TimeoutError)
         assert isinstance(result[1], ValueError) and "sequence" in str(result[1])
         assert a.sequence == b.sequence == 0

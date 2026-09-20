@@ -26,9 +26,7 @@ class NavigationObservation:
     metadata: Metadata = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.episode_id, str) or not EPISODE_ID_PATTERN.fullmatch(
-            self.episode_id
-        ):
+        if not isinstance(self.episode_id, str) or not EPISODE_ID_PATTERN.fullmatch(self.episode_id):
             raise NavigationContractError(
                 "episode_id must be 1-128 characters using letters, digits, '.', '_', ':', or '-'"
             )
@@ -43,10 +41,7 @@ class NavigationObservation:
             raise NavigationContractError(f"rgb_frames must contain 1-{MAX_RGB_CONTEXT} frames")
         if any(not isinstance(frame, EncodedRGBFrame) for frame in frames):
             raise NavigationContractError("rgb_frames must contain EncodedRGBFrame values")
-        if any(
-            current.captured_at_s <= previous.captured_at_s
-            for previous, current in pairwise(frames)
-        ):
+        if any(current.captured_at_s <= previous.captured_at_s for previous, current in pairwise(frames)):
             raise NavigationContractError("RGB capture timestamps must be strictly increasing")
         if frames[-1].sequence != observation_sequence:
             raise NavigationContractError("latest RGB sequence must match observation sequence")

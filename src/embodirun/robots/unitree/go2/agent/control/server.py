@@ -61,10 +61,7 @@ def serve_control_api(
         signal.signal(signal.SIGINT, shutdown)
         signal.signal(signal.SIGTERM, shutdown)
 
-    details = (
-        f"Go2 API listening on http://{config.host}:{config.port} "
-        f"mode={config.mode} interface={config.interface}"
-    )
+    details = f"Go2 API listening on http://{config.host}:{config.port} mode={config.mode} interface={config.interface}"
     if config.mode == "live":
         details += f" dds_library={loaded_dds_library_path()}"
     print(details, flush=True)

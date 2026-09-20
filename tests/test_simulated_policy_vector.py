@@ -15,12 +15,12 @@ from embodirun.bindings.simulated.policy_vector.pi05 import (
 )
 from embodirun.robots import RobotAction, RobotObservation, robot_definition
 from embodirun.robots.sensors.cameras import CameraFrame
-from embodirun.services.inference import PolicyAction, PolicyResult
 from embodirun.robots.simulated.policy_vector import (
     POLICY_VECTOR_ACTION_SPACE,
-    PolicyVectorAdapterError,
     UNVERIFIED_UNITS,
+    PolicyVectorAdapterError,
 )
+from embodirun.services.inference import PolicyAction, PolicyResult
 
 
 def _frames() -> tuple[CameraFrame, CameraFrame]:
@@ -35,11 +35,7 @@ def _result(
     rows: object | None = None,
     feature_names: object = SO101_POLICY_FEATURE_NAMES,
 ) -> PolicyResult:
-    values = (
-        [[float(index + offset) for offset in range(6)] for index in range(50)]
-        if rows is None
-        else rows
-    )
+    values = [[float(index + offset) for offset in range(6)] for index in range(50)] if rows is None else rows
     return PolicyResult(
         request_id="request-1",
         session_id="session-1",
@@ -76,9 +72,7 @@ def test_adapter_preserves_native_values_and_reports_simulated_receipts() -> Non
 
     adapter.connect(prepare=False)
     passive = adapter.observe()
-    assert passive.values == {
-        "state_native": [-104.5, 0.25, 93.0, 70.5, -3.0, 16.0]
-    }
+    assert passive.values == {"state_native": [-104.5, 0.25, 93.0, 70.5, -3.0, 16.0]}
     assert passive.metadata["units"] == UNVERIFIED_UNITS
     assert passive.metadata["simulated"] is True
     assert passive.metadata["hardware_access"] is False
@@ -125,9 +119,7 @@ def test_adapter_preserves_native_values_and_reports_simulated_receipts() -> Non
         ([0.0, math.nan, 0.0, 0.0, 0.0, 0.0], "must be finite"),
     ],
 )
-def test_adapter_rejects_nonfinite_or_wrong_length_native_vectors(
-    values: list[float], message: str
-) -> None:
+def test_adapter_rejects_nonfinite_or_wrong_length_native_vectors(values: list[float], message: str) -> None:
     definition = robot_definition("simulated.policy_vector")
     adapter = definition.adapter_type(definition.config_factory("demo", {}))
     adapter.connect()
@@ -205,8 +197,6 @@ def test_mapper_maps_exact_fifty_named_rows_to_native_actions_without_conversion
         (_result(rows=[[0.0, 1.0, 2.0, 3.0, 4.0, float("nan")]] * 50), "finite"),
     ],
 )
-def test_mapper_rejects_non_pi05_or_malformed_chunks(
-    result: PolicyResult, message: str
-) -> None:
+def test_mapper_rejects_non_pi05_or_malformed_chunks(result: PolicyResult, message: str) -> None:
     with pytest.raises(SimulatedPolicyVectorPi05MapperError, match=message):
         SimulatedPolicyVectorPi05Mapper().map_result(result)

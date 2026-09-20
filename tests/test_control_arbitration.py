@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import threading
 import time
 from types import SimpleNamespace
@@ -17,8 +18,8 @@ from embodirun.services.control.arbitration import (
     RobotAdapterCommandPort,
     RobotControlArbiter,
 )
-from embodirun.services.control.runtime import ControlRuntime
 from embodirun.services.control.io import IOUnknownError
+from embodirun.services.control.runtime import ControlRuntime
 
 
 def action(value: float) -> RobotAction:
@@ -387,13 +388,11 @@ def test_runtime_surfaces_robot_execute_failure_from_arbiter_ticket() -> None:
             runtime.step(())
     finally:
         runtime.close()
-        try:
-            arbiter.close()
-        except IOUnknownError:
+        with contextlib.suppress(IOUnknownError):
             # A failed action can leave the scheduler's prior stop unresolved;
             # the caller must observe that uncertainty rather than claim a
             # clean close.
-            pass
+            arbiter.close()
 
 
 def test_estop_cancels_active_clears_pending_latches_and_requires_reset() -> None:

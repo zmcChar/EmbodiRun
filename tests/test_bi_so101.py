@@ -2,8 +2,10 @@ from dataclasses import replace
 
 import pytest
 
+from embodirun.application.model_loop import ControlRuntime
 from embodirun.bindings.lerobot.bi_so101.pi05 import Pi05BiSO101Mapper
 from embodirun.bindings.lerobot.so101.pi05 import Pi05SO101MapperError
+from embodirun.model_services import PolicyAction, PolicyResult, Session
 from embodirun.robots import RobotAction, RobotObservation
 from embodirun.robots.lerobot.bi_so101 import (
     BI_SO101_ACTION_SPACE,
@@ -17,8 +19,6 @@ from embodirun.robots.lerobot.so101 import (
     SO101AdapterError,
 )
 from embodirun.robots.sensors.cameras import CameraFrame
-from embodirun.application.model_loop import ControlRuntime
-from embodirun.model_services import PolicyAction, PolicyResult, Session
 
 
 class Bus:
@@ -200,9 +200,7 @@ def test_execute_reports_hold_failure(robot, monkeypatch):
         raise OSError("hold error")
 
     monkeypatch.setattr(adapter.left, "stop", failed_hold)
-    with pytest.raises(
-        SO101AdapterError, match="send failure.*hold failed.*hold error"
-    ):
+    with pytest.raises(SO101AdapterError, match="send failure.*hold failed.*hold error"):
         adapter.execute(target())
     assert len(right.actions) == 2
 
@@ -247,16 +245,12 @@ def test_explicit_clip_limits_both_arms(robot):
 )
 def test_invalid_dual_arm_config(options):
     with pytest.raises(ValueError):
-        BiSO101Config.from_mapping(
-            "pair", {"left_port": "/dev/left", "right_port": "/dev/right", **options}
-        )
+        BiSO101Config.from_mapping("pair", {"left_port": "/dev/left", "right_port": "/dev/right", **options})
 
 
 def test_mapper_uses_names_and_preserves_entire_chunk():
     row = [1, 2, 3, 4, 5, 55, 6, 7, 8, 9, 10, 65]
-    actions = Pi05BiSO101Mapper().map_result(
-        result([row[::-1]] * 50, BI_SO101_POSITION_FEATURES[::-1])
-    )
+    actions = Pi05BiSO101Mapper().map_result(result([row[::-1]] * 50, BI_SO101_POSITION_FEATURES[::-1]))
     assert len(actions) == 50
     assert actions[0].values == target().values
     assert actions[-1].metadata["chunk_index"] == 49
@@ -321,10 +315,5 @@ def test_control_runtime_sends_12_state_values_and_three_images(robot):
         control_hz=15,
         sleep=lambda _: None,
     )
-    runtime.step(
-        tuple(
-            CameraFrame(name, "image/jpeg", b"jpeg")
-            for name in ("front", "left_wrist", "right_wrist")
-        )
-    )
+    runtime.step(tuple(CameraFrame(name, "image/jpeg", b"jpeg") for name in ("front", "left_wrist", "right_wrist")))
     assert len(left.actions) == len(right.actions) == 2

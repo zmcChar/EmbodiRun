@@ -56,14 +56,10 @@ class HabitatEnvironment:
             self._simulator.seed(seed)
         self._simulator.reset()
         state = self._habitat_sim.AgentState()
-        state.position = self._numpy.asarray(
-            self.episode.start_position, dtype=self._numpy.float32
-        )
+        state.position = self._numpy.asarray(self.episode.start_position, dtype=self._numpy.float32)
         from habitat_sim.utils.common import quat_from_coeffs
 
-        state.rotation = quat_from_coeffs(
-            self._numpy.asarray(self.episode.start_rotation_xyzw)
-        )
+        state.rotation = quat_from_coeffs(self._numpy.asarray(self.episode.start_rotation_xyzw))
         self._simulator.get_agent(0).set_state(state, reset_sensors=True)
         return self._observation(self._simulator.get_sensor_observations())
 
@@ -96,9 +92,7 @@ class HabitatEnvironment:
         return NavigationTransition(
             observation=observation,
             info={
-                "collision": bool(
-                    getattr(self._simulator, "previous_step_collided", False)
-                ),
+                "collision": bool(getattr(self._simulator, "previous_step_collided", False)),
                 "distance_to_goal_m": observation.distance_to_goal_m,
                 "stop": False,
             },
@@ -152,9 +146,7 @@ def make_habitat_environment(config: HabitatConfig) -> HabitatEnvironment:
     try:
         import habitat_sim
     except ImportError as error:
-        raise RuntimeError(
-            "Habitat execution requires the isolated sim-habitat environment"
-        ) from error
+        raise RuntimeError("Habitat execution requires the isolated sim-habitat environment") from error
 
     episode = load_r2r_episode(config)
     simulator_configuration = habitat_sim.SimulatorConfiguration()
@@ -186,9 +178,7 @@ def make_habitat_environment(config: HabitatConfig) -> HabitatEnvironment:
             habitat_sim.agent.ActuationSpec(amount=15.0),
         ),
     }
-    simulator = habitat_sim.Simulator(
-        habitat_sim.Configuration(simulator_configuration, [agent])
-    )
+    simulator = habitat_sim.Simulator(habitat_sim.Configuration(simulator_configuration, [agent]))
     return HabitatEnvironment(config, episode, simulator, habitat_sim)
 
 
@@ -201,19 +191,14 @@ def load_r2r_episode(config: HabitatConfig) -> HabitatEpisode:
         with gzip.open(config.dataset, mode="rt", encoding="utf-8") as source:
             payload = json.load(source)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError(
-            f"cannot read Habitat dataset {config.dataset}: {error}"
-        ) from error
-    if not isinstance(payload, Mapping) or not isinstance(
-        payload.get("episodes"), list
-    ):
+        raise ValueError(f"cannot read Habitat dataset {config.dataset}: {error}") from error
+    if not isinstance(payload, Mapping) or not isinstance(payload.get("episodes"), list):
         raise TypeError("Habitat dataset must contain an episodes list")
     raw = next(
         (
             item
             for item in payload["episodes"]
-            if isinstance(item, Mapping)
-            and str(item.get("episode_id")) == config.episode_id
+            if isinstance(item, Mapping) and str(item.get("episode_id")) == config.episode_id
         ),
         None,
     )
@@ -247,9 +232,7 @@ def _resolve_scene(scenes_dir: Path, scene_id: str) -> Path:
     for candidate in candidates:
         if candidate.is_file():
             return candidate.resolve()
-    raise FileNotFoundError(
-        f"Habitat scene {scene_id!r} was not found below {scenes_dir}"
-    )
+    raise FileNotFoundError(f"Habitat scene {scene_id!r} was not found below {scenes_dir}")
 
 
 def _text(value: object, name: str) -> str:

@@ -22,6 +22,4 @@ def test_renamed_repositories_share_one_identity(reference, expected) -> None:
 
 
 def test_unrelated_origins_are_not_rewritten() -> None:
-    assert repository_identity("https://example.com/other/repo.git") == (
-        "https://example.com/other/repo"
-    )
+    assert repository_identity("https://example.com/other/repo.git") == ("https://example.com/other/repo")

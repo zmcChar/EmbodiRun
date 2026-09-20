@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import threading
 import time
 from types import SimpleNamespace
@@ -67,9 +68,7 @@ class Client:
         return None
 
 
-def test_direct_port_preserves_action_values_and_routes_observation_on_same_bus() -> (
-    None
-):
+def test_direct_port_preserves_action_values_and_routes_observation_on_same_bus() -> None:
     robot = RecordingRobot()
     scheduler = RobotIOScheduler("arm-bus")
     port = RobotAdapterCommandPort(robot, io_scheduler=scheduler)
@@ -129,9 +128,7 @@ def test_agent_and_replay_are_automatic_and_manual_keeps_priority() -> None:
         arbiter.close()
 
 
-def test_runtime_can_inject_shared_observation_source_without_changing_actions() -> (
-    None
-):
+def test_runtime_can_inject_shared_observation_source_without_changing_actions() -> None:
     robot = RecordingRobot()
     observation_calls: list[int] = []
 
@@ -183,10 +180,7 @@ def test_runtime_carries_shared_snapshot_id_into_request_and_actions() -> None:
         runtime.step(())
         assert requests[0].metadata["observation_id"] == "service:g0:o7"
         assert requests[0].metadata["snapshot_id"] == "service:g0:o7"
-        assert all(
-            action.metadata["observation_id"] == "service:g0:o7"
-            for action in robot.executed
-        )
+        assert all(action.metadata["observation_id"] == "service:g0:o7" for action in robot.executed)
     finally:
         runtime.close()
 
@@ -227,9 +221,7 @@ def test_uncertain_serialized_stop_does_not_release_manual_or_estop_authority() 
         time.sleep(0.05)
     finally:
         robot.release.set()
-        try:
-            arbiter.close()
-        except RuntimeError:
+        with contextlib.suppress(RuntimeError):
             # The test intentionally leaves the scheduler quarantined; close
             # may surface that unresolved stop while still releasing threads.
-            pass
+            arbiter.close()

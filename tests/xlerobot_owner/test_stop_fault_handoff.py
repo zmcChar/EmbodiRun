@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 
 import pytest
+
 pytest.importorskip("aiohttp")
 
 from embodirun_xlerobot_owner.hardware import HEAD_TILT_NAME, WHEEL_NAMES, HardwareRobot
@@ -16,10 +17,20 @@ from tests.xlerobot_owner.test_server import HEADERS, TOKEN, station
 
 def prepared(tmp_path, monkeypatch, *, legacy=False, torque_fault=False):
     monkeypatch.setattr(HardwareRobot, "_boot_id", staticmethod(lambda: "test-boot"))
-    config = _config(tmp_path, enable_base=True, enable_head_tilt=True,
-                     wheel_directions={"left": -1, "right": 1}, stop_timeout_s=.006)
+    config = _config(
+        tmp_path,
+        enable_base=True,
+        enable_head_tilt=True,
+        wheel_directions={"left": -1, "right": 1},
+        stop_timeout_s=0.006,
+    )
     config["calibration"][HEAD_TILT_NAME] = {
-        "id": 8, "drive_mode": 0, "homing_offset": 0, "range_min": 1000, "range_max": 3000}
+        "id": 8,
+        "drive_mode": 0,
+        "homing_offset": 0,
+        "range_min": 1000,
+        "range_max": 3000,
+    }
     old = HardwareRobot(config)
     old.connect()
     started = time.time_ns()
@@ -33,26 +44,48 @@ def prepared(tmp_path, monkeypatch, *, legacy=False, torque_fault=False):
     run = {"started_at_ns": started, "completed_at_ns": time.time_ns(), "arm_feedback": arm}
     stop = old._stop_locked("test-only fault seed")
     assert not stop["stop_confirmed"] and len(stop["writes"]) == 15
-    status = {"connected": True, "armed": False, "control_owner": None,
-              "control_state": {"arms": False, "base": False}, "stop_unconfirmed": True,
-              "recording": False, "error": None, "observation_errors": [], "feedback": stop,
-              "hardware_safety": old.safety_state()}
+    status = {
+        "connected": True,
+        "armed": False,
+        "control_owner": None,
+        "control_state": {"arms": False, "base": False},
+        "stop_unconfirmed": True,
+        "recording": False,
+        "error": None,
+        "observation_errors": [],
+        "feedback": stop,
+        "hardware_safety": old.safety_state(),
+    }
     samples = []
     for _ in range(3):
         observation, _ = old.read()
         samples.append({k: observation[k] for k in ("state_timestamp_ns", "state_cached", "errors", "raw")})
-    snapshot = {"source": "physical", "ports": config["ports"], "boot_id": "test-boot",
-                "created_monotonic_s": time.monotonic(), "status_before": copy.deepcopy(status),
-                "status_after": copy.deepcopy(status), "samples": samples, "failed_stop": stop}
+    snapshot = {
+        "source": "physical",
+        "ports": config["ports"],
+        "boot_id": "test-boot",
+        "created_monotonic_s": time.monotonic(),
+        "status_before": copy.deepcopy(status),
+        "status_after": copy.deepcopy(status),
+        "samples": samples,
+        "failed_stop": stop,
+    }
     values = {side: copy.deepcopy(bus.values) for side, bus in old._buses.items()}
     old.close()
     if legacy:
         for key in ("status_before", "status_after"):
             snapshot[key].pop("hardware_safety")
-            snapshot[key]["metadata"] = {"holding_resume": {
-                "restored": True, "register_writes": 0, "stop_confirmed": True, "errors": [],
-                "motors": [n for n in old._motor_names_for_control() if n not in WHEEL_NAMES],
-                "cold_motors": [], "wheel_torque": dict.fromkeys(WHEEL_NAMES, 1)}}
+            snapshot[key]["metadata"] = {
+                "holding_resume": {
+                    "restored": True,
+                    "register_writes": 0,
+                    "stop_confirmed": True,
+                    "errors": [],
+                    "motors": [n for n in old._motor_names_for_control() if n not in WHEEL_NAMES],
+                    "cold_motors": [],
+                    "wheel_torque": dict.fromkeys(WHEEL_NAMES, 1),
+                }
+            }
         snapshot["legacy_stop_only_review"] = {"last_arm_run": run, "no_enable_attempts_since": True}
 
     buses = {}
@@ -127,10 +160,29 @@ def test_a_separate_torque_fault_is_preserved_even_after_successful_all_stop(tmp
         robot.close()
 
 
-@pytest.mark.parametrize("bad", ["stale", "boot", "ports", "owner", "active", "missing_sample",
-                                 "changed_stop", "missing_write", "torque_unknown", "ownership",
-                                 "gripper", "cached", "hardware_goal", "hardware_torque", "hardware_mode",
-                                 "hardware_calibration", "legacy_no_assertion", "legacy_no_arm"])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "stale",
+        "boot",
+        "ports",
+        "owner",
+        "active",
+        "missing_sample",
+        "changed_stop",
+        "missing_write",
+        "torque_unknown",
+        "ownership",
+        "gripper",
+        "cached",
+        "hardware_goal",
+        "hardware_torque",
+        "hardware_mode",
+        "hardware_calibration",
+        "legacy_no_assertion",
+        "legacy_no_arm",
+    ],
+)
 def test_bad_fault_handoff_fails_startup_without_writes(tmp_path, monkeypatch, bad):
     robot, buses, snapshot = prepared(tmp_path, monkeypatch, legacy=bad.startswith("legacy"))
     if bad == "stale":
@@ -167,8 +219,12 @@ def test_bad_fault_handoff_fails_startup_without_writes(tmp_path, monkeypatch, b
 
         def changed(side, port, motors, calibration):
             bus = factory(side, port, motors, calibration)
-            field = {"hardware_goal": "Goal_Position", "hardware_torque": "Torque_Enable",
-                     "hardware_mode": "Operating_Mode", "hardware_calibration": "Homing_Offset"}[bad]
+            field = {
+                "hardware_goal": "Goal_Position",
+                "hardware_torque": "Torque_Enable",
+                "hardware_mode": "Operating_Mode",
+                "hardware_calibration": "Homing_Offset",
+            }[bad]
             next(iter(bus.values.values()))[field] += 1
             return bus
 
@@ -243,7 +299,6 @@ def test_capture_only_reads_existing_api_no_device_access(tmp_path, monkeypatch)
 
 def test_cli_consumes_fault_file_once_without_fallback(tmp_path, monkeypatch):
     from aiohttp import web
-
     from embodirun_xlerobot_owner import __main__ as cli
     from embodirun_xlerobot_owner import hardware
     from embodirun_xlerobot_owner.server import PLATFORM
@@ -267,8 +322,19 @@ def test_cli_consumes_fault_file_once_without_fallback(tmp_path, monkeypatch):
 
     monkeypatch.setattr(hardware, "HardwareRobot", constructor)
     monkeypatch.setattr(web, "run_app", run_app)
-    args = ["serve", "--mode", "hardware", "--token-file", str(token),
-            "--hardware-config", str(config), "--resume-stop-fault", str(source), "--output", str(tmp_path)]
+    args = [
+        "serve",
+        "--mode",
+        "hardware",
+        "--token-file",
+        str(token),
+        "--hardware-config",
+        str(config),
+        "--resume-stop-fault",
+        str(source),
+        "--output",
+        str(tmp_path),
+    ]
     assert cli.main(args) == 0
     assert not source.exists() and source.with_suffix(".json.used").is_file()
     with pytest.raises(SystemExit):
@@ -281,7 +347,6 @@ def test_cli_consumes_fault_file_once_without_fallback(tmp_path, monkeypatch):
 
 def test_fault_launcher_bypasses_old_cli_and_refuses_reuse(tmp_path, monkeypatch):
     from aiohttp import web
-
     from embodirun_xlerobot_owner.server import PLATFORM
     from integrations.xlerobot_owner.tools.archive import start_orin_shared_teleop as launcher
 
@@ -305,8 +370,20 @@ def test_fault_launcher_bypasses_old_cli_and_refuses_reuse(tmp_path, monkeypatch
     monkeypatch.setattr(launcher, "HardwareRobot", constructor)
     monkeypatch.setattr(web, "run_app", run_app)
     monkeypatch.setattr(launcher.os, "execv", lambda *a: pytest.fail("must not call old serve CLI"))
-    monkeypatch.setattr("sys.argv", ["start", "--config", str(config), "--token-file", str(token),
-                                    "--output", str(tmp_path), "--resume-stop-fault", str(source)])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "start",
+            "--config",
+            str(config),
+            "--token-file",
+            str(token),
+            "--output",
+            str(tmp_path),
+            "--resume-stop-fault",
+            str(source),
+        ],
+    )
     launcher.main()
     assert calls == ["check-devices", "serve-blocked"]
     with pytest.raises(RuntimeError, match="already claimed"):

@@ -8,6 +8,7 @@ RealSense backend is required for a navigation-ready RGB-D observation.
 from __future__ import annotations
 
 import collections
+import contextlib
 import shutil
 import subprocess
 import threading
@@ -81,9 +82,7 @@ class V4L2Source:
                 timeout=self.format_timeout,
             )
         except subprocess.TimeoutExpired as error:
-            raise CameraStreamError(
-                f"V4L2 format validation exceeded {self.format_timeout:.1f}s"
-            ) from error
+            raise CameraStreamError(f"V4L2 format validation exceeded {self.format_timeout:.1f}s") from error
         except subprocess.CalledProcessError as error:
             details = (error.stderr or error.stdout or "unknown V4L2 error").strip()
             raise CameraStreamError(f"V4L2 format validation failed: {details}") from error
@@ -178,30 +177,22 @@ class V4L2Source:
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
             running = True
         if running:
-            try:
+            with contextlib.suppress(OSError, RuntimeError, ValueError):
                 process.terminate()
-            except (OSError, RuntimeError, ValueError):
-                pass
             try:
                 process.wait(timeout=2.0)
             except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
-                try:
+                with contextlib.suppress(OSError, RuntimeError, ValueError):
                     process.kill()
-                except (OSError, RuntimeError, ValueError):
-                    pass
-                try:
+                with contextlib.suppress(OSError, RuntimeError, ValueError, subprocess.SubprocessError):
                     process.wait(timeout=2.0)
-                except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
-                    pass
 
         if stderr_thread is not None and stderr_thread.is_alive():
             stderr_thread.join(timeout=0.5)
         for stream in (process.stdout, process.stderr):
             if stream is not None:
-                try:
+                with contextlib.suppress(OSError, RuntimeError, ValueError):
                     stream.close()
-                except (OSError, RuntimeError, ValueError):
-                    pass
         if stderr_thread is not None and stderr_thread.is_alive():
             stderr_thread.join(timeout=0.5)
 

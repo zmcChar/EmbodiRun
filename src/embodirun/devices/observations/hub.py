@@ -118,14 +118,9 @@ class SharedSensorHub:
         with self._publish_lock:
             latest = self.producer.latest()
             required = tuple(dict.fromkeys(required_source_ids))
-            latest_sources = (
-                latest.metadata.get("source_frames", {}) if latest is not None else {}
-            )
+            latest_sources = latest.metadata.get("source_frames", {}) if latest is not None else {}
             needs_source = latest is None or any(
-                (
-                    source_id not in latest_sources
-                    and source_id not in latest.source_timestamps_ns
-                )
+                (source_id not in latest_sources and source_id not in latest.source_timestamps_ns)
                 or source_id in latest.errors
                 for source_id in required
             )
@@ -164,9 +159,7 @@ class SharedSensorHub:
         by_name: dict[str, CameraFrame] = {}
         for frame in snapshot.cameras:
             if frame.name in by_name:
-                raise SharedSensorError(
-                    f"shared snapshot contains duplicate frame {frame.name!r}"
-                )
+                raise SharedSensorError(f"shared snapshot contains duplicate frame {frame.name!r}")
             by_name[frame.name] = frame
         resolved: list[CameraFrame] = []
         used: set[str] = set()
@@ -175,14 +168,8 @@ class SharedSensorHub:
             if not isinstance(actual_names, (tuple, list)):
                 actual_names = ()
             prefix = self._source_prefixes.get(source_id, "")
-            public_names = tuple(
-                _public_frame_name(prefix, name) for name in actual_names
-            )
-            if (
-                len(actual_names) > 1
-                and public_names
-                and runtime_name == public_names[0]
-            ):
+            public_names = tuple(_public_frame_name(prefix, name) for name in actual_names)
+            if len(actual_names) > 1 and public_names and runtime_name == public_names[0]:
                 for actual_name, public_name in zip(actual_names, public_names):
                     if actual_name not in by_name or actual_name in used:
                         continue
@@ -194,22 +181,14 @@ class SharedSensorHub:
                 actual_name = actual_names[public_names.index(runtime_name)]
             elif len(actual_names) == 1:
                 actual_name = actual_names[0]
-            if (
-                actual_name is not None
-                and actual_name in by_name
-                and actual_name not in used
-            ):
+            if actual_name is not None and actual_name in by_name and actual_name not in used:
                 frame = by_name[actual_name]
                 if frame.name != runtime_name:
                     frame = replace(frame, name=runtime_name)
                 resolved.append(frame)
                 used.add(actual_name)
                 continue
-            if (
-                not actual_names
-                and runtime_name in by_name
-                and runtime_name not in used
-            ):
+            if not actual_names and runtime_name in by_name and runtime_name not in used:
                 # A legacy source may expose several named streams even when
                 # the profile declares only the first stream.  Preserve that
                 # source's old ordered output for the canonical first name;
@@ -218,9 +197,7 @@ class SharedSensorHub:
                 used.add(runtime_name)
                 continue
             if len(actual_names) > 1:
-                raise SharedSensorError(
-                    "multi-frame camera sources require an explicit frame-name mapping"
-                )
+                raise SharedSensorError("multi-frame camera sources require an explicit frame-name mapping")
             raise SharedSensorError(
                 f"snapshot {snapshot.observation_id!r} has no frame mapping for "
                 f"source {source_id!r} as {runtime_name!r}"
@@ -239,27 +216,16 @@ class SharedSensorHub:
         required = list(dict.fromkeys(required_source_ids))
         if require_state:
             required.append("state")
-        errors = {
-            source_id: snapshot.errors[source_id]
-            for source_id in required
-            if source_id in snapshot.errors
-        }
-        timestamps = [
-            snapshot.source_timestamps_ns.get(source_id) for source_id in required
-        ]
+        errors = {source_id: snapshot.errors[source_id] for source_id in required if source_id in snapshot.errors}
+        timestamps = [snapshot.source_timestamps_ns.get(source_id) for source_id in required]
         domains = [snapshot.clock_domains.get(source_id) for source_id in required]
         known_timestamps = [value for value in timestamps if value is not None]
         known_domains = {value for value in domains if value is not None}
         aggregate_domain = snapshot.metadata.get("clock_domain")
-        foreign_domain = bool(
-            known_domains
-            and (len(known_domains) != 1 or aggregate_domain not in known_domains)
-        )
+        foreign_domain = bool(known_domains and (len(known_domains) != 1 or aggregate_domain not in known_domains))
         view_skew = (
             max(known_timestamps) - min(known_timestamps)
-            if len(known_timestamps) == len(required)
-            and len(known_domains) == 1
-            and len(required) > 0
+            if len(known_timestamps) == len(required) and len(known_domains) == 1 and len(required) > 0
             else None
         )
         missing = [
@@ -273,24 +239,15 @@ class SharedSensorHub:
             "stale": stale,
             "errors": errors,
             "missing_sources": missing,
-            "captured_timestamp_ns": max(known_timestamps)
-            if known_timestamps
-            else None,
+            "captured_timestamp_ns": max(known_timestamps) if known_timestamps else None,
             "received_timestamp_ns": max(
                 value
                 for source_id in required
-                if (value := snapshot.source_received_timestamps_ns.get(source_id))
-                is not None
+                if (value := snapshot.source_received_timestamps_ns.get(source_id)) is not None
             )
-            if any(
-                snapshot.source_received_timestamps_ns.get(source_id) is not None
-                for source_id in required
-            )
+            if any(snapshot.source_received_timestamps_ns.get(source_id) is not None for source_id in required)
             else None,
-            "clock_domains": {
-                source_id: snapshot.clock_domains.get(source_id)
-                for source_id in required
-            },
+            "clock_domains": {source_id: snapshot.clock_domains.get(source_id) for source_id in required},
             "skew_ns": view_skew,
             "global": {
                 "available": snapshot.available,
@@ -306,9 +263,7 @@ class SharedSensorHub:
         for frame in snapshot.cameras:
             if frame.name == frame_name:
                 return frame
-        raise SharedSensorError(
-            f"snapshot {observation_id!r} has no frame named {frame_name!r}"
-        )
+        raise SharedSensorError(f"snapshot {observation_id!r} has no frame named {frame_name!r}")
 
     def close(self, timeout_s: float = 1.0) -> bool:
         """Stop the producer; physical owner release remains the service's job."""

@@ -17,9 +17,7 @@ if TYPE_CHECKING:
 class WirelessProtocolError(RuntimeError):
     """A WirelessComm RPC exchange failed locally or remotely."""
 
-    def __init__(
-        self, message: str, *, status: int | None = None, code: str | None = None
-    ) -> None:
+    def __init__(self, message: str, *, status: int | None = None, code: str | None = None) -> None:
         super().__init__(message)
         self.status = status
         self.code = code
@@ -167,9 +165,7 @@ class WirelessRpcTransport:
         from wireless_comm import CommOptions, OperationTimeoutError
 
         if self._failure is not None:
-            raise WirelessProtocolError(
-                f"wireless response loop failed: {self._failure}"
-            )
+            raise WirelessProtocolError(f"wireless response loop failed: {self._failure}")
         deadline = self._loop.time() + timeout_s
         rpc_id = uuid.uuid4().hex
         future = self._loop.create_future()
@@ -211,16 +207,9 @@ class WirelessRpcTransport:
                     CommOptions(tag=self._response_tag),
                 )
                 if not isinstance(metadata, Mapping):
-                    raise WirelessProtocolError(
-                        "wireless response is missing RPC metadata"
-                    )
-                if (
-                    metadata.get("schema") != self._rpc_schema
-                    or metadata.get("kind") != "response"
-                ):
-                    raise WirelessProtocolError(
-                        "wireless response has an unsupported RPC envelope"
-                    )
+                    raise WirelessProtocolError("wireless response is missing RPC metadata")
+                if metadata.get("schema") != self._rpc_schema or metadata.get("kind") != "response":
+                    raise WirelessProtocolError("wireless response has an unsupported RPC envelope")
                 rpc_id = metadata.get("rpc_id")
                 if not isinstance(rpc_id, str):
                     raise WirelessProtocolError("wireless response is missing rpc_id")
@@ -229,13 +218,9 @@ class WirelessRpcTransport:
                     continue
                 status = metadata.get("status")
                 if isinstance(status, bool) or not isinstance(status, int):
-                    future.set_exception(
-                        WirelessProtocolError("wireless response status is invalid")
-                    )
+                    future.set_exception(WirelessProtocolError("wireless response status is invalid"))
                 elif not 200 <= status < 300:
-                    message = (
-                        payload.get("message") if isinstance(payload, Mapping) else None
-                    )
+                    message = payload.get("message") if isinstance(payload, Mapping) else None
                     future.set_exception(
                         WirelessProtocolError(
                             str(message or "wireless RPC request failed"),
@@ -244,11 +229,7 @@ class WirelessRpcTransport:
                         )
                     )
                 elif not isinstance(payload, Mapping):
-                    future.set_exception(
-                        WirelessProtocolError(
-                            "wireless response payload must be an object"
-                        )
-                    )
+                    future.set_exception(WirelessProtocolError("wireless response payload must be an object"))
                 else:
                     future.set_result(dict(payload))
         except asyncio.CancelledError:
@@ -257,9 +238,7 @@ class WirelessRpcTransport:
             self._failure = error
             for future in self._pending.values():
                 if not future.done():
-                    future.set_exception(
-                        WirelessProtocolError(f"wireless response loop failed: {error}")
-                    )
+                    future.set_exception(WirelessProtocolError(f"wireless response loop failed: {error}"))
 
     async def _shutdown(self) -> None:
         if self._responses is not None:

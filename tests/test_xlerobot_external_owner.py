@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import http.client
 import json
 import socket
@@ -13,9 +14,9 @@ import pytest
 
 from embodirun.robots import RobotAction, RobotPreparationRefused, robot_definition
 from embodirun.robots.lerobot.xlerobot import (
+    XLEROBOT_ACTION_SPACE,
     XLeRobotAdapter,
     XLeRobotAdapterError,
-    XLEROBOT_ACTION_SPACE,
 )
 from embodirun.robots.lerobot.xlerobot.config import XLeRobotConfig
 from embodirun.services.control.contracts import ControlServiceConfig
@@ -27,7 +28,6 @@ from embodirun.services.control.devices import (
     ResourceIdentity,
 )
 from embodirun.services.control.server import ControlHttpServer, ControlService
-
 
 _ARM_KEYS = (
     "shoulder_pan",
@@ -101,22 +101,18 @@ class _OwnerState:
         values = (
             {"x.vel": 0.0, "theta.vel": 0.0}
             if self.scope == "base"
-            else {
-                f"{side}_arm_{joint}.pos": 0.0
-                for side in ("left", "right")
-                for joint in _ARM_KEYS
-            }
+            else {f"{side}_arm_{joint}.pos": 0.0 for side in ("left", "right") for joint in _ARM_KEYS}
         )
         now = time.time_ns()
         observation: dict[str, Any] = {
-                "state": values,
-                "armed": armed,
-                "control_owned": armed and owner == request_owner,
-                "raw": {"legacy": True},
-                "raw_fields": {"owner_present": armed},
-                "wheel_present_blocks": [],
-                "errors": [],
-                "metadata": {"scope": self.scope},
+            "state": values,
+            "armed": armed,
+            "control_owned": armed and owner == request_owner,
+            "raw": {"legacy": True},
+            "raw_fields": {"owner_present": armed},
+            "wheel_present_blocks": [],
+            "errors": [],
+            "metadata": {"scope": self.scope},
         }
         if not self.omit_source_timestamp:
             observation["source_timestamp_ns"] = now
@@ -135,7 +131,7 @@ class _OwnerHTTPError(Exception):
 
 
 class _OwnerHandler(BaseHTTPRequestHandler):
-    server: "_OwnerServer"
+    server: _OwnerServer
 
     def log_message(self, *_args: object) -> None:
         pass
@@ -159,10 +155,8 @@ class _OwnerHandler(BaseHTTPRequestHandler):
                 self.state.drop_after.remove(endpoint)
         if drop:
             self.close_connection = True
-            try:
+            with contextlib.suppress(OSError):
                 self.connection.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
             self.connection.close()
             return True
         return False
@@ -399,12 +393,10 @@ def _close_control(service: ControlService, server: ControlHttpServer, thread: t
     server.shutdown()
     server.server_close()
     thread.join(timeout=3)
-    try:
-        service.close()
-    except Exception:
+    with contextlib.suppress(Exception):
         # Tests which intentionally leave a stop unknown still need to stop
         # their HTTP listener; the assertion owns the lifecycle error.
-        pass
+        service.close()
 
 
 def test_definition_and_passive_prepare_release_new_explicit_task(owner):
@@ -509,7 +501,7 @@ def test_transport_drop_after_remote_acceptance_is_not_retried(owner, endpoint):
     adapter = _adapter(url, timeout_s=0.4)
     adapter.connect(prepare=False)
     if endpoint == "arm":
-        with pytest.raises(Exception):
+        with pytest.raises(XLeRobotAdapterError):
             adapter.prepare()
         assert len(state.arm_owners) == 1
         assert adapter.stop_unconfirmed is True
@@ -517,13 +509,13 @@ def test_transport_drop_after_remote_acceptance_is_not_retried(owner, endpoint):
         return
     adapter.prepare()
     if endpoint == "command":
-        with pytest.raises(Exception):
+        with pytest.raises(XLeRobotAdapterError):
             adapter.execute(_arm_action())
         assert len(state.commands) == 1
         assert len([item for item in state.calls if item[1] == "command"]) == 1
         assert adapter.stop_unconfirmed is True
     else:
-        with pytest.raises(Exception):
+        with pytest.raises(XLeRobotAdapterError):
             adapter.stop()
         assert adapter.stop_unconfirmed is True
         assert len(state.release_owners) == 1
@@ -653,9 +645,7 @@ def test_http_direct_first_returns_applied_raw_receipt_and_confirmed_hold(contro
 def test_http_passive_observe_first_then_direct_prepares_once(control_http):
     state, service, server, thread = control_http()
     try:
-        status, observed = _http_request(
-            server.server_port, "GET", "/v1/observe?include_robot=true"
-        )
+        status, observed = _http_request(server.server_port, "GET", "/v1/observe?include_robot=true")
         assert status == 200, observed
         robot = observed["robot"]
         assert robot["values"]["left_arm_shoulder_pan.pos"] == 0.0
@@ -900,6 +890,7 @@ def test_failed_close_remains_uncertain_after_manager_restart(tmp_path: Path):
     url = f"http://127.0.0.1:{server.server_port}"
     identity = ResourceIdentity("local", "robot", "failed-close")
     try:
+
         def make_adapter() -> XLeRobotAdapter:
             adapter = _adapter(url)
             adapter.connect(prepare=False)
@@ -911,9 +902,7 @@ def test_failed_close_remains_uncertain_after_manager_restart(tmp_path: Path):
             lock_dir=tmp_path / "locks",
             state_path=tmp_path / "state.json",
         )
-        lease = manager.acquire(
-            DeviceResource(identity, make_adapter, external_owner=True), role="control"
-        )
+        lease = manager.acquire(DeviceResource(identity, make_adapter, external_owner=True), role="control")
         lease.value.prepare()
         with pytest.raises(DeviceCloseError, match="did not confirm a stop"):
             lease.close()

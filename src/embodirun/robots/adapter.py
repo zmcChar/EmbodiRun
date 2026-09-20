@@ -49,9 +49,7 @@ class RobotAdapter(ABC):
 
     def prepare(self) -> None:
         """Prepare an already connected adapter for commanded control."""
-        raise NotImplementedError(
-            f"{type(self).__name__} does not expose an explicit prepare operation"
-        )
+        raise NotImplementedError(f"{type(self).__name__} does not expose an explicit prepare operation")
 
     @abstractmethod
     def observe(self) -> RobotObservation:

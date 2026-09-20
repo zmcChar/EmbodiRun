@@ -53,9 +53,7 @@ def test_wireless_client_builds_structured_step_payload() -> None:
     method, payload, timeout_s = transport.calls[1]
     assert method == "step"
     assert payload["schema"] == "vvla.policy.step.v1"
-    assert payload["images"] == [
-        {"name": "wrist", "mime_type": "image/jpeg", "data": b"jpeg-bytes"}
-    ]
+    assert payload["images"] == [{"name": "wrist", "mime_type": "image/jpeg", "data": b"jpeg-bytes"}]
     assert timeout_s == 2.5
     assert result.request_id == "request-1"
 

@@ -21,9 +21,9 @@ from typing import Any
 from embodirun.application import control_service as _control_service
 from embodirun.application.api import ControlApplication
 from embodirun.application.auth import (
-    AuthPolicy,
     AuthenticationError,
     AuthorizationError,
+    AuthPolicy,
     Role,
 )
 from embodirun.application.contracts import (
@@ -155,9 +155,7 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         self._send(HTTPStatus.OK, payload)
 
     def do_POST(self) -> None:
-        if self.server.control_application is not None and self._is_application_route(
-            self.path
-        ):
+        if self.server.control_application is not None and self._is_application_route(self.path):
             try:
                 body = self._read_optional_json()
             except (OSError, ValueError) as error:
@@ -182,11 +180,7 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
             self._send(HTTPStatus.CONFLICT, error_payload(str(error)))
             return
         except ControlTaskRejected as error:
-            status = (
-                HTTPStatus.CONFLICT
-                if "already executing" in str(error)
-                else HTTPStatus.BAD_REQUEST
-            )
+            status = HTTPStatus.CONFLICT if "already executing" in str(error) else HTTPStatus.BAD_REQUEST
             self._send(status, error_payload(str(error)))
             return
         except Exception as error:  # noqa: BLE001 - normalize service failures
@@ -220,13 +214,9 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
                 active = root.get("active")
                 if not isinstance(active, bool):
                     raise ValueError("manual deadman active must be boolean")
-                payload = self.server.control_service.set_manual_deadman(
-                    active, **manual_kwargs
-                )
+                payload = self.server.control_service.set_manual_deadman(active, **manual_kwargs)
             elif self.path == "/v1/control/manual/action":
-                payload = self.server.control_service.submit_manual_action(
-                    self._read_json(), **manual_kwargs
-                )
+                payload = self.server.control_service.submit_manual_action(self._read_json(), **manual_kwargs)
             else:
                 self._send(HTTPStatus.NOT_FOUND, error_payload("route not found"))
                 return
@@ -247,9 +237,7 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         *,
         body: Mapping[str, Any] | None = None,
     ) -> bool:
-        if self.server.control_application is None or not self._is_application_route(
-            self.path
-        ):
+        if self.server.control_application is None or not self._is_application_route(self.path):
             return False
         try:
             response = self.server.control_api.dispatch(
@@ -337,9 +325,7 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         except ValueError as error:
             raise ValueError("Content-Length must be an integer") from error
         if not 0 < length <= _MAX_REQUEST_BYTES:
-            raise ValueError(
-                f"request body must be between 1 and {_MAX_REQUEST_BYTES} bytes"
-            )
+            raise ValueError(f"request body must be between 1 and {_MAX_REQUEST_BYTES} bytes")
         body = self.rfile.read(length)
         try:
             return json.loads(body.decode("utf-8"))

@@ -44,9 +44,7 @@ class LiberoConfig:
         }
         unknown = sorted(set(options) - allowed)
         if unknown:
-            raise ValueError(
-                "unknown LIBERO configuration fields: " + ", ".join(unknown)
-            )
+            raise ValueError("unknown LIBERO configuration fields: " + ", ".join(unknown))
         return cls(
             simulator_id=simulator_id,
             suite=options.get("suite"),
@@ -64,11 +62,7 @@ class LiberoConfig:
         if not isinstance(self.suite, str) or self.suite not in LIBERO_SUITES:
             available = ", ".join(sorted(LIBERO_SUITES))
             raise ValueError(f"LIBERO suite must be one of: {available}")
-        if (
-            isinstance(self.task_id, bool)
-            or not isinstance(self.task_id, int)
-            or self.task_id < 0
-        ):
+        if isinstance(self.task_id, bool) or not isinstance(self.task_id, int) or self.task_id < 0:
             raise ValueError("LIBERO task_id must be a non-negative integer")
         for name in ("max_episode_steps", "width", "height"):
             value = getattr(self, name)

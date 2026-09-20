@@ -26,9 +26,7 @@ class VLABenchConfig:
         allowed = {"task", "max_episode_steps", "width", "height", "viewer"}
         unknown = sorted(set(options) - allowed)
         if unknown:
-            raise ValueError(
-                "unknown VLABench configuration fields: " + ", ".join(unknown)
-            )
+            raise ValueError("unknown VLABench configuration fields: " + ", ".join(unknown))
         return cls(
             simulator_id=simulator_id,
             task=options.get("task"),

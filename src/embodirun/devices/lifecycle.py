@@ -22,8 +22,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
-from embodirun.robots.adapter import RobotPreparationRefused
 from urllib.parse import quote
+
+from embodirun.robots.adapter import RobotPreparationRefused
 
 try:  # pragma: no cover - the supported deployment platforms are POSIX.
     import fcntl
@@ -45,10 +46,7 @@ class DeviceBusyError(DeviceError):
         pid = self.holder.get("pid", "unknown")
         state = self.holder.get("state")
         state_detail = f", state={state!r}" if state is not None else ""
-        super().__init__(
-            f"resource {identity.key!r} is busy (owner={owner!r}, pid={pid!r}"
-            f"{state_detail})"
-        )
+        super().__init__(f"resource {identity.key!r} is busy (owner={owner!r}, pid={pid!r}{state_detail})")
 
 
 class DeviceOpenError(DeviceError):
@@ -160,8 +158,7 @@ class DeviceResource:
         if not isinstance(self.external_owner, bool):
             raise TypeError("external_owner must be a boolean")
         if not isinstance(self.component_identities, tuple) or any(
-            not isinstance(identity, ResourceIdentity)
-            for identity in self.component_identities
+            not isinstance(identity, ResourceIdentity) for identity in self.component_identities
         ):
             raise TypeError("component_identities must contain ResourceIdentity values")
         identities = {self.identity.key}
@@ -309,11 +306,7 @@ class DeviceStateStore:
         self.path = Path(path).expanduser() if path is not None else None
         self._lock = threading.RLock()
         self.error: str | None = None
-        self._process_lock_path = (
-            self.path.with_name(f".{self.path.name}.lock")
-            if self.path is not None
-            else None
-        )
+        self._process_lock_path = self.path.with_name(f".{self.path.name}.lock") if self.path is not None else None
 
     def load(self) -> dict[str, str]:
         self.error = None
@@ -335,49 +328,37 @@ class DeviceStateStore:
             not isinstance(key, str) or not key.strip() or not isinstance(reason, str)
             for key, reason in unresolved.items()
         ):
-            self.error = (
-                "lifecycle state is malformed: unresolved entries must be strings"
-            )
+            self.error = "lifecycle state is malformed: unresolved entries must be strings"
             return {}
         return dict(unresolved)
 
     def mark(self, identity: ResourceIdentity, reason: str) -> None:
         if self.path is None:
             return
-        with self._lock:
-            with self._file_lock():
-                unresolved = self.load()
-                if self.error is not None:
-                    # A malformed file represents unknown history.  Replacing
-                    # it with the new error would silently discard faults
-                    # from another process, so require explicit recovery.
-                    raise DeviceStateError(self.error)
-                physical_key = identity.physical_key
-                unresolved = {
-                    key: value
-                    for key, value in unresolved.items()
-                    if _physical_key(key) != physical_key
-                }
-                unresolved[identity.key] = reason
-                self._save(unresolved)
+        with self._lock, self._file_lock():
+            unresolved = self.load()
+            if self.error is not None:
+                # A malformed file represents unknown history.  Replacing
+                # it with the new error would silently discard faults
+                # from another process, so require explicit recovery.
+                raise DeviceStateError(self.error)
+            physical_key = identity.physical_key
+            unresolved = {key: value for key, value in unresolved.items() if _physical_key(key) != physical_key}
+            unresolved[identity.key] = reason
+            self._save(unresolved)
 
     def clear(self, identity: ResourceIdentity) -> None:
         if self.path is None:
             return
-        with self._lock:
-            with self._file_lock():
-                unresolved = self.load()
-                if self.error is not None:
-                    raise DeviceStateError(self.error)
-                physical_key = identity.physical_key
-                filtered = {
-                    key: value
-                    for key, value in unresolved.items()
-                    if _physical_key(key) != physical_key
-                }
-                if len(filtered) != len(unresolved):
-                    unresolved = filtered
-                    self._save(unresolved)
+        with self._lock, self._file_lock():
+            unresolved = self.load()
+            if self.error is not None:
+                raise DeviceStateError(self.error)
+            physical_key = identity.physical_key
+            filtered = {key: value for key, value in unresolved.items() if _physical_key(key) != physical_key}
+            if len(filtered) != len(unresolved):
+                unresolved = filtered
+                self._save(unresolved)
 
     class _FileLock:
         def __init__(self, path: Path):
@@ -450,10 +431,7 @@ class DeviceManager:
         self.owner_id = owner_id or f"control:{os.getpid()}"
         explicit_lock_dir = lock_dir is not None
         self.lock_dir = Path(
-            lock_dir
-            or os.environ.get(
-                "RLINF_DEPLOY_DEVICE_LOCK_DIR", "/tmp/rlinf-deploy-device-locks"
-            )
+            lock_dir or os.environ.get("RLINF_DEPLOY_DEVICE_LOCK_DIR", "/tmp/rlinf-deploy-device-locks")
         ).expanduser()
         if state_path is None:
             if explicit_lock_dir:
@@ -539,29 +517,16 @@ class DeviceManager:
                 )
             if record is not None:
                 if record.resource.external_owner != resource.external_owner:
-                    raise DeviceError(
-                        f"resource {key!r} has conflicting external-owner declarations"
-                    )
-                existing_components = tuple(
-                    item.key for item in record.resource.component_identities
-                )
-                requested_components = tuple(
-                    item.key for item in resource.component_identities
-                )
+                    raise DeviceError(f"resource {key!r} has conflicting external-owner declarations")
+                existing_components = tuple(item.key for item in record.resource.component_identities)
+                requested_components = tuple(item.key for item in resource.component_identities)
                 if existing_components != requested_components:
-                    raise DeviceError(
-                        f"resource {key!r} has conflicting component identities"
-                    )
+                    raise DeviceError(f"resource {key!r} has conflicting component identities")
                 if record.references == 0 and record.state == "uncertain":
-                    raise DeviceUncertainError(
-                        f"resource {key!r} remains held after an unresolved close failure"
-                    )
+                    raise DeviceUncertainError(f"resource {key!r} remains held after an unresolved close failure")
                 if prepare and (
                     not record.prepared
-                    or (
-                        record.resource.external_owner
-                        and getattr(record.value, "prepared", True) is False
-                    )
+                    or (record.resource.external_owner and getattr(record.value, "prepared", True) is False)
                 ):
                     if self.state_store.error is not None:
                         raise DeviceUncertainError(self.state_store.error)
@@ -574,9 +539,7 @@ class DeviceManager:
                         None,
                     )
                     if reason is not None:
-                        raise DeviceUncertainError(
-                            f"resource {key!r} has unresolved lifecycle state: {reason}"
-                        )
+                        raise DeviceUncertainError(f"resource {key!r} has unresolved lifecycle state: {reason}")
                     self._prepare_record(record, preparer=resource.preparer)
                 token = self._next_token
                 self._next_token += 1
@@ -587,29 +550,19 @@ class DeviceManager:
             identities = (identity, *resource.component_identities)
             identity_keys = tuple(item.key for item in identities)
             reason = next(
-                (
-                    self._unresolved.get(item)
-                    for item in identity_keys
-                    if self._unresolved.get(item) is not None
-                ),
+                (self._unresolved.get(item) for item in identity_keys if self._unresolved.get(item) is not None),
                 None,
             )
             if prepare:
                 if self.state_store.error is not None:
                     raise DeviceUncertainError(self.state_store.error)
                 if reason is not None:
-                    raise DeviceUncertainError(
-                        f"resource {key!r} has unresolved lifecycle state: {reason}"
-                    )
+                    raise DeviceUncertainError(f"resource {key!r} has unresolved lifecycle state: {reason}")
             process_locks: list[_PosixResourceLock] = []
             if not resource.external_owner:
                 try:
-                    for physical_identity in sorted(
-                        identities, key=lambda item: item.key
-                    ):
-                        process_lock = _PosixResourceLock(
-                            physical_identity, self.lock_dir, self.owner_id
-                        )
+                    for physical_identity in sorted(identities, key=lambda item: item.key):
+                        process_lock = _PosixResourceLock(physical_identity, self.lock_dir, self.owner_id)
                         process_lock.acquire()
                         process_locks.append(process_lock)
                 except BaseException:
@@ -666,8 +619,7 @@ class DeviceManager:
                 prepared=prepare,
                 state=(
                     "uncertain"
-                    if any(item in self._unresolved for item in identity_keys)
-                    or self.state_store.error is not None
+                    if any(item in self._unresolved for item in identity_keys) or self.state_store.error is not None
                     else "external"
                     if resource.external_owner
                     else "open"
@@ -686,9 +638,7 @@ class DeviceManager:
         if preparer is None:
             method = getattr(value, "prepare", None)
             if not callable(method):
-                raise DeviceError(
-                    f"resource {resource.identity.key!r} does not support explicit prepare"
-                )
+                raise DeviceError(f"resource {resource.identity.key!r} does not support explicit prepare")
             preparer = method
         preparer(value) if resource.preparer is not None else preparer()
 
@@ -715,9 +665,7 @@ class DeviceManager:
                 *record.resource.component_identities,
             ):
                 self.state_store.mark(identity, str(error))
-            raise DeviceError(
-                f"resource {record.resource.identity.key!r} prepare failed: {error}"
-            ) from error
+            raise DeviceError(f"resource {record.resource.identity.key!r} prepare failed: {error}") from error
         record.prepared = True
         record.error = None
         record.state = "external" if record.resource.external_owner else "open"
@@ -807,9 +755,7 @@ class DeviceManager:
                 # Keep the original close failure visible while retaining the
                 # unreadable-state diagnostic for fail-closed preparation.
                 record.error = f"{error}; lifecycle state unavailable: {state_error}"
-            raise DeviceCloseError(
-                f"close failed for {record.resource.identity.key!r}: {record.error}"
-            ) from error
+            raise DeviceCloseError(f"close failed for {record.resource.identity.key!r}: {record.error}") from error
         # A successful close of a later read-only attach cannot prove that a
         # previous stop/torque failure was repaired.  Keep that marker until
         # an explicit operator verification clears it.
@@ -828,13 +774,10 @@ class DeviceManager:
                 record.error = str(error)
                 record.uncertain_before = True
                 raise DeviceCloseError(
-                    f"closed {record.resource.identity.key!r}, but lifecycle "
-                    f"state could not be updated: {error}"
+                    f"closed {record.resource.identity.key!r}, but lifecycle state could not be updated: {error}"
                 ) from error
 
-    def status(
-        self, identity: ResourceIdentity | None = None
-    ) -> tuple[DeviceStatus, ...] | DeviceStatus:
+    def status(self, identity: ResourceIdentity | None = None) -> tuple[DeviceStatus, ...] | DeviceStatus:
         """Return lifecycle state without touching or reopening hardware."""
 
         with self._lock:
@@ -842,10 +785,7 @@ class DeviceManager:
             if identity is not None:
                 return self._status_one(identity)
             keys = set(self._records) | set(self._unresolved)
-            statuses = [
-                self._status_one(record.resource.identity)
-                for record in self._records.values()
-            ]
+            statuses = [self._status_one(record.resource.identity) for record in self._records.values()]
             known = {item.identity.key for item in statuses}
             for key in sorted(keys - known):
                 pieces = key.split(":", 2)
@@ -910,9 +850,7 @@ class DeviceManager:
         with self._lock:
             record = self._records.get(identity.key)
             identities = (
-                (record.resource.identity, *record.resource.component_identities)
-                if record is not None
-                else (identity,)
+                (record.resource.identity, *record.resource.component_identities) if record is not None else (identity,)
             )
             for physical_identity in identities:
                 self._unresolved[physical_identity.key] = reason

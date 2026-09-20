@@ -5,9 +5,9 @@ import time
 from contextlib import asynccontextmanager
 
 import pytest
+
 pytest.importorskip("aiohttp")
 from aiohttp.test_utils import TestClient, TestServer
-
 from embodirun_xlerobot_owner.control import MappingConfig
 from embodirun_xlerobot_owner.robot import DemoRobot, RemoteRobot
 from embodirun_xlerobot_owner.server import Platform, create_app, xr_diagnostics
@@ -55,17 +55,26 @@ async def station(
         def read_test_demo():
             now = time.time_ns()
             return {
-                "state": dict(robot.state), "source_timestamp_ns": now,
+                "state": dict(robot.state),
+                "source_timestamp_ns": now,
                 "state_timestamp_ns": now,
-                "camera_timestamps_ns": {name: now for name in demo_images},
-                "metadata": robot.metadata, "armed": robot.armed,
+                "camera_timestamps_ns": dict.fromkeys(demo_images, now),
+                "metadata": robot.metadata,
+                "armed": robot.armed,
                 "control_state": robot.control_state(),
             }, dict(demo_images)
 
         robot.read = read_test_demo
-    platform = Platform(robot, TOKEN, output=tmp_path, fps=20, robot_api=robot_api, mapping=mapping,
-                        browser_no_token_cidr=browser_no_token_cidr,
-                        leader_command=leader_command)
+    platform = Platform(
+        robot,
+        TOKEN,
+        output=tmp_path,
+        fps=20,
+        robot_api=robot_api,
+        mapping=mapping,
+        browser_no_token_cidr=browser_no_token_cidr,
+        leader_command=leader_command,
+    )
     client = TestClient(TestServer(create_app(platform)))
     await client.start_server()
     for _ in range(100):
@@ -127,8 +136,9 @@ async def test_lan_without_token_keeps_origin_host_and_robot_auth_boundaries(tmp
         assert (await response.json())["browser_access"] == "trusted_lan"
         assert (await c.get("/api/cameras/front.jpg")).status == 200
         assert (await c.get("/api/status", headers={"Origin": "https://evil.invalid"})).status == 403
-        assert (await c.get("/api/status", headers={"Host": "evil.invalid",
-                                                   "Origin": "http://evil.invalid"})).status == 401
+        assert (
+            await c.get("/api/status", headers={"Host": "evil.invalid", "Origin": "http://evil.invalid"})
+        ).status == 401
         assert (await c.get("/robot/status")).status == 401
         assert (await c.get("/robot/status", headers=HEADERS)).status == 404
         ws = await c.ws_connect("/ws")
@@ -145,9 +155,15 @@ async def test_other_subnet_and_forwarded_headers_cannot_enable_token_free_acces
         assert not p.browser_address_allowed("192.168.2.77")
         assert not p.browser_address_allowed(None)
         assert not p.browser_address_allowed("invalid")
-        assert (await c.get("/api/status", headers={
-            "X-Forwarded-For": "192.168.1.77", "Forwarded": "for=192.168.1.77",
-        })).status == 401
+        assert (
+            await c.get(
+                "/api/status",
+                headers={
+                    "X-Forwarded-For": "192.168.1.77",
+                    "Forwarded": "for=192.168.1.77",
+                },
+            )
+        ).status == 401
         assert (await c.get("/api/status", headers=HEADERS)).status == 200
 
 
@@ -159,8 +175,7 @@ def test_no_token_network_must_be_explicit_private_subnet(tmp_path, network):
 
 def test_robot_endpoint_cannot_disable_token_auth(tmp_path):
     with pytest.raises(ValueError, match="robot endpoint"):
-        Platform(DemoRobot(), TOKEN, output=tmp_path, robot_api=True,
-                 browser_no_token_cidr="127.0.0.0/8")
+        Platform(DemoRobot(), TOKEN, output=tmp_path, robot_api=True, browser_no_token_cidr="127.0.0.0/8")
     robot = DemoRobot()
     robot.mode = "hardware"
     with pytest.raises(ValueError, match="robot endpoint"):
@@ -232,10 +247,14 @@ async def test_command_receipt_rebases_mapper_hold_in_live_tick(tmp_path):
 
 
 def test_xr_diagnostics_are_bounded_and_do_not_echo_unknown_fields():
-    result = xr_diagnostics({
-        "active": "true", "visibility": "visible", "arbitrary_secret": "never echo",
-        "sources": [{"hand": "left", "gamepad": True, "profiles": ["x" * 500] * 8}] * 20,
-    })
+    result = xr_diagnostics(
+        {
+            "active": "true",
+            "visibility": "visible",
+            "arbitrary_secret": "never echo",
+            "sources": [{"hand": "left", "gamepad": True, "profiles": ["x" * 500] * 8}] * 20,
+        }
+    )
     assert "active" not in result
     assert "arbitrary_secret" not in result
     assert len(result["sources"]) == 6
@@ -250,8 +269,13 @@ async def test_partial_startup_tracking_is_observable_but_never_arms(tmp_path):
         ws = await c.ws_connect("/ws", headers=HEADERS)
         packet = frame()
         packet["controllers"]["right"]["tracked"] = False
-        packet["xr"] = {"active": True, "visibility": "visible", "document_hidden": True,
-                        "viewer_tracked": True, "safety_tripped": False}
+        packet["xr"] = {
+            "active": True,
+            "visibility": "visible",
+            "document_hidden": True,
+            "viewer_tracked": True,
+            "safety_tripped": False,
+        }
         await ws.send_json(packet)
         await wait_for(lambda: bool(p.frames))
         status = p.status()
@@ -301,9 +325,7 @@ async def test_drive_mode_requires_both_configurations_and_stopped_state(tmp_pat
         p.robot.metadata["enable_base"] = True
         assert p.status()["drive_available"] is True
         p.set_control_mode("drive")
-        assert p.selected_action({**p.robot.state, "x.vel": 0.03, "theta.vel": 5}) == {
-            "x.vel": 0.03, "theta.vel": 5
-        }
+        assert p.selected_action({**p.robot.state, "x.vel": 0.03, "theta.vel": 5}) == {"x.vel": 0.03, "theta.vel": 5}
         p.set_control_mode("arms")
         p.stop_unconfirmed = True
         with pytest.raises(RuntimeError, match="unconfirmed"):
@@ -360,11 +382,7 @@ async def test_driving_via_websocket_keeps_cameras_and_stops_on_deadman_release(
         try:
             await wait_for(lambda: p.robot.state["x.vel"] > 0)
             assert p.robot.state["theta.vel"] < 0
-            assert all(
-                p.robot.state[name] == value
-                for name, value in before.items()
-                if name.endswith(".pos")
-            )
+            assert all(p.robot.state[name] == value for name, value in before.items() if name.endswith(".pos"))
             await observer.send_json({"type": "set_control_mode", "mode": "arms"})
             assert "Stop" in await websocket_error(observer)
             assert p.error is None
@@ -399,9 +417,7 @@ async def test_duplicate_observation_is_not_a_new_recorded_sample(tmp_path):
     await p.record_frame(observation=observation, images=images, action=None)
     assert p.skipped_duplicate_samples == 1
     with pytest.raises(RuntimeError, match="clock regressed"):
-        await p.record_frame(
-            observation={**observation, "source_timestamp_ns": 1}, images=images, action=None
-        )
+        await p.record_frame(observation={**observation, "source_timestamp_ns": 1}, images=images, action=None)
     p.recorder.finish(success=None)
     assert validate_episode(path)["frame_count"] == 1
 
@@ -411,9 +427,7 @@ async def test_pairing_code_single_use_expiry_lockout_and_robot_separation(tmp_p
     async with station(tmp_path, robot_api=True) as (p, c):
         code = p.issue_pairing_code()
         assert len(code) == 6 and code.isdigit()
-        assert (
-            await c.get("/robot/status", headers={"Authorization": "Bearer " + code})
-        ).status == 401
+        assert (await c.get("/robot/status", headers={"Authorization": "Bearer " + code})).status == 401
         assert (await c.post("/api/session", json={"token": code})).status == 200
         assert (await c.post("/api/session", json={"token": code})).status == 401
         code = p.issue_pairing_code()
@@ -432,9 +446,7 @@ async def test_auth_origin_and_camera_bytes(tmp_path):
         assert (await c.get("/api/status")).status == 401
         assert (await c.post("/api/session", json={"token": "wrong"})).status == 401
         assert (
-            await c.post(
-                "/api/session", json={"token": TOKEN}, headers={"Origin": "https://evil.invalid"}
-            )
+            await c.post("/api/session", json={"token": TOKEN}, headers={"Origin": "https://evil.invalid"})
         ).status == 403
         response = await c.get("/api/cameras/front.jpg", headers=HEADERS)
         assert response.status == 200
@@ -569,9 +581,7 @@ async def test_failed_stop_blocks_rearm(tmp_path):
 @pytest.mark.asyncio
 async def test_read_only_recording_retains_raw_robot_images(tmp_path):
     async with station(tmp_path) as (p, c):
-        response = await c.post(
-            "/api/record/start", headers=HEADERS, json={"task": "observe without motion"}
-        )
+        response = await c.post("/api/record/start", headers=HEADERS, json={"task": "observe without motion"})
         assert response.status == 200, await response.text()
         assert p.recorder.active
         await asyncio.sleep(0.2)

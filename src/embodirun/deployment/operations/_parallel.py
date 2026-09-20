@@ -16,18 +16,14 @@ class ParallelResults(Generic[ResultT]):
     errors: dict[str, Exception]
 
 
-def run_on_nodes(
-    node_ids: Iterable[str], operation: Callable[[str], ResultT]
-) -> ParallelResults[ResultT]:
+def run_on_nodes(node_ids: Iterable[str], operation: Callable[[str], ResultT]) -> ParallelResults[ResultT]:
     """Run one independent operation per node and wait for every result."""
     nodes = tuple(sorted(node_ids))
     if not nodes:
         return ParallelResults({}, {})
     values: dict[str, ResultT] = {}
     errors: dict[str, Exception] = {}
-    with ThreadPoolExecutor(
-        max_workers=len(nodes), thread_name_prefix="rlinf-deploy-node"
-    ) as pool:
+    with ThreadPoolExecutor(max_workers=len(nodes), thread_name_prefix="rlinf-deploy-node") as pool:
         futures = {pool.submit(operation, node_id): node_id for node_id in nodes}
         for future in as_completed(futures):
             node_id = futures[future]

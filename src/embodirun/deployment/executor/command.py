@@ -20,12 +20,8 @@ class Command:
     timeout_s: float | None = None
 
     def __post_init__(self) -> None:
-        if not self.argv or any(
-            not argument or "\x00" in argument for argument in self.argv
-        ):
-            raise ValueError(
-                "command arguments must be non-empty and cannot contain NUL"
-            )
+        if not self.argv or any(not argument or "\x00" in argument for argument in self.argv):
+            raise ValueError("command arguments must be non-empty and cannot contain NUL")
         if self.cwd is not None and (not self.cwd or "\x00" in self.cwd):
             raise ValueError("command cwd cannot be empty or contain NUL")
         if self.timeout_s is not None and self.timeout_s <= 0:

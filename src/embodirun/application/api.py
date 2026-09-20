@@ -9,21 +9,22 @@ duplicate adapter limits.  Direct actions use the existing arbiter's
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
 import base64
-from dataclasses import asdict, is_dataclass
 import inspect
 import math
 import threading
 import time
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import asdict, is_dataclass
 from typing import Any
-
-from embodirun.robots import RobotAction
 
 from embodirun.devices.execution.arbitration import (
     CommandSource,
     RobotControlArbiter,
 )
+from embodirun.devices.observations.values import ObservationSnapshot
+from embodirun.robots import RobotAction
+
 from .auth import AuthPolicy, Role
 from .contracts import TaskRequest, TaskResult
 from .direct_execution import (
@@ -31,14 +32,13 @@ from .direct_execution import (
     action_payload,
 )
 from .jobs import (
-    JobHandle,
     JobConflict,
+    JobHandle,
     JobNotFound,
     JobRecord,
     JobRegistry,
     PhysicalStatus,
 )
-from embodirun.devices.observations.values import ObservationSnapshot
 
 
 class ApplicationError(RuntimeError):
@@ -85,11 +85,7 @@ class ControlApplication:
             raise TypeError("service must be provided")
         if registry is not None and not isinstance(registry, JobRegistry):
             raise TypeError("registry must be a JobRegistry")
-        if (
-            isinstance(max_steps, bool)
-            or not isinstance(max_steps, int)
-            or max_steps <= 0
-        ):
+        if isinstance(max_steps, bool) or not isinstance(max_steps, int) or max_steps <= 0:
             raise ValueError("max_steps must be a positive integer")
         if not callable(clock_ns):
             raise TypeError("clock_ns must be callable")
@@ -118,14 +114,8 @@ class ControlApplication:
             or not isinstance(max_observation_skew_ns, int)
             or max_observation_skew_ns < 0
         ):
-            raise ValueError(
-                "max_observation_skew_ns must be a non-negative integer or None"
-            )
-        if (
-            isinstance(max_media_bytes, bool)
-            or not isinstance(max_media_bytes, int)
-            or max_media_bytes <= 0
-        ):
+            raise ValueError("max_observation_skew_ns must be a non-negative integer or None")
+        if isinstance(max_media_bytes, bool) or not isinstance(max_media_bytes, int) or max_media_bytes <= 0:
             raise ValueError("max_media_bytes must be a positive integer")
         self.service = service
         self.registry = registry or JobRegistry()
@@ -150,15 +140,10 @@ class ControlApplication:
         token: str | None = None,
     ) -> dict[str, Any]:
         self._scope(caller_id, session_id)
-        self._authorize(
-            token, Role.OBSERVER, caller_id=caller_id, session_id=session_id
-        )
+        self._authorize(token, Role.OBSERVER, caller_id=caller_id, session_id=session_id)
         base = dict(self.service.describe())
         capabilities = base.setdefault("capabilities", {})
-        if isinstance(capabilities, Mapping):
-            capabilities = dict(capabilities)
-        else:
-            capabilities = {}
+        capabilities = dict(capabilities) if isinstance(capabilities, Mapping) else {}
         capabilities["model_execute"] = bool(capabilities.get("execute", False))
         capabilities["direct_execute"] = self._can_direct_execute()
         base["capabilities"] = capabilities
@@ -173,9 +158,7 @@ class ControlApplication:
             "media": self.observation_store is not None,
         }
         base["application_authentication"] = (
-            "token"
-            if self.auth.token_authentication_enabled
-            else "trusted_ssh_loopback"
+            "token" if self.auth.token_authentication_enabled else "trusted_ssh_loopback"
         )
         return base
 
@@ -192,16 +175,12 @@ class ControlApplication:
         max_skew_ns: int | None = None,
     ) -> dict[str, Any]:
         self._scope(caller_id, session_id)
-        self._authorize(
-            token, Role.OBSERVER, caller_id=caller_id, session_id=session_id
-        )
+        self._authorize(token, Role.OBSERVER, caller_id=caller_id, session_id=session_id)
         if observation_id is None:
             # The service selects the runtime's camera view and performs its
             # passive observer lease.  It still returns the shared snapshot
             # identity, so callers can pin it for a later action.
-            return self._service_observe(
-                runtime_id=runtime_id, include_robot=include_robot
-            )
+            return self._service_observe(runtime_id=runtime_id, include_robot=include_robot)
         snapshot = self._snapshot(observation_id)
         if snapshot is not None:
             age_ns, fresh = self._freshness(
@@ -221,22 +200,17 @@ class ControlApplication:
                 )
             else:
                 payload = _snapshot_payload(snapshot)
-            if "observation_id" not in payload and isinstance(
-                payload.get("snapshot_id"), str
-            ):
+            if "observation_id" not in payload and isinstance(payload.get("snapshot_id"), str):
                 payload["observation_id"] = payload["snapshot_id"]
             payload["age_ns"] = age_ns
             payload["fresh"] = fresh
-            if include_robot:
-                # A shared observation ID is a consistency boundary.  Do not
-                # mix it with a newly captured robot state from the service.
-                if "robot" not in payload:
-                    payload["robot"] = _json_value(snapshot.state)
+            # A shared observation ID is a consistency boundary.  Do not mix it
+            # with a newly captured robot state from the service.
+            if include_robot and "robot" not in payload:
+                payload["robot"] = _json_value(snapshot.state)
             return payload
         if observation_id is not None:
-            raise ApplicationStaleObservation(
-                f"observation {observation_id!r} is not available in the shared store"
-            )
+            raise ApplicationStaleObservation(f"observation {observation_id!r} is not available in the shared store")
         return self._service_observe(runtime_id=runtime_id, include_robot=include_robot)
 
     def propose(
@@ -261,9 +235,7 @@ class ControlApplication:
         """
 
         self._scope(caller_id, session_id)
-        self._authorize(
-            token, Role.OBSERVER, caller_id=caller_id, session_id=session_id
-        )
+        self._authorize(token, Role.OBSERVER, caller_id=caller_id, session_id=session_id)
         if not isinstance(request_id, str) or not request_id.strip():
             raise ApplicationInvalidRequest("request_id must be a non-empty string")
         if not isinstance(observation_id, str) or not observation_id.strip():
@@ -281,9 +253,7 @@ class ControlApplication:
             raise ApplicationUnsupported("proposal requires a shared observation store")
         snapshot = self._snapshot(observation_id)
         if snapshot is None:
-            raise ApplicationStaleObservation(
-                f"observation {observation_id!r} is not available"
-            )
+            raise ApplicationStaleObservation(f"observation {observation_id!r} is not available")
         self._freshness(
             snapshot,
             max_age_ns=max_age_ns,
@@ -302,18 +272,14 @@ class ControlApplication:
                 timeout_s=float(timeout_s),
             )
         except AttributeError as error:
-            raise ApplicationUnsupported(
-                "configured control service does not support proposals"
-            ) from error
+            raise ApplicationUnsupported("configured control service does not support proposals") from error
         except ApplicationError:
             raise
         except Exception as error:
             # A proposal failure is a non-executing request failure.  Do not
             # let backend/parser or transient transport exceptions look like
             # an unsupported capability.
-            raise ApplicationProposalFailed(
-                f"proposal generation failed: {error}"
-            ) from error
+            raise ApplicationProposalFailed(f"proposal generation failed: {error}") from error
 
     def media(
         self,
@@ -329,17 +295,11 @@ class ControlApplication:
         """Return bounded shared-snapshot media references, never raw SDK reads."""
 
         self._scope(caller_id, session_id)
-        self._authorize(
-            token, Role.OBSERVER, caller_id=caller_id, session_id=session_id
-        )
+        self._authorize(token, Role.OBSERVER, caller_id=caller_id, session_id=session_id)
         snapshot = self._snapshot(observation_id)
         if snapshot is None:
             raise ApplicationUnsupported("shared observation media is not configured")
-        frames = [
-            frame
-            for frame in snapshot.cameras
-            if frame_name is None or frame.name == frame_name
-        ]
+        frames = [frame for frame in snapshot.cameras if frame_name is None or frame.name == frame_name]
         get_media = getattr(self.service, "get_media", None)
         if frame_name is not None and callable(get_media):
             try:
@@ -353,15 +313,11 @@ class ControlApplication:
             if frame not in frames:
                 frames = [frame]
         if frame_name is not None and not frames:
-            raise ApplicationStaleObservation(
-                f"frame {frame_name!r} is not present in observation {observation_id!r}"
-            )
+            raise ApplicationStaleObservation(f"frame {frame_name!r} is not present in observation {observation_id!r}")
         media = []
         for frame in frames:
             if include_data and len(frame.data) > self.max_media_bytes:
-                raise ApplicationUnsupported(
-                    f"frame {frame.name!r} exceeds the bounded media response"
-                )
+                raise ApplicationUnsupported(f"frame {frame.name!r} exceeds the bounded media response")
             reference = _media_reference(snapshot, frame)
             if include_data:
                 reference["data_base64"] = base64.b64encode(frame.data).decode("ascii")
@@ -379,9 +335,7 @@ class ControlApplication:
         token: str | None = None,
     ) -> dict[str, Any]:
         self._scope(caller_id, session_id)
-        self._authorize(
-            token, Role.CONTROLLER, caller_id=caller_id, session_id=session_id
-        )
+        self._authorize(token, Role.CONTROLLER, caller_id=caller_id, session_id=session_id)
         method = getattr(self.service, "start_recording", None)
         if not callable(method):
             raise ApplicationUnsupported("recording is not configured")
@@ -396,9 +350,7 @@ class ControlApplication:
         token: str | None = None,
     ) -> dict[str, Any]:
         self._scope(caller_id, session_id)
-        self._authorize(
-            token, Role.CONTROLLER, caller_id=caller_id, session_id=session_id
-        )
+        self._authorize(token, Role.CONTROLLER, caller_id=caller_id, session_id=session_id)
         method = getattr(self.service, "stop_recording", None)
         if not callable(method):
             raise ApplicationUnsupported("recording is not configured")
@@ -412,9 +364,7 @@ class ControlApplication:
         token: str | None = None,
     ) -> dict[str, Any]:
         self._scope(caller_id, session_id)
-        self._authorize(
-            token, Role.OBSERVER, caller_id=caller_id, session_id=session_id
-        )
+        self._authorize(token, Role.OBSERVER, caller_id=caller_id, session_id=session_id)
         method = getattr(self.service, "recording_status", None)
         if not callable(method):
             raise ApplicationUnsupported("recording is not configured")
@@ -429,9 +379,7 @@ class ControlApplication:
         token: str | None = None,
     ) -> dict[str, Any] | None:
         self._scope(caller_id, session_id)
-        self._authorize(
-            token, Role.OBSERVER, caller_id=caller_id, session_id=session_id
-        )
+        self._authorize(token, Role.OBSERVER, caller_id=caller_id, session_id=session_id)
         method = getattr(self.service, "get_record", None)
         if not callable(method):
             raise ApplicationUnsupported("recording is not configured")
@@ -457,9 +405,7 @@ class ControlApplication:
         parameters: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         self._scope(caller_id, session_id)
-        self._authorize(
-            token, Role.CONTROLLER, caller_id=caller_id, session_id=session_id
-        )
+        self._authorize(token, Role.CONTROLLER, caller_id=caller_id, session_id=session_id)
         if not isinstance(request_id, str) or not request_id.strip():
             raise ApplicationInvalidRequest("request_id must be a non-empty string")
         action_values = _actions(action, steps=steps, max_steps=self.max_steps)
@@ -500,10 +446,7 @@ class ControlApplication:
             max_skew_ns=max_skew_ns,
         )
         if selected_observation_id is not None:
-            action_values = tuple(
-                _with_observation_id(value, selected_observation_id)
-                for value in action_values
-            )
+            action_values = tuple(_with_observation_id(value, selected_observation_id) for value in action_values)
         runner = self._runner()
         identity_parameters = _identity_parameters(
             action_values,
@@ -550,12 +493,8 @@ class ControlApplication:
             record = self.registry.inspect(caller_id, session_id, request_id)
         except JobNotFound:
             return None
-        if _canonical_identity(record.parameters) != _canonical_identity(
-            requested_identity
-        ):
-            raise JobConflict(
-                f"request_id {request_id!r} already has different parameters"
-            )
+        if _canonical_identity(record.parameters) != _canonical_identity(requested_identity):
+            raise JobConflict(f"request_id {request_id!r} already has different parameters")
         return record
 
     def inspect(
@@ -567,9 +506,7 @@ class ControlApplication:
         token: str | None = None,
     ) -> dict[str, Any]:
         self._scope(caller_id, session_id)
-        self._authorize(
-            token, Role.OBSERVER, caller_id=caller_id, session_id=session_id
-        )
+        self._authorize(token, Role.OBSERVER, caller_id=caller_id, session_id=session_id)
         return _record_payload(self.registry.inspect(caller_id, session_id, request_id))
 
     def cancel(
@@ -581,9 +518,7 @@ class ControlApplication:
         token: str | None = None,
     ) -> dict[str, Any]:
         self._scope(caller_id, session_id)
-        self._authorize(
-            token, Role.CONTROLLER, caller_id=caller_id, session_id=session_id
-        )
+        self._authorize(token, Role.CONTROLLER, caller_id=caller_id, session_id=session_id)
         return _record_payload(self.registry.cancel(caller_id, session_id, request_id))
 
     def stop(
@@ -618,9 +553,7 @@ class ControlApplication:
         """Keep the old TaskResult shape while routing acceptance through jobs."""
 
         self._scope(caller_id, session_id)
-        self._authorize(
-            token, Role.CONTROLLER, caller_id=caller_id, session_id=session_id
-        )
+        self._authorize(token, Role.CONTROLLER, caller_id=caller_id, session_id=session_id)
         if not isinstance(request, TaskRequest):
             raise TypeError("request must be a TaskRequest")
         result = self.registry.submit_task(
@@ -675,16 +608,12 @@ class ControlApplication:
             }
         return {
             "physical_status": (
-                PhysicalStatus.STOP_REQUESTED.value
-                if accepted
-                else PhysicalStatus.STOP_UNCONFIRMED.value
+                PhysicalStatus.STOP_REQUESTED.value if accepted else PhysicalStatus.STOP_UNCONFIRMED.value
             ),
             "stop_confirmed": False,
         }
 
-    def _execute_legacy(
-        self, request: TaskRequest, cancel_event: threading.Event
-    ) -> Any:
+    def _execute_legacy(self, request: TaskRequest, cancel_event: threading.Event) -> Any:
         """Call legacy services with the optional task-scoped hook."""
 
         execute = self.service.execute
@@ -693,8 +622,7 @@ class ControlApplication:
         except (TypeError, ValueError):
             parameters = {}
         if "cancel_event" in parameters or any(
-            parameter.kind is inspect.Parameter.VAR_KEYWORD
-            for parameter in parameters.values()
+            parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
         ):
             return execute(request, cancel_event=cancel_event)
         return execute(request)
@@ -722,10 +650,7 @@ class ControlApplication:
             arbiter = self._arbiter_provider()
         else:
             provider = getattr(self.service, "get_control_arbiter", None)
-            if callable(provider):
-                arbiter = provider()
-            else:
-                arbiter = getattr(self.service, "_current_arbiter", None)
+            arbiter = provider() if callable(provider) else getattr(self.service, "_current_arbiter", None)
         if arbiter is None or any(
             not callable(getattr(arbiter, name, None))
             for name in (
@@ -735,9 +660,7 @@ class ControlApplication:
                 "cancel_automatic_work",
             )
         ):
-            raise ApplicationUnsupported(
-                "direct execution requires a prepared control arbiter"
-            )
+            raise ApplicationUnsupported("direct execution requires a prepared control arbiter")
         return arbiter
 
     def _can_direct_execute(self) -> bool:
@@ -768,23 +691,13 @@ class ControlApplication:
         required: bool,
     ) -> tuple[int | None, bool]:
         age_limit = self.max_observation_age_ns if max_age_ns is None else max_age_ns
-        skew_limit = (
-            self.max_observation_skew_ns if max_skew_ns is None else max_skew_ns
-        )
-        if (
-            isinstance(age_limit, bool)
-            or not isinstance(age_limit, int)
-            or age_limit < 0
-        ):
+        skew_limit = self.max_observation_skew_ns if max_skew_ns is None else max_skew_ns
+        if isinstance(age_limit, bool) or not isinstance(age_limit, int) or age_limit < 0:
             raise ApplicationInvalidRequest("max_age_ns must be a non-negative integer")
         if skew_limit is not None and (
-            isinstance(skew_limit, bool)
-            or not isinstance(skew_limit, int)
-            or skew_limit < 0
+            isinstance(skew_limit, bool) or not isinstance(skew_limit, int) or skew_limit < 0
         ):
-            raise ApplicationInvalidRequest(
-                "max_skew_ns must be a non-negative integer or None"
-            )
+            raise ApplicationInvalidRequest("max_skew_ns must be a non-negative integer or None")
         now_ns = self.clock_ns()
         age = snapshot.age_ns(now_ns)
         fresh = snapshot.is_fresh(
@@ -794,9 +707,7 @@ class ControlApplication:
             max_skew_ns=skew_limit,
         )
         if required and not fresh:
-            raise ApplicationStaleObservation(
-                f"observation {snapshot.observation_id!r} is stale or timing is unknown"
-            )
+            raise ApplicationStaleObservation(f"observation {snapshot.observation_id!r} is stale or timing is unknown")
         return age, fresh
 
     def _validate_action_observation(
@@ -848,9 +759,7 @@ class ControlApplication:
                     "action metadata observation_id conflicts with the request observation_id"
                 )
 
-    def _service_observe(
-        self, *, runtime_id: str | None, include_robot: bool
-    ) -> dict[str, Any]:
+    def _service_observe(self, *, runtime_id: str | None, include_robot: bool) -> dict[str, Any]:
         value = self.service.observe(runtime_id=runtime_id, include_robot=include_robot)
         if not isinstance(value, Mapping):
             raise ApplicationError("control service returned an invalid observation")
@@ -858,9 +767,7 @@ class ControlApplication:
         # ControlService historically names the shared consistency token
         # ``snapshot_id``.  The application API exposes the Agent-facing
         # ``observation_id`` while retaining the old field for compatibility.
-        if "observation_id" not in payload and isinstance(
-            payload.get("snapshot_id"), str
-        ):
+        if "observation_id" not in payload and isinstance(payload.get("snapshot_id"), str):
             payload["observation_id"] = payload["snapshot_id"]
         return payload
 
@@ -928,15 +835,13 @@ def _actions(
         raise ApplicationInvalidRequest("steps must be a positive integer")
     if steps > max_steps:
         raise ApplicationInvalidRequest(f"steps must not exceed {max_steps}")
-    if isinstance(value, RobotAction) or isinstance(value, Mapping):
+    if isinstance(value, (RobotAction, Mapping)):
         action = _action(value)
         return tuple(action for _ in range(steps))
     if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
         raise ApplicationInvalidRequest("action must be an object or action list")
     if len(value) == 0 or len(value) > max_steps:
-        raise ApplicationInvalidRequest(
-            f"action list must contain 1..{max_steps} actions"
-        )
+        raise ApplicationInvalidRequest(f"action list must contain 1..{max_steps} actions")
     actions = tuple(_action(item) for item in value)
     if steps != 1 and steps != len(actions):
         raise ApplicationInvalidRequest("steps must match an explicit action list")
@@ -950,19 +855,13 @@ def _action(value: RobotAction | Mapping[str, Any]) -> RobotAction:
     if not isinstance(value, Mapping):
         raise ApplicationInvalidRequest("each action must be an object")
     timestamp = value.get("timestamp_s", 0.0)
-    if (
-        isinstance(timestamp, bool)
-        or not isinstance(timestamp, (int, float))
-        or not math.isfinite(timestamp)
-    ):
+    if isinstance(timestamp, bool) or not isinstance(timestamp, (int, float)) or not math.isfinite(timestamp):
         raise ApplicationInvalidRequest("action timestamp_s must be finite")
     values = value.get("values")
     metadata = value.get("metadata", {})
     if not isinstance(values, Mapping) or not isinstance(metadata, Mapping):
         raise ApplicationInvalidRequest("action values and metadata must be objects")
-    action = RobotAction(
-        timestamp_s=float(timestamp), values=dict(values), metadata=dict(metadata)
-    )
+    action = RobotAction(timestamp_s=float(timestamp), values=dict(values), metadata=dict(metadata))
     action_payload(action)
     return action
 
@@ -972,9 +871,7 @@ def _with_observation_id(action: RobotAction, observation_id: str) -> RobotActio
 
     existing = action.metadata.get("observation_id")
     if existing is not None and existing != observation_id:
-        raise ApplicationInvalidRequest(
-            "action metadata observation_id conflicts with the request observation_id"
-        )
+        raise ApplicationInvalidRequest("action metadata observation_id conflicts with the request observation_id")
     if existing == observation_id:
         return action
     metadata = dict(action.metadata)
@@ -997,12 +894,7 @@ def _source(value: CommandSource | str) -> CommandSource:
 
 
 def _validate_hz(value: float) -> None:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(value)
-        or value <= 0
-    ):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
         raise ApplicationInvalidRequest("control_hz must be finite and positive")
 
 
@@ -1128,8 +1020,7 @@ def _media_reference(snapshot: ObservationSnapshot, frame: Any) -> dict[str, Any
         "captured_timestamp_ns": frame.captured_timestamp_ns,
         "clock_domain": frame.clock_domain,
         "media_ref": (
-            f"observation://{snapshot.service_instance_id}/"
-            f"{snapshot.generation}/{snapshot.observation_id}/{frame.name}"
+            f"observation://{snapshot.service_instance_id}/{snapshot.generation}/{snapshot.observation_id}/{frame.name}"
         ),
     }
 

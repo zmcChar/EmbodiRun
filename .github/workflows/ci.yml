@@ -30,6 +30,11 @@ jobs:
       - name: Sync the locked environment
         run: uv sync --frozen
 
+      - name: Lint
+        run: |
+          uv run --frozen ruff check src tests
+          uv run --frozen ruff format --check src tests
+
       - name: Run the CPU test suite
         run: uv run --frozen pytest -q
 

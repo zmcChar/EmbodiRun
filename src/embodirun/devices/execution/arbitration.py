@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import contextlib
+import math
 import threading
 import time
+import uuid
 from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
-import math
 from typing import Any, Protocol
-import uuid
 
 from embodirun.robots import RobotAction, RobotAdapter
 
@@ -24,9 +25,7 @@ class CommandSource(str, Enum):
     MANUAL = "manual"
 
 
-_AUTOMATIC_SOURCES = frozenset(
-    {CommandSource.MODEL, CommandSource.AGENT, CommandSource.REPLAY}
-)
+_AUTOMATIC_SOURCES = frozenset({CommandSource.MODEL, CommandSource.AGENT, CommandSource.REPLAY})
 
 
 class AuthorityState(str, Enum):
@@ -180,8 +179,7 @@ class RobotAdapterCommandPort:
         self,
         robot: RobotAdapter,
         *,
-        action_resolver: Callable[[RobotAdapter, RobotAction], RobotAction]
-        | None = None,
+        action_resolver: Callable[[RobotAdapter, RobotAction], RobotAction] | None = None,
         emergency_stop_policy: EmergencyStopPolicy = (EmergencyStopPolicy.SERIALIZED),
         io_scheduler: RobotIOScheduler | None = None,
         stop_timeout_s: float = 0.25,
@@ -201,8 +199,7 @@ class RobotAdapterCommandPort:
         self._io_scheduler = io_scheduler or RobotIOScheduler(
             robot.robot_id,
             stop_timeout_s=stop_timeout_s,
-            allow_preemptive_stop=emergency_stop_policy
-            is EmergencyStopPolicy.PREEMPTIVE,
+            allow_preemptive_stop=emergency_stop_policy is EmergencyStopPolicy.PREEMPTIVE,
         )
         self._owns_io_scheduler = io_scheduler is None
 
@@ -298,10 +295,8 @@ class RobotAdapterCommandPort:
             # Preserve the driver's original diagnostic for the arbiter's
             # existing last-error surface; the structured IOResult remains
             # available to callers that need scheduler context.
-            try:
-                setattr(result.error, "_rlinf_io_result", result)
-            except Exception:
-                pass
+            with contextlib.suppress(Exception):
+                result.error._rlinf_io_result = result
             raise result.error
         if result.status is IOStatus.REJECTED and result.operation == "stop":
             # Another stop is pending/running.  The scheduler keeps a single
@@ -324,17 +319,13 @@ class RobotAdapterCommandPort:
 class ArbiterCommandSink:
     """Runtime-facing model command sink backed by RobotControlArbiter."""
 
-    def __init__(
-        self, arbiter: RobotControlArbiter, cancel_event: threading.Event | None = None
-    ) -> None:
+    def __init__(self, arbiter: RobotControlArbiter, cancel_event: threading.Event | None = None) -> None:
         self.arbiter = arbiter
         self.robot_id = arbiter.robot_id
         self.cancel_event = cancel_event
 
     def execute(self, action: RobotAction) -> None:
-        ticket = self.arbiter.submit_model(
-            action, wait=True, task_cancel=self.cancel_event
-        )
+        ticket = self.arbiter.submit_model(action, wait=True, task_cancel=self.cancel_event)
         ticket.raise_for_failure()
 
     def observe(self) -> Any:
@@ -422,9 +413,7 @@ class RobotControlArbiter:
                 "robot_id": self.robot_id,
                 "authority": self._authority.value,
                 "deadman_active": self._deadman_active,
-                "active_source": (
-                    self._active.envelope.source.value if self._active else None
-                ),
+                "active_source": (self._active.envelope.source.value if self._active else None),
                 "active_status": self._active.status.value if self._active else None,
                 "pending_model": len(self._model_queue),
                 "manual_pending": self._manual_pending is not None,
@@ -522,9 +511,7 @@ class RobotControlArbiter:
             # the token as though the robot had reached a safe state.
             raise
         with self._condition:
-            if not cancelled and (
-                task_cancel is None or self._model_task_cancel is current_token
-            ):
+            if not cancelled and (task_cancel is None or self._model_task_cancel is current_token):
                 self._model_task_cancel = None
             self._condition.notify_all()
         return True
@@ -618,9 +605,7 @@ class RobotControlArbiter:
         task_cancel: threading.Event | None = None,
     ) -> CommandTicket:
         if deadline_s is not None and (
-            isinstance(deadline_s, bool)
-            or not isinstance(deadline_s, (int, float))
-            or not math.isfinite(deadline_s)
+            isinstance(deadline_s, bool) or not isinstance(deadline_s, (int, float)) or not math.isfinite(deadline_s)
         ):
             raise ValueError("deadline_s must be finite")
         if timeout_s is not None and (
@@ -919,10 +904,7 @@ class RobotControlArbiter:
                 self._condition.notify_all()
             raise
         with self._condition:
-            if (
-                next_authority is not None
-                and self._authority is not AuthorityState.ESTOP_LATCHED
-            ):
+            if next_authority is not None and self._authority is not AuthorityState.ESTOP_LATCHED:
                 self._authority = next_authority
             self._hold_in_progress = False
             self._hold_error = None
@@ -941,9 +923,7 @@ class RobotControlArbiter:
             raise error
 
     def _cancel_active(self, source: CommandSource | None = None) -> None:
-        if (
-            source is None or source in _AUTOMATIC_SOURCES
-        ) and self._model_task_cancel is not None:
+        if (source is None or source in _AUTOMATIC_SOURCES) and self._model_task_cancel is not None:
             self._model_task_cancel.set()
         if self._active is None:
             return
@@ -955,19 +935,13 @@ class RobotControlArbiter:
 
         if self._model_task_cancel is not None:
             self._model_task_cancel.set()
-        if (
-            self._active is not None
-            and self._active.envelope.source in _AUTOMATIC_SOURCES
-        ):
+        if self._active is not None and self._active.envelope.source in _AUTOMATIC_SOURCES:
             self._active.cancel_event.set()
 
     def _cancel_active_automatic_ticket_locked(self) -> None:
         """Stop queued/in-flight automatic tickets without setting task token."""
 
-        if (
-            self._active is not None
-            and self._active.envelope.source in _AUTOMATIC_SOURCES
-        ):
+        if self._active is not None and self._active.envelope.source in _AUTOMATIC_SOURCES:
             self._active.cancel_event.set()
 
     def _clear_model_queue(self, status: CommandStatus) -> bool:
@@ -1007,20 +981,13 @@ class RobotControlArbiter:
                     return
                 if not ticket._mark_running():
                     continue
-                if (
-                    ticket.envelope.task_cancel is not None
-                    and ticket.envelope.task_cancel.is_set()
-                ):
+                if ticket.envelope.task_cancel is not None and ticket.envelope.task_cancel.is_set():
                     ticket._finish(CommandStatus.CANCELLED)
                     early_status = CommandStatus.CANCELLED
                 else:
                     self._active = ticket
                     deadline_s = ticket.envelope.deadline_s
-                if (
-                    early_status is None
-                    and deadline_s is not None
-                    and self._clock() > deadline_s
-                ):
+                if early_status is None and deadline_s is not None and self._clock() > deadline_s:
                     self._active = None
                     ticket._finish(CommandStatus.EXPIRED)
                     early_status = CommandStatus.EXPIRED
@@ -1048,18 +1015,15 @@ class RobotControlArbiter:
                     if not isinstance(port_result, IOResult):
                         port_result = getattr(error, "_rlinf_io_result", None)
                 was_cancelled = ticket.cancel_event.is_set()
-                status = (
-                    CommandStatus.CANCELLED if was_cancelled else CommandStatus.FAILED
-                )
+                status = CommandStatus.CANCELLED if was_cancelled else CommandStatus.FAILED
                 with self._condition:
                     self._last_command_error = str(error)
                 if not was_cancelled:
-                    try:
-                        # A wait=True caller must not observe a terminal command
-                        # failure before the scoped emergency stop has completed.
+                    # A wait=True caller must not observe a terminal command
+                    # failure before the scoped emergency stop has completed.
+                    # emergency_stop retains the stop error and latch.
+                    with contextlib.suppress(Exception):
                         self.emergency_stop()
-                    except Exception:
-                        pass  # emergency_stop retains the stop error and latch.
                 self._emit_event(ticket, status, port_result)
                 ticket._finish(status, error, result=port_result)
             else:
@@ -1070,12 +1034,11 @@ class RobotControlArbiter:
                 if status is CommandStatus.FAILED:
                     with self._condition:
                         self._last_command_error = str(result_error)
-                    try:
-                        # Publish failure only after emergency_stop has finished,
-                        # so wait=True cannot race the owner-scoped release.
+                    # Publish failure only after emergency_stop has finished, so
+                    # wait=True cannot race the owner-scoped release.
+                    # emergency_stop retains the stop error and latch.
+                    with contextlib.suppress(Exception):
                         self.emergency_stop()
-                    except Exception:
-                        pass  # emergency_stop retains the stop error and latch.
                 self._emit_event(ticket, status, port_result)
                 ticket._finish(status, result_error, result=port_result)
             finally:
@@ -1109,9 +1072,7 @@ class RobotControlArbiter:
                 "io_status": None if result is None else result.status.value,
                 "driver_returned": None if result is None else result.driver_returned,
                 "driver_receipt": (
-                    None
-                    if result is None or not result.driver_returned
-                    else _event_value(result.driver_value)
+                    None if result is None or not result.driver_returned else _event_value(result.driver_value)
                 ),
                 # The arbiter cannot infer adapter mapping or measured state;
                 # leave those facts explicit for a later adapter callback.
@@ -1172,11 +1133,7 @@ class RobotControlArbiter:
                 ):
                     self._condition.wait()
                     continue
-                remaining = (
-                    self._manual_heartbeat_s
-                    + self._manual_deadman_timeout_s
-                    - self._clock()
-                )
+                remaining = self._manual_heartbeat_s + self._manual_deadman_timeout_s - self._clock()
                 if remaining > 0:
                     self._condition.wait(timeout=remaining)
                     continue

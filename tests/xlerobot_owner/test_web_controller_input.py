@@ -5,7 +5,15 @@ from pathlib import Path
 
 import pytest
 
-WEB_APP = Path(__file__).parents[2] / "integrations" / "xlerobot_owner" / "src" / "embodirun_xlerobot_owner" / "web" / "app.js"
+WEB_APP = (
+    Path(__file__).parents[2]
+    / "integrations"
+    / "xlerobot_owner"
+    / "src"
+    / "embodirun_xlerobot_owner"
+    / "web"
+    / "app.js"
+)
 
 
 def _extract_function(source: str, name: str) -> str | None:
@@ -72,9 +80,7 @@ def _extract_function(source: str, name: str) -> str | None:
 
 def _function_bundle(source: str, roots: tuple[str, ...], excluded: set[str] | None = None) -> str | None:
     """Collect actual functions and their function-call dependencies for Node."""
-    names = dict.fromkeys(
-        re.findall(r"(?m)^[ \t]*(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(", source)
-    )
+    names = dict.fromkeys(re.findall(r"(?m)^[ \t]*(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(", source))
     functions = {name: _extract_function(source, name) for name in names}
     excluded = excluded or set()
     if any(not functions.get(root) for root in roots):
@@ -110,9 +116,7 @@ def _run_node(script: str) -> None:
     assert result.returncode == 0, result.stderr or result.stdout
 
 
-def _required_function_bundle(
-    source: str, roots: tuple[str, ...], excluded: set[str] | None = None
-) -> str:
+def _required_function_bundle(source: str, roots: tuple[str, ...], excluded: set[str] | None = None) -> str:
     bundle = _function_bundle(source, roots, excluded=excluded)
     assert bundle is not None, f"Required app.js function missing: {', '.join(roots)}"
     return bundle
@@ -166,10 +170,13 @@ def test_read_controller_preserves_named_dompoint_pose_and_rejects_nan_pose():
 def test_both_quest_thumbsticks_survive_reading_and_serialization():
     source = WEB_APP.read_text()
     bundle = _required_function_bundle(source, ("readController", "sanitizeController"))
-    _run_node("""
+    _run_node(
+        """
       const assert = require('node:assert/strict');
       const app = {gripperDirections:{left:'close', right:'open'}};
-    """ + bundle + """
+    """
+        + bundle
+        + """
       for (const hand of ['left', 'right']) {
         const source={handedness:hand,gamepad:{buttons:[],axes:[0,0,-0.7,0.3]},gripSpace:{}};
         const frame={getPose:()=>({transform:{position:{x:0,y:1,z:-.5},orientation:{x:0,y:0,z:0,w:1}}})};
@@ -178,16 +185,20 @@ def test_both_quest_thumbsticks_survive_reading_and_serialization():
         assert.deepEqual(c.thumbstick,[-0.7,0.3]);
         assert.deepEqual(sanitizeController(c,hand).thumbstick,[-0.7,0.3]);
       }
-    """)
+    """
+    )
 
 
 def test_mapping_hint_separates_joint_limit_from_normal_speed_following():
     bundle = _required_function_bundle(WEB_APP.read_text(), ("mappingHint",))
-    _run_node("""
+    _run_node(
+        """
       const assert = require('node:assert/strict');
       const app = {status:{mapping_status:{left:{active:true,trigger_ready:true,
         limited:true,speed_limited_joints:['left_arm_shoulder_lift.pos']}}}};
-    """ + bundle + """
+    """
+        + bundle
+        + """
       assert.match(mappingHint(),/按设定速度跟随中/);
       assert.doesNotMatch(mappingHint(),/边界|超过|限位/);
       app.status.mapping_status.left.joint_limit_joints=['left_arm_shoulder_lift.pos'];
@@ -196,15 +207,18 @@ def test_mapping_hint_separates_joint_limit_from_normal_speed_following():
       app.status.mapping_status.left.joint_limit_joints=[];
       app.status.mapping_status.left.trigger_ready=false;
       assert.match(mappingHint(),/先松开扳机/);
-    """)
+    """
+    )
 
 
 def test_grip_edge_activates_without_hold_and_y_b_only_toggle_local_claws():
     bundle = _required_function_bundle(
-        WEB_APP.read_text(), ("updateQuestButtonActions",),
+        WEB_APP.read_text(),
+        ("updateQuestButtonActions",),
         excluded={"manualStop", "requestArm"},
     )
-    _run_node("""
+    _run_node(
+        """
       const assert = require('node:assert/strict');
       const XR_STOP_BUTTON_INDEX=4, XR_GRIPPER_TOGGLE_BUTTON_INDEX=5;
       let arms=0, stops=0;
@@ -214,7 +228,9 @@ def test_grip_edge_activates_without_hold_and_y_b_only_toggle_local_claws():
         gripperDirections:{left:'close',right:'close'},gripperToggleWasDown:{left:false,right:false}};
       function requestArm(label, activation) {assert.equal(activation,'grip');arms++;}
       function manualStop() {stops++;}
-    """ + bundle + """
+    """
+        + bundle
+        + """
       updateQuestButtonActions(0);
       assert.equal(arms,0,'already-held Grip at entry must not activate');
       app.controllers.left.grip=false;
@@ -243,7 +259,8 @@ def test_grip_edge_activates_without_hold_and_y_b_only_toggle_local_claws():
       app.controllers.left.grip=false;updateQuestButtonActions(9);
       app.controllers.left.grip=true;updateQuestButtonActions(10);
       assert.equal(arms,2);
-    """)
+    """
+    )
 
 
 def test_arm_readiness_hint_prioritizes_failure_pending_and_latched_chord():
@@ -267,9 +284,7 @@ def test_arm_readiness_hint_prioritizes_failure_pending_and_latched_chord():
         "  controllers: {left: controller(), right: controller()},\n"
         "  xr: {safetyTripped: false, gripActivationReady: true},\n"
         "  video: {state:'connected'},\n"
-        "};\n"
-        + bundle
-        + "\n"
+        "};\n" + bundle + "\n"
         "app.armFailure = '机械臂启用被服务端拒绝';\n"
         "app.armRequestPending = true;\n"
         "const pendingHint = armReadinessHint();\n"
@@ -315,9 +330,7 @@ def test_apply_status_keeps_pending_for_unarmed_idle_feedback():
         "  modeRequestPending: null,\n"
         "};\n"
         "function updateServerIssues() {}\n"
-        "function updateAllUi() {}\n"
-        + bundle
-        + "\n"
+        "function updateAllUi() {}\n" + bundle + "\n"
         "applyStatus({armed: false}, 'ws');\n"
         "assert.equal(app.armRequestPending, true, 'idle feedback must not cancel a pending Arm request');\n"
         "assert.equal(app.armFailure, '启用被拒绝：关节位置超限');\n"
@@ -330,10 +343,18 @@ def test_apply_status_keeps_pending_for_unarmed_idle_feedback():
 
 def test_grip_input_bypasses_frame_interval_but_not_transport_failure():
     source = WEB_APP.read_text(encoding="utf-8")
-    bundle = _required_function_bundle(source, ("sendInputFrame",), excluded={
-        "isWebSocketOpen", "failSafeStop", "xrInputDiagnostics", "sanitizeController",
-    })
-    _run_node("""
+    bundle = _required_function_bundle(
+        source,
+        ("sendInputFrame",),
+        excluded={
+            "isWebSocketOpen",
+            "failSafeStop",
+            "xrInputDiagnostics",
+            "sanitizeController",
+        },
+    )
+    _run_node(
+        """
       const assert = require('node:assert/strict');
       const INPUT_INTERVAL_MS = 1000/30, MAX_CONTROL_BUFFER_BYTES = 16384;
       let now = 100, stops = 0;
@@ -347,7 +368,9 @@ def test_grip_input_bypasses_frame_interval_but_not_transport_failure():
       function failSafeStop(){stops++;}
       function xrInputDiagnostics(){return {};}
       function sanitizeController(c){return c;}
-    """ + bundle + """
+    """
+        + bundle
+        + """
       assert.equal(sendInputFrame(now),false);
       assert.equal(sendInputFrame(now,true),true);
       assert.equal(packets.length,1);
@@ -360,7 +383,8 @@ def test_grip_input_bypasses_frame_interval_but_not_transport_failure():
       assert.equal(sendInputFrame(now,true),false);
       assert.equal(stops,1);
       assert.equal(packets.length,1);
-    """)
+    """
+    )
 
 
 def test_request_arm_clears_failure_only_after_success_and_keeps_gates():
@@ -409,9 +433,7 @@ def test_request_arm_clears_failure_only_after_success_and_keeps_gates():
         "  }},\n"
         "});\n"
         "function logEvent() {}\n"
-        "function updateAllUi() {}\n"
-        + bundle
-        + "\n"
+        "function updateAllUi() {}\n" + bundle + "\n"
         "assert.equal(controllersAreNeutral(), true);\n"
         "assert.equal(canArm(), true, 'an arm failure must not add a canArm gate');\n"
         "cameras.front.hasFrame = false;\n"

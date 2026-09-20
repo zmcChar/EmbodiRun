@@ -127,9 +127,7 @@ def build_runtime(config: CameraServiceConfig) -> CameraServiceRuntime:
         rgb_depth_alignment_claimed=config.rgb_depth_alignment_claimed,
         backend=config.backend,
         depth_scale_m=config.depth_scale,
-        depth_device=(
-            config.initial_device if config.backend == "realsense" else config.depth_device
-        ),
+        depth_device=(config.initial_device if config.backend == "realsense" else config.depth_device),
         access_log=config.access_log,
     )
     return CameraServiceRuntime(

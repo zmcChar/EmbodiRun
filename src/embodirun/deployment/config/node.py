@@ -19,9 +19,7 @@ class NodeConfig:
 
 
 def parse_node(node_id: str, value: dict[str, Any]) -> NodeConfig:
-    connection = parse_connection(
-        mapping(value.get("connection"), f"nodes.{node_id}.connection")
-    )
+    connection = parse_connection(mapping(value.get("connection"), f"nodes.{node_id}.connection"))
     return NodeConfig(
         node_id=node_id,
         kind=string(value, "type", f"nodes.{node_id}"),

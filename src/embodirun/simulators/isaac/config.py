@@ -57,18 +57,14 @@ class IsaacConfig:
         }
         unknown = sorted(set(options) - allowed)
         if unknown:
-            raise ValueError(
-                "unknown Isaac configuration fields: " + ", ".join(unknown)
-            )
+            raise ValueError("unknown Isaac configuration fields: " + ", ".join(unknown))
         return cls(
             simulator_id=simulator_id,
             task=_text(options.get("task"), "task"),
             instruction=_text(options.get("instruction"), "instruction"),
             goal_position=_vector(options.get("goal_position"), 3, "goal_position"),
             scene=_text(
-                options.get(
-                    "scene", "/Isaac/Environments/Simple_Warehouse/warehouse.usd"
-                ),
+                options.get("scene", "/Isaac/Environments/Simple_Warehouse/warehouse.usd"),
                 "scene",
             ),
             start_position=_vector(
@@ -76,15 +72,9 @@ class IsaacConfig:
                 3,
                 "start_position",
             ),
-            start_orientation_wxyz=_normalized_quaternion(
-                options.get("start_orientation_wxyz", (1.0, 0.0, 0.0, 0.0))
-            ),
-            max_episode_steps=_positive_integer(
-                options.get("max_episode_steps", 500), "max_episode_steps"
-            ),
-            success_distance_m=_positive_number(
-                options.get("success_distance_m", 3.0), "success_distance_m"
-            ),
+            start_orientation_wxyz=_normalized_quaternion(options.get("start_orientation_wxyz", (1.0, 0.0, 0.0, 0.0))),
+            max_episode_steps=_positive_integer(options.get("max_episode_steps", 500), "max_episode_steps"),
+            success_distance_m=_positive_number(options.get("success_distance_m", 3.0), "success_distance_m"),
             width=_positive_integer(options.get("width", 640), "width"),
             height=_positive_integer(options.get("height", 480), "height"),
             camera_translation=_vector(
@@ -92,18 +82,10 @@ class IsaacConfig:
                 3,
                 "camera_translation",
             ),
-            forward_speed_mps=_positive_number(
-                options.get("forward_speed_mps", 0.5), "forward_speed_mps"
-            ),
-            turn_speed_rad_s=_positive_number(
-                options.get("turn_speed_rad_s", 0.6), "turn_speed_rad_s"
-            ),
-            action_timeout_s=_positive_number(
-                options.get("action_timeout_s", 3.0), "action_timeout_s"
-            ),
-            settle_steps=_non_negative_integer(
-                options.get("settle_steps", 10), "settle_steps"
-            ),
+            forward_speed_mps=_positive_number(options.get("forward_speed_mps", 0.5), "forward_speed_mps"),
+            turn_speed_rad_s=_positive_number(options.get("turn_speed_rad_s", 0.6), "turn_speed_rad_s"),
+            action_timeout_s=_positive_number(options.get("action_timeout_s", 3.0), "action_timeout_s"),
+            settle_steps=_non_negative_integer(options.get("settle_steps", 10), "settle_steps"),
             device=_device(options.get("device", "cuda")),
             viewer=_boolean(options.get("viewer", False), "viewer"),
         )
@@ -114,12 +96,8 @@ class IsaacConfig:
         object.__setattr__(self, "simulator_id", self.simulator_id.strip())
         for name in ("task", "instruction", "scene"):
             object.__setattr__(self, name, _text(getattr(self, name), name))
-        object.__setattr__(
-            self, "goal_position", _vector(self.goal_position, 3, "goal_position")
-        )
-        object.__setattr__(
-            self, "start_position", _vector(self.start_position, 3, "start_position")
-        )
+        object.__setattr__(self, "goal_position", _vector(self.goal_position, 3, "goal_position"))
+        object.__setattr__(self, "start_position", _vector(self.start_position, 3, "start_position"))
         object.__setattr__(
             self,
             "start_orientation_wxyz",

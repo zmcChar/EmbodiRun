@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import base64
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
-from pathlib import Path
 import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
-
 from agents.astra_pi05 import (
     BI_SO101_POSITION_FEATURES,
     BiSO101ActionEncoder,
@@ -19,7 +18,9 @@ from agents.astra_pi05 import (
 from agents.astra_pi05.cooperative import Proposal
 from agents.rpent.session import PublicCooperativeSession, normalize_public_proposal
 from agents.rpent.so101_correction import SO101CorrectionError, SO101PlanarCorrectionMapper
+
 from embodirun.application.api import ControlApplication
+from embodirun.client import ControlClient, Observation
 from embodirun.devices.execution.arbitration import (
     RobotAdapterCommandPort,
     RobotControlArbiter,
@@ -27,9 +28,8 @@ from embodirun.devices.execution.arbitration import (
 from embodirun.devices.observations.store import ObservationStore
 from embodirun.devices.observations.values import ObservationSnapshot
 from embodirun.robots.lerobot.bi_so101 import BiSO101Adapter, BiSO101Config
-from embodirun.robots.lerobot.so101 import SO101Adapter, SO101_POSITION_FEATURES
+from embodirun.robots.lerobot.so101 import SO101_POSITION_FEATURES, SO101Adapter
 from embodirun.services.control.http_api import ControlHTTPAPI
-from embodirun.client import ControlClient, Observation
 
 
 def _proposal(observation_id: str) -> Proposal:
@@ -99,9 +99,7 @@ def test_packet_builder_decodes_the_real_public_media_envelope(tmp_path: Path) -
                 "robot": {"timestamp_s": 1.0, "values": state},
             },
         )
-        assert extract_bi_so101_state(observation) == [
-            float(index) for index in range(12)
-        ]
+        assert extract_bi_so101_state(observation) == [float(index) for index in range(12)]
         builder = SO101ReviewPacketBuilder(
             client,
             media_dir=tmp_path,
@@ -124,10 +122,7 @@ def test_packet_builder_decodes_the_real_public_media_envelope(tmp_path: Path) -
 
 
 def _calibration() -> dict[str, dict[str, object]]:
-    return {
-        name: {"range_min": 0, "range_max": 4095, "drive_mode": 0}
-        for name in BI_SO101_POSITION_FEATURES
-    }
+    return {name: {"range_min": 0, "range_max": 4095, "drive_mode": 0} for name in BI_SO101_POSITION_FEATURES}
 
 
 def test_so101_mapper_requires_public_step_and_preserves_other_arm() -> None:
@@ -137,10 +132,7 @@ def test_so101_mapper_requires_public_step_and_preserves_other_arm() -> None:
         control_hz=5.0,
         action_encoder=BiSO101ActionEncoder(),
     )
-    state = {
-        name: float(index)
-        for index, name in enumerate(BI_SO101_POSITION_FEATURES)
-    }
+    state = {name: float(index) for index, name in enumerate(BI_SO101_POSITION_FEATURES)}
     state.update(
         {
             BI_SO101_POSITION_FEATURES[5]: 50.0,
@@ -184,10 +176,7 @@ def test_structured_public_proposal_is_decoded_only_with_explicit_encoder() -> N
     payload = {
         "proposal_id": "structured-proposal",
         "observation_id": "obs-structured",
-        "actions": [
-            {"timestamp_s": float(index), "values": target["values"]}
-            for index in range(50)
-        ],
+        "actions": [{"timestamp_s": float(index), "values": target["values"]} for index in range(50)],
         "metadata": {
             "action_semantics": "biso101_so101_v1",
             "action_layout": "left6_right6",
@@ -228,10 +217,7 @@ def test_session_reencodes_structured_proposal_for_public_biso101_execute() -> N
         "status": "proposed",
         "proposal_id": "structured-session",
         "observation_id": "obs-1",
-        "actions": [
-            {"timestamp_s": float(index), "values": action["values"]}
-            for index in range(50)
-        ],
+        "actions": [{"timestamp_s": float(index), "values": action["values"]} for index in range(50)],
     }
     executed: list[list[dict[str, object]]] = []
 

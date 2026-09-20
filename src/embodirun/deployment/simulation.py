@@ -29,9 +29,7 @@ class SimulationClient:
             or parsed.query
             or parsed.fragment
         ):
-            raise ValueError(
-                "simulation endpoint must be a credential-free loopback HTTP URL"
-            )
+            raise ValueError("simulation endpoint must be a credential-free loopback HTTP URL")
         try:
             if parsed.port is None:
                 raise ValueError("simulation endpoint must include a port")
@@ -49,15 +47,11 @@ class SimulationClient:
         )
         if response.status != 200:
             detail = error_message(response.payload) or "invalid error response"
-            raise SimulationClientError(
-                f"simulation service returned HTTP {response.status}: {detail}"
-            )
+            raise SimulationClientError(f"simulation service returned HTTP {response.status}: {detail}")
         try:
             result = EpisodeResult.from_payload(response.payload)
         except ValueError as error:
-            raise SimulationClientError(
-                f"simulation service response is invalid: {error}"
-            ) from error
+            raise SimulationClientError(f"simulation service response is invalid: {error}") from error
         if result.request_id != request.request_id:
             raise SimulationClientError("simulation response request_id does not match")
         if result.runtime_id != request.runtime_id:

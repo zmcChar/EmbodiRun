@@ -131,9 +131,7 @@ class ReactiveNavigationSession:
         if not isinstance(plan, WaypointPlan):
             raise NavigationSessionError("policy must return a WaypointPlan")
         if plan.observation_sequence != observation.sequence:
-            raise NavigationSessionError(
-                "waypoint plan sequence must match its navigation observation"
-            )
+            raise NavigationSessionError("waypoint plan sequence must match its navigation observation")
         self._telemetry.plans_accepted += 1
         self._telemetry.emit(
             "plan_accepted",
@@ -197,11 +195,7 @@ class ReactiveNavigationSession:
                 elif self.config.execute:
                     await asyncio.sleep(self.config.settle_s)
 
-            if (
-                plan.terminal
-                and self.config.terminal_after_waypoints
-                and len(selected) == len(plan.waypoints)
-            ):
+            if plan.terminal and self.config.terminal_after_waypoints and len(selected) == len(plan.waypoints):
                 self._telemetry.emit(
                     "terminal_reached",
                     observation_sequence=observation.sequence,

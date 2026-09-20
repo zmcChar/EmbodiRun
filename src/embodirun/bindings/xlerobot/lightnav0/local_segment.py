@@ -86,9 +86,7 @@ class LocalSegmentTrajectory:
         waypoints: list[LightNav0Waypoint] = []
         for index, row in enumerate(rows):
             try:
-                waypoints.append(
-                    LightNav0Waypoint.from_value(row, name=f"waypoints[{index}]")
-                )
+                waypoints.append(LightNav0Waypoint.from_value(row, name=f"waypoints[{index}]"))
             except (TypeError, ValueError) as exc:
                 raise LocalSegmentOutputError(str(exc)) from exc
         return cls(tuple(waypoints), output["stop"])
@@ -109,9 +107,7 @@ class LocalSegmentFeedback:
         if not isinstance(self.velocity, BodyVelocity):
             raise TypeError("velocity must be BodyVelocity")
         _finite(self.received_at_s, "received_at_s")
-        if isinstance(self.state_timestamp_ns, bool) or not isinstance(
-            self.state_timestamp_ns, int
-        ):
+        if isinstance(self.state_timestamp_ns, bool) or not isinstance(self.state_timestamp_ns, int):
             raise TypeError("state_timestamp_ns must be an integer")
         if self.state_timestamp_ns <= 0:
             raise ValueError("state_timestamp_ns must be positive")
@@ -166,14 +162,9 @@ class LocalSegmentConfig:
                 raise TypeError(f"{name} must be a finite positive number")
             if not math.isfinite(float(value)) or float(value) <= 0.0:
                 raise ValueError(f"{name} must be a finite positive number")
-        if isinstance(self.waypoint_zero_tolerance, bool) or not isinstance(
-            self.waypoint_zero_tolerance, (int, float)
-        ):
+        if isinstance(self.waypoint_zero_tolerance, bool) or not isinstance(self.waypoint_zero_tolerance, (int, float)):
             raise TypeError("waypoint_zero_tolerance must be finite and non-negative")
-        if (
-            not math.isfinite(float(self.waypoint_zero_tolerance))
-            or float(self.waypoint_zero_tolerance) < 0.0
-        ):
+        if not math.isfinite(float(self.waypoint_zero_tolerance)) or float(self.waypoint_zero_tolerance) < 0.0:
             raise ValueError("waypoint_zero_tolerance must be finite and non-negative")
 
 
@@ -246,9 +237,7 @@ def waypoint_to_body_velocity(
     angular_duration = abs(waypoint.yaw_rad) / float(max_angular_velocity_rad_s)
     effective_duration = max(float(duration_s), linear_duration, angular_duration)
     if not math.isfinite(effective_duration):
-        raise ValueError(
-            "waypoint requires a non-finite effective duration for bounded velocity"
-        )
+        raise ValueError("waypoint requires a non-finite effective duration for bounded velocity")
     vx = waypoint.forward_m / effective_duration
     omega = waypoint.yaw_rad / effective_duration
     if not math.isfinite(vx) or not math.isfinite(omega):
@@ -287,9 +276,7 @@ class LocalSegmentExecutor:
             raise LocalSegmentError("LocalSegmentExecutor is closed")
         try:
             trajectory = (
-                output
-                if isinstance(output, LocalSegmentTrajectory)
-                else LocalSegmentTrajectory.from_output(output)
+                output if isinstance(output, LocalSegmentTrajectory) else LocalSegmentTrajectory.from_output(output)
             )
             reused_feedback = feedback is not None
             if feedback is None:
@@ -301,9 +288,7 @@ class LocalSegmentExecutor:
                 raise LocalSegmentCollision("local segment feedback reports collision")
             if trajectory.stop:
                 self.backend.stop(reason="explicit-stop")
-                return LocalSegmentStep(
-                    feedback, trajectory, 0, BodyVelocity.zero(), "explicit-stop"
-                )
+                return LocalSegmentStep(feedback, trajectory, 0, BodyVelocity.zero(), "explicit-stop")
             index, waypoint = select_unicycle_waypoint(
                 trajectory.waypoints, tolerance=self.config.waypoint_zero_tolerance
             )
@@ -319,9 +304,7 @@ class LocalSegmentExecutor:
             self._safe_stop(reason="local-segment-exception")
             raise
 
-    def check_fresh_feedback(
-        self, *, now_s: float | None = None
-    ) -> LocalSegmentFeedback:
+    def check_fresh_feedback(self, *, now_s: float | None = None) -> LocalSegmentFeedback:
         """Check lease, collision and fresh feedback without issuing motion."""
 
         if self._closed:
@@ -367,14 +350,10 @@ class LocalSegmentExecutor:
             if feedback.collision is True:
                 raise LocalSegmentCollision("local segment feedback reports collision")
             if (
-                abs(float(feedback.velocity.vx))
-                > self.config.stationary_linear_tolerance_m_s
-                or abs(float(feedback.velocity.omega))
-                > self.config.stationary_angular_tolerance_rad_s
+                abs(float(feedback.velocity.vx)) > self.config.stationary_linear_tolerance_m_s
+                or abs(float(feedback.velocity.omega)) > self.config.stationary_angular_tolerance_rad_s
             ):
-                raise LocalSegmentNotStationary(
-                    "zero command lacks fresh measured stationary feedback"
-                )
+                raise LocalSegmentNotStationary("zero command lacks fresh measured stationary feedback")
             return feedback
         except BaseException:
             self._safe_stop(reason="hold-zero-exception")
@@ -401,24 +380,15 @@ class LocalSegmentExecutor:
         if not isinstance(feedback, LocalSegmentFeedback):
             raise LocalSegmentFeedbackError("backend returned unknown feedback type")
         age = float(now_s) - feedback.received_at_s
-        if (
-            not math.isfinite(age)
-            or age < -self.config.feedback_timeout_s
-            or age > self.config.feedback_timeout_s
-        ):
+        if not math.isfinite(age) or age < -self.config.feedback_timeout_s or age > self.config.feedback_timeout_s:
             raise LocalSegmentFeedbackStale(
                 f"wheel feedback age {age:.3f}s exceeds {self.config.feedback_timeout_s:.3f}s"
             )
         if self._last_state_timestamp_ns is not None and (
             feedback.state_timestamp_ns < self._last_state_timestamp_ns
-            or (
-                feedback.state_timestamp_ns == self._last_state_timestamp_ns
-                and not allow_same_timestamp
-            )
+            or (feedback.state_timestamp_ns == self._last_state_timestamp_ns and not allow_same_timestamp)
         ):
-            raise LocalSegmentFeedbackStale(
-                "wheel feedback timestamp repeated or moved backwards"
-            )
+            raise LocalSegmentFeedbackStale("wheel feedback timestamp repeated or moved backwards")
         self._last_state_timestamp_ns = feedback.state_timestamp_ns
 
     @property

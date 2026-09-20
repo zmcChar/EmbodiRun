@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+import sqlite3
 import threading
 
 import pytest
 
+from embodirun.robots import RobotAction, RobotObservation
+from embodirun.services.control.arbitration import (
+    CommandStatus,
+    RobotAdapterCommandPort,
+    RobotControlArbiter,
+)
 from embodirun.services.control.contracts import TaskRequest, TaskResult
+from embodirun.services.control.io import IOResult, IOStatus, IOUnknownError, RobotIOScheduler
+from embodirun.services.control.job_store import SQLiteJobStore
 from embodirun.services.control.jobs import (
-    JobCapacityExceeded,
     JobCancelledError,
+    JobCapacityExceeded,
     JobConflict,
     JobOwnershipError,
     JobRegistry,
@@ -16,15 +25,6 @@ from embodirun.services.control.jobs import (
     JobUnknownError,
     PhysicalStatus,
 )
-from embodirun.services.control.arbitration import (
-    CommandStatus,
-    RobotAdapterCommandPort,
-    RobotControlArbiter,
-)
-from embodirun.services.control.io import IOStatus, RobotIOScheduler
-from embodirun.services.control.io import IOResult, IOUnknownError
-from embodirun.services.control.job_store import SQLiteJobStore
-from embodirun.robots import RobotAction, RobotObservation
 
 
 def test_concurrent_duplicate_accept_is_atomic_and_executes_once() -> None:
@@ -145,9 +145,7 @@ def test_restart_marks_unfinished_job_unknown_and_never_replays(tmp_path) -> Non
     reopened = JobRegistry(database)
     record = reopened.inspect("caller", "session", "request-1")
     assert record.status is JobStatus.UNKNOWN
-    recovered_handle = reopened.submit(
-        "caller", "session", "request-1", {"x": 1}, execute
-    )
+    recovered_handle = reopened.submit("caller", "session", "request-1", {"x": 1}, execute)
     with pytest.raises(JobUnknownError):
         recovered_handle.wait(timeout_s=0.1)
     assert recovered_handle.run_id == record.run_id
@@ -170,7 +168,7 @@ def test_live_database_owner_is_not_mistaken_for_a_crashed_registry(tmp_path) ->
 def test_job_store_releases_sidecar_lock_when_database_startup_fails(tmp_path) -> None:
     database = tmp_path / "startup-failure.sqlite"
     database.mkdir()
-    with pytest.raises(Exception):
+    with pytest.raises(sqlite3.OperationalError):
         SQLiteJobStore(database)
     database.rmdir()
     store = SQLiteJobStore(database)

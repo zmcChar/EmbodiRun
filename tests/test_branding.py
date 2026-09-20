@@ -12,9 +12,7 @@ from embodirun.services.host.config import config_digest, load_config
 from embodirun.services.host.plan import build_plan
 
 
-@pytest.mark.parametrize(
-    "first,second", [("embodirun", "rlinf_deploy"), ("rlinf_deploy", "embodirun")]
-)
+@pytest.mark.parametrize("first,second", [("embodirun", "rlinf_deploy"), ("rlinf_deploy", "embodirun")])
 def test_import_aliases_share_modules_in_both_orders(first, second) -> None:
     result = subprocess.run(
         [
@@ -82,9 +80,7 @@ def test_new_and_legacy_module_entry_points(module) -> None:
 )
 def test_installed_cli_aliases(current: str, legacy: str) -> None:
     entries = {
-        entry.name: entry
-        for entry in distribution("embodirun").entry_points
-        if entry.group == "console_scripts"
+        entry.name: entry for entry in distribution("embodirun").entry_points if entry.group == "console_scripts"
     }
     assert entries[current].value == entries[legacy].value
     if current == "embodirun-sglang-serve":

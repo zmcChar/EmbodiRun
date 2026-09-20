@@ -27,18 +27,14 @@ def test_one_bus_serializes_read_and_action_transactions() -> None:
 
     action_result: list[object] = []
     action_thread = threading.Thread(
-        target=lambda: action_result.append(
-            scheduler.execute(lambda: transaction("action"), requested="action")
-        )
+        target=lambda: action_result.append(scheduler.execute(lambda: transaction("action"), requested="action"))
     )
     action_thread.start()
     assert entered.wait(1.0)
 
     read_result: list[object] = []
     read_thread = threading.Thread(
-        target=lambda: read_result.append(
-            scheduler.read(lambda: transaction("read"), requested="observation")
-        )
+        target=lambda: read_result.append(scheduler.read(lambda: transaction("read"), requested="observation"))
     )
     read_thread.start()
     time.sleep(0.02)
@@ -66,9 +62,7 @@ def test_serialized_stop_reports_unknown_and_quarantines_blocked_read() -> None:
         release_read.wait(1.0)
 
     read_result: list[object] = []
-    read_thread = threading.Thread(
-        target=lambda: read_result.append(scheduler.read(slow_read, requested="state"))
-    )
+    read_thread = threading.Thread(target=lambda: read_result.append(scheduler.read(slow_read, requested="state")))
     read_thread.start()
     assert read_started.wait(1.0)
 
@@ -134,9 +128,7 @@ def test_timed_out_active_execute_quarantines_queued_motion() -> None:
 
     result_holder: list[object] = []
     execute_thread = threading.Thread(
-        target=lambda: result_holder.append(
-            scheduler.execute(slow_execute, requested="motion", timeout_s=0.03)
-        )
+        target=lambda: result_holder.append(scheduler.execute(slow_execute, requested="motion", timeout_s=0.03))
     )
     execute_thread.start()
     assert started.wait(1.0)
@@ -167,9 +159,7 @@ def test_preemptive_stop_blocks_new_scheduler_work_until_callback_returns() -> N
         stop_started.set()
         release_stop.wait(1.0)
 
-    stop_thread = threading.Thread(
-        target=lambda: stop_result.append(scheduler.stop(slow_stop, requested="estop"))
-    )
+    stop_thread = threading.Thread(target=lambda: stop_result.append(scheduler.stop(slow_stop, requested="estop")))
     stop_thread.start()
     assert stop_started.wait(1.0)
     motion = scheduler.execute(lambda: "must-not-run", requested="motion")

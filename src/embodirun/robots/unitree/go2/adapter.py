@@ -64,9 +64,7 @@ class Go2Adapter(RobotAdapter):
         if state.active_velocity_lease_id is not None:
             metadata["active_velocity_lease_id"] = state.active_velocity_lease_id
         return RobotObservation(
-            timestamp_s=(
-                state.received_at_s if state.received_at_s is not None else time.time()
-            ),
+            timestamp_s=(state.received_at_s if state.received_at_s is not None else time.time()),
             values={
                 "position_m": [state.pose.x_m, state.pose.y_m],
                 "yaw_rad": state.pose.yaw_rad,
@@ -83,10 +81,7 @@ class Go2Adapter(RobotAdapter):
         self._require_connected()
         declared_space = action.metadata.get("action_space")
         if declared_space is not None and declared_space != GO2_ACTION_SPACE:
-            raise Go2AdapterError(
-                f"unsupported action space {declared_space!r}; "
-                f"expected {GO2_ACTION_SPACE!r}"
-            )
+            raise Go2AdapterError(f"unsupported action space {declared_space!r}; expected {GO2_ACTION_SPACE!r}")
         if not isinstance(action.values, Mapping):
             raise Go2AdapterError("Go2 action values must be an object")
         values = dict(action.values)

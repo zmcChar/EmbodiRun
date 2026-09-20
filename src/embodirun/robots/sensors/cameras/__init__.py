@@ -9,13 +9,13 @@ from importlib import import_module
 
 from .. import SensorInput
 from .camera import CameraFrame, CameraSource, CameraSources, RawCameraFrame
+from .fake import FakeCameraConfig, FakeCameraError, FakeCameraSource
 from .realsense import (
     RealSenseCameraConfig,
     RealSenseCameraError,
     RealSenseCameraSource,
 )
 from .v4l2 import CameraError, V4L2CameraConfig, V4L2CameraSource
-from .fake import FakeCameraConfig, FakeCameraError, FakeCameraSource
 
 _CAMERA_KIND = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\Z")
 
@@ -57,9 +57,7 @@ def _source_builder(
     try:
         module = import_module(module_name)
     except ModuleNotFoundError as error:
-        if error.name is not None and (
-            error.name == module_name or module_name.startswith(f"{error.name}.")
-        ):
+        if error.name is not None and (error.name == module_name or module_name.startswith(f"{error.name}.")):
             raise ValueError(f"camera kind {kind!r} is not available") from None
         raise
     builder = getattr(module, "create_source", None)

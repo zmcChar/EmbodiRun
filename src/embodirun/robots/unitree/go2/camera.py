@@ -53,9 +53,7 @@ class Go2CameraClient:
         robot_state: Mapping[str, object],
     ) -> NavigationObservation:
         try:
-            payload = self.http.request_json(
-                "GET", "/observation.json", maximum_bytes=MAX_CAMERA_RESPONSE_BYTES
-            )
+            payload = self.http.request_json("GET", "/observation.json", maximum_bytes=MAX_CAMERA_RESPONSE_BYTES)
         except HttpClientError as error:
             raise Go2CameraError(str(error)) from error
         if payload.get("navigation_ready") is not True:
@@ -69,12 +67,8 @@ class Go2CameraClient:
         if _sequence(depth_value.get("sequence"), "depth.sequence") != sequence:
             raise Go2CameraError("depth sequence does not match observation")
         try:
-            rgb_data = decode_data_url(
-                rgb_value.get("data_url"), "image/jpeg", maximum_bytes=12 * 1024 * 1024
-            )
-            depth_data = decode_data_url(
-                depth_value.get("data_url"), "image/png", maximum_bytes=16 * 1024 * 1024
-            )
+            rgb_data = decode_data_url(rgb_value.get("data_url"), "image/jpeg", maximum_bytes=12 * 1024 * 1024)
+            depth_data = decode_data_url(depth_value.get("data_url"), "image/png", maximum_bytes=16 * 1024 * 1024)
         except DataUrlError as error:
             raise Go2CameraError(str(error)) from error
         width = _sequence(rgb_value.get("width"), "rgb.width")

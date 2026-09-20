@@ -1,7 +1,6 @@
 import time
 
 import pytest
-
 from embodirun_xlerobot_owner.hardware import JOINT_NAMES, WATCHDOG_TIMEOUT_S, HardwareRobot
 
 ARM_SUFFIXES = (
@@ -173,8 +172,7 @@ def _arm(robot):
 
 @pytest.mark.parametrize("first,second", [("arms", "base"), ("base", "arms")])
 def test_independent_arm_stop_and_rearm_do_not_write_other_scope(tmp_path, first, second):
-    robot, buses = _robot(tmp_path, enable_base=True,
-                         wheel_directions={"base_left_wheel": 1, "base_right_wheel": -1})
+    robot, buses = _robot(tmp_path, enable_base=True, wheel_directions={"base_left_wheel": 1, "base_right_wheel": -1})
     try:
         assert robot.arm(first)["armed"]
         # The already active group may be moving while the other is enabled.
@@ -199,17 +197,16 @@ def test_independent_arm_stop_and_rearm_do_not_write_other_scope(tmp_path, first
 
 @pytest.mark.parametrize("live,expired", [("arms", "base"), ("base", "arms")])
 def test_one_scope_heartbeat_cannot_keep_other_scope_alive(tmp_path, live, expired):
-    robot, _ = _robot(tmp_path, enable_base=True,
-                     wheel_directions={"base_left_wheel": 1, "base_right_wheel": -1})
+    robot, _ = _robot(tmp_path, enable_base=True, wheel_directions={"base_left_wheel": 1, "base_right_wheel": -1})
     try:
         assert robot.arm()["armed"]
         with robot._io_lock:
             robot._scope_command_mono[expired] = time.monotonic() - WATCHDOG_TIMEOUT_S - 1
             action = _left_action() if live == "arms" else {"x.vel": 0.0, "theta.vel": 0.0}
             assert robot.command(action)["accepted"]
-        deadline = time.monotonic() + .2
+        deadline = time.monotonic() + 0.2
         while robot.control_state()[expired] and time.monotonic() < deadline:
-            time.sleep(.005)
+            time.sleep(0.005)
         assert robot.control_state() == {live: True, expired: False}
         rejected = _left_action() if expired == "arms" else {"x.vel": 0, "theta.vel": 0}
         assert robot.command(rejected)["accepted"] is False
@@ -225,9 +222,12 @@ def _held_snapshot(robot, buses):
         bus.values[name]["Torque_Enable"] = 1
         goals[name] = bus.values[name]["Goal_Position"]
     return {
-        "source": "physical", "stop_confirmed": True,
-        "created_monotonic_s": time.monotonic(), "ports": dict(robot._ports),
-        "enable_base": False, "goals": goals,
+        "source": "physical",
+        "stop_confirmed": True,
+        "created_monotonic_s": time.monotonic(),
+        "ports": dict(robot._ports),
+        "enable_base": False,
+        "goals": goals,
     }
 
 
@@ -261,8 +261,7 @@ def test_user_can_arm_after_verified_held_restore(tmp_path):
 
 @pytest.mark.parametrize("bad_wheel", [None, "Torque_Enable", "Goal_Velocity", "Moving"])
 def test_held_arm_handoff_can_add_only_cold_stationary_wheels(tmp_path, bad_wheel):
-    robot, buses = _robot(tmp_path, enable_base=True,
-                         wheel_directions={"base_left_wheel": 1, "base_right_wheel": 1})
+    robot, buses = _robot(tmp_path, enable_base=True, wheel_directions={"base_left_wheel": 1, "base_right_wheel": 1})
     try:
         names = robot._motor_names_for_control("arms")
         goals = {}
@@ -272,9 +271,14 @@ def test_held_arm_handoff_can_add_only_cold_stationary_wheels(tmp_path, bad_whee
             goals[name] = bus.values[name]["Goal_Position"]
         if bad_wheel:
             buses["right"].values["base_left_wheel"][bad_wheel] = 1
-        snapshot = {"source": "physical", "stop_confirmed": True,
-                    "created_monotonic_s": time.monotonic(), "ports": robot._ports,
-                    "enable_base": False, "goals": goals}
+        snapshot = {
+            "source": "physical",
+            "stop_confirmed": True,
+            "created_monotonic_s": time.monotonic(),
+            "ports": robot._ports,
+            "enable_base": False,
+            "goals": goals,
+        }
         result = robot.restore_held_state(snapshot)
         assert result["restored"] is (bad_wheel is None), result
         assert not robot.armed and all(not b.writes for b in buses.values())
@@ -285,10 +289,22 @@ def test_held_arm_handoff_can_add_only_cold_stationary_wheels(tmp_path, bad_whee
         robot.close()
 
 
-@pytest.mark.parametrize("fault", [
-    "stale", "ports", "missing_joint", "bool_goal", "goal_changed", "torque_off",
-    "moving", "velocity", "eeprom", "unconfirmed", "base",
-])
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "stale",
+        "ports",
+        "missing_joint",
+        "bool_goal",
+        "goal_changed",
+        "torque_off",
+        "moving",
+        "velocity",
+        "eeprom",
+        "unconfirmed",
+        "base",
+    ],
+)
 def test_held_restore_rejects_invalid_handoff_without_writes(tmp_path, fault):
     robot, buses = _robot(tmp_path)
     try:
@@ -428,27 +444,16 @@ def test_arm_holds_actual_start_before_torque_enable(tmp_path):
         result = _arm(robot)
         for side in ("left", "right"):
             bus = buses[side]
-            holds = {
-                motor: value
-                for field, motor, value in bus.writes
-                if field == "Goal_Position"
-            }
+            holds = {motor: value for field, motor, value in bus.writes if field == "Goal_Position"}
             assert all(holds[f"{side}_arm_{suffix}"] == 2000 for suffix in ARM_SUFFIXES)
             assert all(field != "Operating_Mode" for field, _, _ in bus.writes)
-            assert all(field not in {"Min_Position_Limit", "Max_Position_Limit", "Homing_Offset"}
-                       for field, _, _ in bus.writes)
             assert all(
-                ("Acceleration", f"{side}_arm_{suffix}", 254) in bus.writes
-                for suffix in ARM_SUFFIXES
+                field not in {"Min_Position_Limit", "Max_Position_Limit", "Homing_Offset"} for field, _, _ in bus.writes
             )
-            assert all(
-                ("Goal_Velocity", f"{side}_arm_{suffix}", 50) in bus.writes
-                for suffix in ARM_SUFFIXES
-            )
+            assert all(("Acceleration", f"{side}_arm_{suffix}", 254) in bus.writes for suffix in ARM_SUFFIXES)
+            assert all(("Goal_Velocity", f"{side}_arm_{suffix}", 50) in bus.writes for suffix in ARM_SUFFIXES)
             torque_writes = [entry for entry in bus.writes if entry[0] == "Torque_Enable"]
-            assert {entry[1] for entry in torque_writes} == {
-                f"{side}_arm_{suffix}" for suffix in ARM_SUFFIXES
-            }
+            assert {entry[1] for entry in torque_writes} == {f"{side}_arm_{suffix}" for suffix in ARM_SUFFIXES}
         assert result["held_positions_raw"]["left_arm_shoulder_pan"] == 2000
     finally:
         robot.close()
@@ -472,11 +477,7 @@ def test_arm_retries_a_motion_profile_write_that_did_not_take_effect(tmp_path):
     bus.write = drop_first_acceleration
     try:
         result = _arm(robot)
-        attempts = [
-            write
-            for write in bus.writes
-            if write[:2] == ("Acceleration", "left_arm_shoulder_pan")
-        ]
+        attempts = [write for write in bus.writes if write[:2] == ("Acceleration", "left_arm_shoulder_pan")]
         assert len(attempts) == 2
         assert result["goal_acceleration_raw"] == 254
     finally:
@@ -501,11 +502,7 @@ def test_arm_refuses_before_torque_if_motion_profile_never_reads_back(tmp_path):
         assert result["status"] == "error"
         assert result["armed"] is False
         assert any("after 3 attempts (actual=0)" in error for error in result["errors"])
-        assert all(
-            field != "Torque_Enable"
-            for candidate in buses.values()
-            for field, _, _ in candidate.writes
-        )
+        assert all(field != "Torque_Enable" for candidate in buses.values() for field, _, _ in candidate.writes)
     finally:
         robot.close()
 
@@ -555,8 +552,7 @@ def test_command_writes_nonzero_goal_and_rejects_invalid_or_fast_targets(tmp_pat
         result = robot.command(_left_action(**{"left_arm_shoulder_pan.pos": 0.5}))
         assert result["accepted"] is True, result
         left_goal_writes = [entry for entry in buses["left"].writes if entry[0] == "Goal_Position"]
-        assert any(motor == "left_arm_shoulder_pan" and value != 2000
-                   for _, motor, value in left_goal_writes)
+        assert any(motor == "left_arm_shoulder_pan" and value != 2000 for _, motor, value in left_goal_writes)
 
         writes_before = sum(len(bus.writes) for bus in buses.values())
         invalid = robot.command(_left_action(**{"left_arm_shoulder_pan.pos": float("nan")}))
@@ -589,8 +585,9 @@ def test_base_velocity_is_clamped_and_only_wheels_are_written(tmp_path):
         result = robot.command({"x.vel": 10.0, "theta.vel": -50.0})
         assert result["accepted"] is True, result
         assert result["applied_action"] == {"x.vel": 0.05, "theta.vel": -10.0}
-        assert all(entry["field"] == "Goal_Velocity" and entry["motor"].startswith("base_")
-                   for entry in result["writes"])
+        assert all(
+            entry["field"] == "Goal_Velocity" and entry["motor"].startswith("base_") for entry in result["writes"]
+        )
         assert not buses["left"].writes
     finally:
         robot.close()
@@ -631,8 +628,7 @@ def test_stop_holds_last_gripper_goal_without_disabling_torque(tmp_path):
             if field == "Goal_Position" and motor == "left_arm_gripper"
         ]
         assert gripper_holds[-1] == expected_raw
-        assert all(not (field == "Torque_Enable" and value == 0)
-                   for field, _, value in buses["left"].writes)
+        assert all(not (field == "Torque_Enable" and value == 0) for field, _, value in buses["left"].writes)
     finally:
         robot.close()
 
@@ -663,8 +659,7 @@ def test_torque_write_failure_latches_uncertainty_and_reports_partial_writes(tmp
         assert result["armed"] is False
         assert robot._stop_uncertain is True
         assert any(entry["status"] == "attempted" for entry in result["writes"])
-        assert all(not (field == "Torque_Enable" and value == 0)
-                   for field, _, value in buses["left"].writes)
+        assert all(not (field == "Torque_Enable" and value == 0) for field, _, value in buses["left"].writes)
     finally:
         robot.close()
 
@@ -677,8 +672,9 @@ def test_close_disconnects_even_if_stop_raises(tmp_path):
     assert result["closed"] is True
     assert any("close stop failed" in error for error in result["errors"])
     assert all(bus.disconnect_calls == [False] for bus in buses.values())
-    assert all(not (field == "Torque_Enable" and value == 0)
-               for bus in buses.values() for field, _, value in bus.writes)
+    assert all(
+        not (field == "Torque_Enable" and value == 0) for bus in buses.values() for field, _, value in bus.writes
+    )
 
 
 def test_unowned_stop_is_fresh_read_only_stationary_poll(tmp_path):

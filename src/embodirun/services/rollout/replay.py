@@ -16,9 +16,7 @@ class ReplaySource:
     This source has no execute method, SDK connection, or dynamics/reward model.
     """
 
-    def __init__(
-        self, manifest: str | None = None, *, state_dim: int = 7, image_size: int = 224
-    ):
+    def __init__(self, manifest: str | None = None, *, state_dim: int = 7, image_size: int = 224):
         if state_dim <= 0 or image_size <= 0:
             raise ValueError("state_dim and image_size must be positive")
         self.state_dim = state_dim
@@ -37,18 +35,12 @@ class ReplaySource:
                     state = [*state["joint_positions_deg"], state["gripper_position"]]
                 if len(state) != state_dim:
                     raise ValueError("replay state dimension does not match config")
-                if not all(
-                    isinstance(x, (int, float)) and math.isfinite(x) for x in state
-                ):
+                if not all(isinstance(x, (int, float)) and math.isfinite(x) for x in state):
                     raise ValueError("replay state must contain finite numbers")
                 images = {}
                 for name, filename in record["images"].items():
                     with Image.open(path.parent / filename) as source:
-                        images[name] = (
-                            source.convert("RGB")
-                            .resize((image_size, image_size))
-                            .tobytes()
-                        )
+                        images[name] = source.convert("RGB").resize((image_size, image_size)).tobytes()
                 if not images:
                     raise ValueError("replay frame must contain an image")
                 self.frames.append(
@@ -83,10 +75,7 @@ class ReplaySource:
             record = {
                 "state": frame["state"],
                 "instruction": frame["instruction"],
-                "images": {
-                    name: hashlib.sha256(data).hexdigest()
-                    for name, data in sorted(frame["images"].items())
-                },
+                "images": {name: hashlib.sha256(data).hexdigest() for name, data in sorted(frame["images"].items())},
             }
             digest.update(json.dumps(record, sort_keys=True).encode())
         return digest.hexdigest()

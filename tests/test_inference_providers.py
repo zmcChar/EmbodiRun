@@ -172,15 +172,11 @@ def test_device_only_init_up_down_does_not_prepare_or_launch_model(
     config = Path(__file__).parents[1] / "configs/examples/device-only.yaml"
     executors = _run_lifecycle(config, tmp_path)
     commands = [command for executor in executors for command, _ in executor.commands]
-    assert not any(
-        "third_party/embodiinfer" in item for command in commands for item in command.argv
-    )
+    assert not any("third_party/embodiinfer" in item for command in commands for item in command.argv)
     starts = [
         json.loads(command.stdin)
         for command in commands
-        if len(command.argv) > 2
-        and command.argv[1].endswith("/supervisor.py")
-        and command.argv[2] == "start"
+        if len(command.argv) > 2 and command.argv[1].endswith("/supervisor.py") and command.argv[2] == "start"
     ]
     assert len(starts) == 1
     assert starts[0]["argv"][0].endswith("/rlinf-control-serve")
@@ -195,16 +191,12 @@ def test_external_init_up_down_never_checks_checkpoint_or_stops_external_service
     starts = [
         json.loads(command.stdin)
         for command in commands
-        if len(command.argv) > 2
-        and command.argv[1].endswith("/supervisor.py")
-        and command.argv[2] == "start"
+        if len(command.argv) > 2 and command.argv[1].endswith("/supervisor.py") and command.argv[2] == "start"
     ]
     stops = [
         command.argv[4]
         for command in commands
-        if len(command.argv) > 4
-        and command.argv[1].endswith("/supervisor.py")
-        and command.argv[2] == "stop"
+        if len(command.argv) > 4 and command.argv[1].endswith("/supervisor.py") and command.argv[2] == "stop"
     ]
     assert len(starts) == len(stops) == 1
     assert starts[0]["argv"][0].endswith("/rlinf-control-serve")
@@ -245,31 +237,21 @@ def test_registered_managed_provider_runs_host_init_up_down_lifecycle(
     starts = [
         json.loads(command.stdin)
         for command in commands
-        if len(command.argv) > 2
-        and command.argv[1].endswith("/supervisor.py")
-        and command.argv[2] == "start"
+        if len(command.argv) > 2 and command.argv[1].endswith("/supervisor.py") and command.argv[2] == "start"
     ]
-    model = next(
-        item for item in starts if item["argv"][0].endswith("/test-lifecycle-serve")
-    )
+    model = next(item for item in starts if item["argv"][0].endswith("/test-lifecycle-serve"))
     assert model["argv"][1:4] == ["/models/test", "--port", "9999"]
     assert any(
-        len(command.argv) >= 3
-        and command.argv[0].endswith("/uv")
-        and command.argv[1:3] == ("sync", "--frozen")
+        len(command.argv) >= 3 and command.argv[0].endswith("/uv") and command.argv[1:3] == ("sync", "--frozen")
         for command in commands
     )
-    assert any(
-        "remote" in command.argv and "get-url" in command.argv for command in commands
-    )
+    assert any("remote" in command.argv and "get-url" in command.argv for command in commands)
     assert any("rev-parse" in command.argv for command in commands)
 
 
 def test_external_model_reports_endpoint_field_locally(tmp_path: Path) -> None:
     path = _config(tmp_path, "policy")
-    text = path.read_text().replace(
-        "endpoint: http://127.0.0.1:9999", "endpoint: local"
-    )
+    text = path.read_text().replace("endpoint: http://127.0.0.1:9999", "endpoint: local")
     path.write_text(text)
     with pytest.raises(ConfigError, match=r"models\.policy\.endpoint"):
         load_config(path)
@@ -285,9 +267,7 @@ def test_external_model_reports_endpoint_field_locally(tmp_path: Path) -> None:
         ("endpoint: http://127.0.0.1:9999/path#fragment", "query or fragment"),
     ],
 )
-def test_external_endpoint_rejects_unsafe_url_forms(
-    tmp_path: Path, replacement: str, message: str
-) -> None:
+def test_external_endpoint_rejects_unsafe_url_forms(tmp_path: Path, replacement: str, message: str) -> None:
     path = _config(tmp_path, "policy").read_text()
     path = path.replace("endpoint: http://127.0.0.1:9999", replacement)
     endpoint = tmp_path / "endpoint.yaml"
@@ -308,9 +288,7 @@ def test_model_aliases_and_managed_fields_are_validated_locally(tmp_path: Path) 
     mismatch.write_text(
         _config(tmp_path, "policy")
         .read_text()
-        .replace(
-            "    service: external", "    service: external\n    lifecycle: managed"
-        )
+        .replace("    service: external", "    service: external\n    lifecycle: managed")
     )
     with pytest.raises(ConfigError, match="service and lifecycle must match"):
         load_config(mismatch)
@@ -339,11 +317,7 @@ def test_sglang_environment_installs_local_optional_package_from_deploy_source(
     )
     config_path = tmp_path / "managed-sglang.yaml"
     config_path.write_text(text)
-    profile = next(
-        item
-        for item in environment_profiles(load_config(config_path))
-        if item.group == "sglang"
-    )
+    profile = next(item for item in environment_profiles(load_config(config_path)) if item.group == "sglang")
     assert profile.project == "inference"
     assert profile.packages == (
         "sglang[diffusion]==0.5.18",
@@ -356,12 +330,7 @@ def test_sglang_environment_installs_local_optional_package_from_deploy_source(
 
 def test_sglang_package_metadata_keeps_core_dependency_and_new_entrypoint() -> None:
     metadata = tomllib.loads(
-        (
-            Path(__file__).parents[1]
-            / "integrations"
-            / "sglang_pi05"
-            / "pyproject.toml"
-        ).read_text(encoding="utf-8")
+        (Path(__file__).parents[1] / "integrations" / "sglang_pi05" / "pyproject.toml").read_text(encoding="utf-8")
     )["project"]
     assert "embodirun>=0.1.0" in metadata["dependencies"]
     assert metadata["scripts"]["embodirun-sglang-pi05-serve"].endswith(".pi05:main")
@@ -438,9 +407,7 @@ def test_registered_third_provider_does_not_change_control_enums() -> None:
             lambda endpoint, options, timeout: FakeClient(),
         )
     )
-    client = build_inference_client(
-        "http", "http://policy", {}, backend="test-provider", timeout_s=1
-    )
+    client = build_inference_client("http", "http://policy", {}, backend="test-provider", timeout_s=1)
     assert isinstance(client, FakeClient)
 
 
@@ -463,14 +430,8 @@ def test_factory_rejects_unknown_transport_and_non_action_provider() -> None:
         )
     )
     with pytest.raises(ValueError, match="no action capability"):
-        build_inference_client(
-            "http", "http://chat", {}, backend="test-chat-only", timeout_s=1
-        )
+        build_inference_client("http", "http://chat", {}, backend="test-chat-only", timeout_s=1)
     with pytest.raises(ValueError, match="unsupported inference provider"):
-        build_inference_client(
-            "http", "http://unknown", {}, backend="missing", timeout_s=1
-        )
+        build_inference_client("http", "http://unknown", {}, backend="missing", timeout_s=1)
     with pytest.raises(ValueError, match="does not support"):
-        build_inference_client(
-            "wireless", "wireless://x", {}, backend=transport_provider, timeout_s=1
-        )
+        build_inference_client("wireless", "wireless://x", {}, backend=transport_provider, timeout_s=1)

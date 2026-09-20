@@ -64,10 +64,7 @@ def build_parser(environ: Mapping[str, str] | None = None) -> argparse.ArgumentP
     parser.add_argument(
         "--cyclonedds-lib-dir",
         default=env.get("GO2_CYCLONEDDS_LIB_DIR"),
-        help=(
-            "directory containing the compatible libddsc.so.0; required in "
-            "live mode (env: GO2_CYCLONEDDS_LIB_DIR)"
-        ),
+        help=("directory containing the compatible libddsc.so.0; required in live mode (env: GO2_CYCLONEDDS_LIB_DIR)"),
     )
     parser.add_argument(
         "--token",

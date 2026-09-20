@@ -62,9 +62,7 @@ class SdkOwner:
                 self.queue.put(None)
             raise RuntimeError("timed out while initializing Unitree SDK owner thread")
         if self.init_error is not None:
-            raise RuntimeError(
-                f"failed to initialize Unitree SDK: {self.init_error}"
-            ) from self.init_error
+            raise RuntimeError(f"failed to initialize Unitree SDK: {self.init_error}") from self.init_error
 
     def _owner_loop(
         self,
@@ -109,9 +107,7 @@ class SdkOwner:
                 with self.lifecycle_lock:
                     faulted = self.faulted
                 if faulted is not None and call.method != "StopMove":
-                    call.future.set_exception(
-                        RuntimeError(f"Unitree SDK transport is faulted: {faulted}")
-                    )
+                    call.future.set_exception(RuntimeError(f"Unitree SDK transport is faulted: {faulted}"))
                     continue
                 call_started = time.monotonic()
                 try:
@@ -184,23 +180,15 @@ class SdkOwner:
             if call.future.done():
                 return self._completed_result(call)
             if cancel_if_pending and call.future.cancel():
-                raise TimeoutError(
-                    f"Unitree SDK {call.method} timed out before execution; call cancelled"
-                ) from exc
+                raise TimeoutError(f"Unitree SDK {call.method} timed out before execution; call cancelled") from exc
             if call.future.done():
                 return self._completed_result(call)
             state = "in-flight" if call.future.running() else "queued"
             fault = f"{state} {call.method} exceeded {timeout_s:.1f}s"
             with self.lifecycle_lock:
                 self.faulted = fault
-            disposition = (
-                "transport faulted"
-                if cancel_if_pending
-                else "transport faulted; safety call remains queued"
-            )
-            raise TimeoutError(
-                f"Unitree SDK {call.method} timed out {state}; {disposition}"
-            ) from exc
+            disposition = "transport faulted" if cancel_if_pending else "transport faulted; safety call remains queued"
+            raise TimeoutError(f"Unitree SDK {call.method} timed out {state}; {disposition}") from exc
         except BaseException as exc:
             raise RuntimeError(f"Unitree SDK {call.method} failed: {exc}") from exc
 

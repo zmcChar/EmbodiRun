@@ -47,11 +47,7 @@ class LiberoAdapter(SimulatorAdapter):
         self._environment_factory = environment_factory or make_libero_environment
         self._clock = clock
         self._environment: Any | None = None
-        self._viewer = (
-            CameraViewer(f"LIBERO — {config.simulator_id}")
-            if config.viewer
-            else None
-        )
+        self._viewer = CameraViewer(f"LIBERO — {config.simulator_id}") if config.viewer else None
         self._instruction: str | None = None
         self._step_index = 0
         self._closed = False
@@ -69,9 +65,7 @@ class LiberoAdapter(SimulatorAdapter):
     ) -> SimulatorObservation:
         self._ensure_open()
         if task is not None and task.strip() != self.config.task:
-            raise ValueError(
-                f"adapter is bound to LIBERO task {self.config.task!r}, not {task!r}"
-            )
+            raise ValueError(f"adapter is bound to LIBERO task {self.config.task!r}, not {task!r}")
         if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
             raise TypeError("LIBERO seed must be an integer or None")
         if options is not None and not isinstance(options, Mapping):
@@ -107,9 +101,7 @@ class LiberoAdapter(SimulatorAdapter):
             raise TypeError("LIBERO action must be a RobotAction")
 
         action_array = _action_array(action.values)
-        raw_observation, reward, terminated, truncated, info = _unpack_step(
-            self._environment.step(action_array)
-        )
+        raw_observation, reward, terminated, truncated, info = _unpack_step(self._environment.step(action_array))
         self._step_index += 1
         observation = self._normalize_observation(
             raw_observation,
@@ -125,9 +117,7 @@ class LiberoAdapter(SimulatorAdapter):
             observation=observation,
             reward=reward,
             terminated=terminated,
-            truncated=(
-                truncated or self._step_index >= self.config.max_episode_steps
-            ),
+            truncated=(truncated or self._step_index >= self.config.max_episode_steps),
             info=info,
         )
 
@@ -158,27 +148,18 @@ class LiberoAdapter(SimulatorAdapter):
     ) -> SimulatorObservation:
         root = _mapping(values, "observation")
         raw_pixels = _mapping(root.get("pixels"), "observation.pixels")
-        pixels = {
-            name: _policy_image(value, name=name)
-            for name, value in raw_pixels.items()
-        }
+        pixels = {name: _policy_image(value, name=name) for name, value in raw_pixels.items()}
         if set(pixels) != {"image", "wrist_image"}:
-            raise ValueError(
-                "LIBERO observation must contain image and wrist_image cameras"
-            )
+            raise ValueError("LIBERO observation must contain image and wrist_image cameras")
         if self._viewer is not None:
             self._viewer.show(pixels)
 
         robot = _mapping(root.get("robot_state"), "observation.robot_state")
         eef = _mapping(robot.get("eef"), "observation.robot_state.eef")
-        gripper = _mapping(
-            robot.get("gripper"), "observation.robot_state.gripper"
-        )
+        gripper = _mapping(robot.get("gripper"), "observation.robot_state.gripper")
         position = _vector(eef.get("pos"), size=3, name="eef.pos")
         quaternion = _vector(eef.get("quat"), size=4, name="eef.quat")
-        gripper_position = _vector(
-            gripper.get("qpos"), size=2, name="gripper.qpos"
-        )
+        gripper_position = _vector(gripper.get("qpos"), size=2, name="gripper.qpos")
         state = [
             *position,
             *_quaternion_xyzw_to_axis_angle(quaternion),
@@ -190,10 +171,7 @@ class LiberoAdapter(SimulatorAdapter):
                 values={"observation.state": state},
                 metadata=dict(metadata),
             ),
-            frames=tuple(
-                _encode_frame(f"observation.images.{name}", value)
-                for name, value in pixels.items()
-            ),
+            frames=tuple(_encode_frame(f"observation.images.{name}", value) for name, value in pixels.items()),
         )
 
     def _ensure_open(self) -> None:
@@ -206,12 +184,10 @@ def make_libero_environment(config: LiberoConfig) -> Any:
 
     _prepare_libero_import()
     try:
-        from libero.libero import benchmark
         from lerobot.envs.libero import LiberoEnv
+        from libero.libero import benchmark
     except ImportError as error:
-        raise RuntimeError(
-            "LIBERO execution requires the isolated sim-libero environment"
-        ) from error
+        raise RuntimeError("LIBERO execution requires the isolated sim-libero environment") from error
 
     suite_type = benchmark.get_benchmark_dict().get(config.suite)
     if suite_type is None:
@@ -219,10 +195,7 @@ def make_libero_environment(config: LiberoConfig) -> Any:
     suite = suite_type()
     task_count = len(suite.tasks)
     if config.task_id >= task_count:
-        raise ValueError(
-            f"LIBERO task_id {config.task_id} is outside suite {config.suite!r} "
-            f"with {task_count} tasks"
-        )
+        raise ValueError(f"LIBERO task_id {config.task_id} is outside suite {config.suite!r} with {task_count} tasks")
     return LiberoEnv(
         task_suite=suite,
         task_id=config.task_id,
@@ -249,10 +222,7 @@ def _prepare_libero_import() -> None:
 
     os.environ.setdefault("MUJOCO_GL", "egl")
     configured_root = os.environ.get("LIBERO_CONFIG_PATH")
-    config_root = Path(
-        configured_root
-        or Path.home() / ".cache" / "rlinf-deploy" / "libero"
-    ).expanduser()
+    config_root = Path(configured_root or Path.home() / ".cache" / "rlinf-deploy" / "libero").expanduser()
     os.environ["LIBERO_CONFIG_PATH"] = str(config_root)
     config_file = config_root / "config.yaml"
     if configured_root is not None and config_file.is_file():
@@ -261,9 +231,7 @@ def _prepare_libero_import() -> None:
     package = find_spec("libero")
     locations = () if package is None else package.submodule_search_locations
     if not locations:
-        raise RuntimeError(
-            "LIBERO execution requires the isolated sim-libero environment"
-        )
+        raise RuntimeError("LIBERO execution requires the isolated sim-libero environment")
     benchmark_root = Path(next(iter(locations))) / "libero"
     paths = {
         "benchmark_root": str(benchmark_root),
@@ -293,29 +261,21 @@ def _prepare_libero_import() -> None:
 
 
 def _action_array(values: Any) -> Any:
-    raw = (
-        values.get("action")
-        if isinstance(values, Mapping) and "action" in values
-        else values
-    )
+    raw = values.get("action") if isinstance(values, Mapping) and "action" in values else values
     try:
         import numpy as np
     except ImportError as error:
         raise RuntimeError("LIBERO execution requires NumPy") from error
     action = np.asarray(raw, dtype=np.float32)
     if action.shape != (LIBERO_ACTION_DIM,):
-        raise ValueError(
-            f"LIBERO action must have shape ({LIBERO_ACTION_DIM},), got {action.shape}"
-        )
+        raise ValueError(f"LIBERO action must have shape ({LIBERO_ACTION_DIM},), got {action.shape}")
     if not np.isfinite(action).all():
         raise ValueError("LIBERO action must contain only finite values")
     return np.clip(action, -1.0, 1.0)
 
 
 def _mapping(value: Any, name: str) -> dict[str, Any]:
-    if not isinstance(value, Mapping) or any(
-        not isinstance(key, str) for key in value
-    ):
+    if not isinstance(value, Mapping) or any(not isinstance(key, str) for key in value):
         raise TypeError(f"LIBERO {name} must be an object with string keys")
     return dict(value)
 
@@ -335,9 +295,7 @@ def _vector(value: Any, *, size: int, name: str) -> list[float]:
         try:
             number = float(item)
         except (TypeError, ValueError):
-            raise ValueError(
-                f"LIBERO {name} must contain numeric values"
-            ) from None
+            raise ValueError(f"LIBERO {name} must contain numeric values") from None
         if not math.isfinite(number):
             raise ValueError(f"LIBERO {name} must contain finite values")
         result.append(number)

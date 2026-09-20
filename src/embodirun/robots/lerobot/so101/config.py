@@ -44,13 +44,9 @@ class SO101Config:
         }
         unknown = sorted(set(options) - allowed)
         if unknown:
-            raise ValueError(
-                f"unknown SO-101 configuration fields: {', '.join(unknown)}"
-            )
+            raise ValueError(f"unknown SO-101 configuration fields: {', '.join(unknown)}")
         calibration_dir = options.get("calibration_dir")
-        if calibration_dir is not None and (
-            not isinstance(calibration_dir, str) or not calibration_dir.strip()
-        ):
+        if calibration_dir is not None and (not isinstance(calibration_dir, str) or not calibration_dir.strip()):
             raise ValueError("calibration_dir must be a non-empty string")
         return cls(
             port=options.get("port"),
@@ -75,20 +71,13 @@ class SO101Config:
             not isinstance(self.calibration_id, str) or not self.calibration_id.strip()
         ):
             raise ValueError("calibration_id must not be empty")
-        if self.calibration_dir is not None and not isinstance(
-            self.calibration_dir, Path
-        ):
+        if self.calibration_dir is not None and not isinstance(self.calibration_dir, Path):
             raise TypeError("calibration_dir must be a Path or None")
         if not isinstance(self.disable_torque_on_disconnect, bool):
             raise TypeError("disable_torque_on_disconnect must be a boolean")
         for name in ("max_joint_step_deg", "max_gripper_step"):
             value = getattr(self, name)
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not math.isfinite(value)
-                or value <= 0
-            ):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be positive")
         if not isinstance(self.step_limit_mode, str) or self.step_limit_mode not in {
             "reject",

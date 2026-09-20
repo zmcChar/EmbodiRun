@@ -9,9 +9,9 @@ from functools import cache
 from importlib import import_module
 from typing import Any, Protocol
 
+from embodirun.model_services import PolicyObservation, PolicyResult
 from embodirun.robots import RobotAction, RobotObservation
 from embodirun.robots.sensors.cameras import CameraFrame
-from embodirun.model_services import PolicyObservation, PolicyResult
 
 
 class BindingMapper(Protocol):
@@ -82,9 +82,7 @@ def binding_definition(kind: str) -> BindingDefinition:
     try:
         module = import_module(module_name)
     except ModuleNotFoundError as error:
-        if error.name is not None and (
-            error.name == module_name or module_name.startswith(f"{error.name}.")
-        ):
+        if error.name is not None and (error.name == module_name or module_name.startswith(f"{error.name}.")):
             raise KeyError(kind) from None
         raise
     try:
@@ -94,9 +92,7 @@ def binding_definition(kind: str) -> BindingDefinition:
     if not isinstance(definition, BindingDefinition):
         raise TypeError(f"{module_name}.BINDING_DEFINITION is invalid")
     if definition.kind != kind:
-        raise TypeError(
-            f"{module_name}.BINDING_DEFINITION declares kind {definition.kind!r}"
-        )
+        raise TypeError(f"{module_name}.BINDING_DEFINITION declares kind {definition.kind!r}")
     return definition
 
 

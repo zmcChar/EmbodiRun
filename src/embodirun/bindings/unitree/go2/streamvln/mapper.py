@@ -6,16 +6,16 @@ import math
 import time
 from collections.abc import Sequence
 
+from embodirun.model_services import (
+    ImagePayload,
+    PolicyObservation,
+    PolicyResult,
+)
 from embodirun.robots import RobotAction, RobotObservation
 from embodirun.robots.sensors.cameras import CameraFrame
 from embodirun.robots.unitree.go2.navigation.discrete import (
     NavigationCommand,
     NavigationCommandKind,
-)
-from embodirun.model_services import (
-    ImagePayload,
-    PolicyObservation,
-    PolicyResult,
 )
 
 POLICY_ACTION_SPACE = "streamvln.action_chunk.v1"
@@ -62,8 +62,7 @@ class StreamVLNGo2Mapper:
     def map_result(self, result: PolicyResult) -> tuple[RobotAction, ...]:
         if result.action_space != self.policy_action_space:
             raise ValueError(
-                f"policy action_space mismatch: got {result.action_space!r}, "
-                f"expected {self.policy_action_space!r}"
+                f"policy action_space mismatch: got {result.action_space!r}, expected {self.policy_action_space!r}"
             )
         if len(result.actions) != 1 or result.actions[0].kind != "action_chunk":
             raise ValueError("StreamVLN expects one action_chunk")
@@ -104,9 +103,7 @@ def _command(value: object, *, index: int) -> NavigationCommand:
     command = _COMMANDS[int(action_id)]
     expected = command.distance_m or command.angle_deg
     if not math.isclose(magnitude, expected, rel_tol=0.0, abs_tol=1e-6):
-        raise ValueError(
-            f"action_chunk row {index} has magnitude {magnitude}, expected {expected}"
-        )
+        raise ValueError(f"action_chunk row {index} has magnitude {magnitude}, expected {expected}")
     return command
 
 

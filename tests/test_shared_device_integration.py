@@ -7,10 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from embodirun.application import control_service as control_service_impl
 from embodirun.robots import RobotAdapter, RobotDefinition, RobotObservation
 from embodirun.robots.sensors import SensorInput
 from embodirun.robots.sensors.cameras import CameraFrame
-from embodirun.application import control_service as control_service_impl
 from embodirun.services.control.contracts import (
     ControlServiceConfig,
     TaskRequest,
@@ -133,9 +133,7 @@ def _config() -> ControlServiceConfig:
     )
 
 
-def test_service_shares_one_camera_and_snapshot_across_four_consumers(
-    monkeypatch, tmp_path
-) -> None:
+def test_service_shares_one_camera_and_snapshot_across_four_consumers(monkeypatch, tmp_path) -> None:
     events: list[object] = []
     cameras: list[_Camera] = []
     robots: list[_Robot] = []
@@ -273,9 +271,7 @@ def test_service_shares_one_camera_and_snapshot_across_four_consumers(
         recorder.stop(timeout_s=1.0)
 
         model_view = service.get_snapshot(model_id, include_robot=True)
-        assert model_view["frames"][0]["data"] == base64.b64encode(
-            b"shared-camera-bytes"
-        ).decode("ascii")
+        assert model_view["frames"][0]["data"] == base64.b64encode(b"shared-camera-bytes").decode("ascii")
         assert model_view["robot"]["values"] == model_observation.values
         record = recorder.get_record(first_id)
         assert record is not None

@@ -34,9 +34,7 @@ class NavigationCommand:
                 raise TypeError(f"navigation command {name} must be numeric")
             number = float(value)
             if not math.isfinite(number) or number < 0:
-                raise ValueError(
-                    f"navigation command {name} must be finite and non-negative"
-                )
+                raise ValueError(f"navigation command {name} must be finite and non-negative")
             object.__setattr__(self, name, number)
 
         if self.kind is NavigationCommandKind.MOVE_FORWARD:
@@ -75,9 +73,7 @@ class NavigationCommand:
             kind = NavigationCommandKind(command)
         except (TypeError, ValueError):
             available = ", ".join(item.value for item in NavigationCommandKind)
-            raise ValueError(
-                f"navigation action command must be one of: {available}"
-            ) from None
+            raise ValueError(f"navigation action command must be one of: {available}") from None
 
         allowed = {"command"}
         distance_m = 0.0

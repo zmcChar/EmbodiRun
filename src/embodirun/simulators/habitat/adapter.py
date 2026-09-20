@@ -15,8 +15,7 @@ class HabitatAdapter(NavigationSimulatorAdapter):
         self,
         config: HabitatConfig,
         *,
-        environment_factory: Callable[[HabitatConfig], NavigationEnvironment]
-        | None = None,
+        environment_factory: Callable[[HabitatConfig], NavigationEnvironment] | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         if not isinstance(config, HabitatConfig):

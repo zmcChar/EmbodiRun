@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -138,10 +139,8 @@ class LocalExecutor:
             os.chmod(temporary, mode)
             os.replace(temporary, target)
         finally:
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 os.unlink(temporary)
-            except FileNotFoundError:
-                pass
 
     def close(self) -> None:
         return None
@@ -150,9 +149,7 @@ class LocalExecutor:
 __all__ = ["LocalExecutor"]
 
 
-def _merge_request_headers(
-    target: dict[str, str], extra: Mapping[str, str] | None
-) -> None:
+def _merge_request_headers(target: dict[str, str], extra: Mapping[str, str] | None) -> None:
     if extra is None:
         return
     for name, value in extra.items():

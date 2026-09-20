@@ -13,15 +13,15 @@ marked ``unknown`` and is never replayed.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from enum import Enum
 import math
-from pathlib import Path
 import sqlite3
 import threading
 import time
 import uuid
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from .contracts import TaskRequest, TaskResult
@@ -238,11 +238,7 @@ class JobRegistry:
     ) -> None:
         if isinstance(max_jobs, bool) or not isinstance(max_jobs, int) or max_jobs <= 0:
             raise ValueError("max_jobs must be a positive integer")
-        if (
-            isinstance(max_events, bool)
-            or not isinstance(max_events, int)
-            or max_events <= 0
-        ):
+        if isinstance(max_events, bool) or not isinstance(max_events, int) or max_events <= 0:
             raise ValueError("max_events must be a positive integer")
         self._store = SQLiteJobStore(database_path)
         self.database_path = self._store.database_path
@@ -291,9 +287,7 @@ class JobRegistry:
             existing = self._fetch_row_locked(key)
             if existing is not None:
                 if existing["parameters_json"] != parameters_json:
-                    raise JobConflict(
-                        f"request_id {request_id!r} already has different parameters"
-                    )
+                    raise JobConflict(f"request_id {request_id!r} already has different parameters")
                 handle = JobHandle(self, key, existing["run_id"])
             else:
                 self._begin_locked()
@@ -304,9 +298,7 @@ class JobRegistry:
                     existing = self._fetch_row_locked(key)
                     if existing is not None:
                         if existing["parameters_json"] != parameters_json:
-                            raise JobConflict(
-                                f"request_id {request_id!r} already has different parameters"
-                            )
+                            raise JobConflict(f"request_id {request_id!r} already has different parameters")
                         run_id = existing["run_id"]
                     else:
                         count = self._store.count()
@@ -547,9 +539,7 @@ class JobRegistry:
                 try:
                     rows = self._store.rows_not_status(tuple(_TERMINAL))
                     for row in rows:
-                        key = JobKey(
-                            row["caller_id"], row["session_id"], row["request_id"]
-                        )
+                        key = JobKey(row["caller_id"], row["session_id"], row["request_id"])
                         events, truncated = self._append_event_locked(
                             row,
                             JobEvent("closed_unknown", self._clock()),
@@ -561,8 +551,7 @@ class JobRegistry:
                         )
                         inference = (
                             InferenceStatus.NOT_REQUESTED.value
-                            if row["inference_status"]
-                            == InferenceStatus.NOT_REQUESTED.value
+                            if row["inference_status"] == InferenceStatus.NOT_REQUESTED.value
                             else InferenceStatus.UNKNOWN.value
                         )
                         self._store.update(
@@ -624,8 +613,7 @@ class JobRegistry:
                         dispatch_status=DispatchStatus.CANCELLED.value,
                         inference_status=(
                             InferenceStatus.NOT_REQUESTED.value
-                            if row["inference_status"]
-                            == InferenceStatus.NOT_REQUESTED.value
+                            if row["inference_status"] == InferenceStatus.NOT_REQUESTED.value
                             else InferenceStatus.CANCELLED.value
                         ),
                         physical_status=physical,
@@ -653,8 +641,7 @@ class JobRegistry:
                     dispatch_status=DispatchStatus.RUNNING.value,
                     inference_status=(
                         InferenceStatus.RUNNING.value
-                        if row["inference_status"]
-                        != InferenceStatus.NOT_REQUESTED.value
+                        if row["inference_status"] != InferenceStatus.NOT_REQUESTED.value
                         else InferenceStatus.NOT_REQUESTED.value
                     ),
                     events_json=SQLiteJobStore.canonical_json(events),
@@ -685,17 +672,13 @@ class JobRegistry:
                 self._runtimes.pop(key, None)
                 return
             cancelled = runtime.cancel_event.is_set() or bool(row["cancel_requested"])
-            inference_not_requested = (
-                row["inference_status"] == InferenceStatus.NOT_REQUESTED.value
-            )
+            inference_not_requested = row["inference_status"] == InferenceStatus.NOT_REQUESTED.value
             now = self._clock()
             if cancelled:
                 status = JobStatus.CANCELLED.value
                 dispatch = DispatchStatus.CANCELLED.value
                 inference = (
-                    InferenceStatus.NOT_REQUESTED.value
-                    if inference_not_requested
-                    else InferenceStatus.CANCELLED.value
+                    InferenceStatus.NOT_REQUESTED.value if inference_not_requested else InferenceStatus.CANCELLED.value
                 )
                 physical = row["physical_status"]
                 if physical == PhysicalStatus.STOP_REQUESTED.value:
@@ -707,9 +690,7 @@ class JobRegistry:
                 status = JobStatus.FAILED.value
                 dispatch = DispatchStatus.FAILED.value
                 inference = (
-                    InferenceStatus.NOT_REQUESTED.value
-                    if inference_not_requested
-                    else InferenceStatus.FAILED.value
+                    InferenceStatus.NOT_REQUESTED.value if inference_not_requested else InferenceStatus.FAILED.value
                 )
                 physical = PhysicalStatus.UNKNOWN.value
                 error_text = self._error_text(callback_error)
@@ -719,18 +700,14 @@ class JobRegistry:
                 status = JobStatus.COMPLETED.value
                 dispatch = DispatchStatus.COMPLETED.value
                 inference = (
-                    InferenceStatus.NOT_REQUESTED.value
-                    if inference_not_requested
-                    else InferenceStatus.COMPLETED.value
+                    InferenceStatus.NOT_REQUESTED.value if inference_not_requested else InferenceStatus.COMPLETED.value
                 )
                 physical = self._physical_from_value(value)
                 error_text = None
                 event_name = "completed"
                 stored_result = SQLiteJobStore.encode_result(value)
                 self._results[key] = value
-            events, truncated = self._append_event_locked(
-                row, JobEvent(event_name, now)
-            )
+            events, truncated = self._append_event_locked(row, JobEvent(event_name, now))
             self._begin_locked()
             try:
                 self._store.update(
@@ -788,11 +765,7 @@ class JobRegistry:
                 JobStatus.CANCELLED.value,
             }:
                 return
-            physical = (
-                self._physical_from_cancel(value)
-                if error is None
-                else PhysicalStatus.STOP_UNCONFIRMED.value
-            )
+            physical = self._physical_from_cancel(value) if error is None else PhysicalStatus.STOP_UNCONFIRMED.value
             detail = self._error_text(error)
             events, truncated = self._append_event_locked(
                 row,
@@ -832,9 +805,7 @@ class JobRegistry:
                     JobEvent("recovered_unknown", self._clock()),
                 )
                 physical = (
-                    PhysicalStatus.STOP_UNCONFIRMED.value
-                    if row["cancel_requested"]
-                    else PhysicalStatus.UNKNOWN.value
+                    PhysicalStatus.STOP_UNCONFIRMED.value if row["cancel_requested"] else PhysicalStatus.UNKNOWN.value
                 )
                 inference = (
                     InferenceStatus.NOT_REQUESTED.value
@@ -862,9 +833,7 @@ class JobRegistry:
             return row
         owners = self._store.owners_for_request(key.request_id)
         if owners:
-            raise JobOwnershipError(
-                f"request_id {key.request_id!r} does not belong to this caller/session"
-            )
+            raise JobOwnershipError(f"request_id {key.request_id!r} does not belong to this caller/session")
         raise JobNotFound(f"job {key.request_id!r} was not found")
 
     def _record_locked(self, row: sqlite3.Row | None) -> JobRecord:
@@ -874,11 +843,7 @@ class JobRegistry:
         result_marker = object()
         value = self._results.get(key, result_marker)
         if value is result_marker:
-            value = (
-                None
-                if row["result_json"] is None
-                else SQLiteJobStore.decode_result(row["result_json"])
-            )
+            value = None if row["result_json"] is None else SQLiteJobStore.decode_result(row["result_json"])
         events_payload = SQLiteJobStore.decode_json(row["events_json"])
         events = tuple(
             JobEvent(
@@ -906,12 +871,8 @@ class JobRegistry:
             events_truncated=bool(row["events_truncated"]),
             created_at_s=float(row["created_at_s"]),
             updated_at_s=float(row["updated_at_s"]),
-            started_at_s=(
-                None if row["started_at_s"] is None else float(row["started_at_s"])
-            ),
-            finished_at_s=(
-                None if row["finished_at_s"] is None else float(row["finished_at_s"])
-            ),
+            started_at_s=(None if row["started_at_s"] is None else float(row["started_at_s"])),
+            finished_at_s=(None if row["finished_at_s"] is None else float(row["finished_at_s"])),
         )
 
     def _result_or_raise(self, record: JobRecord) -> Any:
@@ -958,9 +919,7 @@ class JobRegistry:
     def _physical_from_cancel(value: Any) -> str:
         if isinstance(value, Mapping):
             status = value.get("physical_status")
-            if isinstance(status, str) and status in {
-                item.value for item in PhysicalStatus
-            }:
+            if isinstance(status, str) and status in {item.value for item in PhysicalStatus}:
                 return status
             confirmed = value.get("stop_confirmed")
             if confirmed is True:
@@ -977,9 +936,7 @@ class JobRegistry:
     def _physical_from_value(value: Any) -> str:
         if isinstance(value, Mapping):
             status = value.get("physical_status")
-            if isinstance(status, str) and status in {
-                item.value for item in PhysicalStatus
-            }:
+            if isinstance(status, str) and status in {item.value for item in PhysicalStatus}:
                 return status
         return PhysicalStatus.UNKNOWN.value
 
@@ -1013,12 +970,7 @@ class JobRegistry:
     def _validate_timeout(value: float | None) -> None:
         if value is None:
             return
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(value)
-            or value < 0
-        ):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
             raise ValueError("timeout_s must be finite and non-negative")
 
     def _require_open_locked(self) -> None:

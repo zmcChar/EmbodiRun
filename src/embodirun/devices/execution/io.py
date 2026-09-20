@@ -17,13 +17,14 @@ that path through :class:`RobotAdapterCommandPort`).
 
 from __future__ import annotations
 
-from collections import deque
-from dataclasses import dataclass, replace
-from enum import Enum
 import math
 import threading
 import time
-from typing import Any, Callable, Deque, Mapping
+from collections import deque
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, replace
+from enum import Enum
+from typing import Any
 
 
 class IOStatus(str, Enum):
@@ -132,7 +133,7 @@ class RobotIOScheduler:
         self.allow_preemptive_stop = allow_preemptive_stop
         self._monotonic = monotonic
         self._condition = threading.Condition()
-        self._queue: Deque[_Request] = deque()
+        self._queue: deque[_Request] = deque()
         self._queued_reads = 0
         self._active: _Request | None = None
         self._queued_stop: _Request | None = None
@@ -179,11 +180,7 @@ class RobotIOScheduler:
         """
 
         with self._condition:
-            if (
-                not stop_confirmed
-                or self._active is not None
-                or self._preemptive_active
-            ):
+            if not stop_confirmed or self._active is not None or self._preemptive_active:
                 return False
             if not self._quarantined:
                 return True
@@ -252,13 +249,9 @@ class RobotIOScheduler:
     ) -> IOResult:
         """Request a hold/stop, ahead of queued reads and actions."""
 
-        use_preemptive = (
-            self.allow_preemptive_stop if preemptive is None else preemptive
-        )
+        use_preemptive = self.allow_preemptive_stop if preemptive is None else preemptive
         if use_preemptive:
-            return self._preemptive_stop(
-                callback, requested=requested, timeout_s=timeout_s
-            )
+            return self._preemptive_stop(callback, requested=requested, timeout_s=timeout_s)
         return self._submit(
             "stop",
             callback,
@@ -283,9 +276,7 @@ class RobotIOScheduler:
         if not callable(callback):
             raise TypeError("callback must be callable")
         self._validate_timeout(timeout_s, "timeout_s")
-        if deadline_s is not None and (
-            not isinstance(deadline_s, (int, float)) or not math.isfinite(deadline_s)
-        ):
+        if deadline_s is not None and (not isinstance(deadline_s, (int, float)) or not math.isfinite(deadline_s)):
             raise ValueError("deadline_s must be finite")
 
         now = self._monotonic()
@@ -304,9 +295,7 @@ class RobotIOScheduler:
         )
         with self._condition:
             if self._closed:
-                return self._immediate(
-                    operation, IOStatus.REJECTED, requested=requested
-                )
+                return self._immediate(operation, IOStatus.REJECTED, requested=requested)
             if operation != "stop" and self._preemptive_active:
                 return self._immediate(
                     operation,
@@ -322,23 +311,16 @@ class RobotIOScheduler:
                     quarantined=True,
                 )
             if operation == "read" and self._queued_reads >= self.max_pending_reads:
-                return self._immediate(
-                    operation, IOStatus.REJECTED, requested=requested
-                )
+                return self._immediate(operation, IOStatus.REJECTED, requested=requested)
             if operation == "stop" and (
-                self._queued_stop is not None
-                or (self._active is not None and self._active.operation == "stop")
+                self._queued_stop is not None or (self._active is not None and self._active.operation == "stop")
             ):
                 # One pending stop is enough to preserve priority.  Repeated
                 # callers receive a bounded answer instead of growing a stop
                 # queue while the old SDK call is blocked.
-                return self._immediate(
-                    operation, IOStatus.REJECTED, requested=requested
-                )
+                return self._immediate(operation, IOStatus.REJECTED, requested=requested)
             if operation != "stop" and len(self._queue) >= self.max_pending_operations:
-                return self._immediate(
-                    operation, IOStatus.REJECTED, requested=requested
-                )
+                return self._immediate(operation, IOStatus.REJECTED, requested=requested)
             if operation == "read":
                 self._queued_reads += 1
             if operation == "stop":
@@ -366,9 +348,7 @@ class RobotIOScheduler:
                     self._queue.remove(request)
                     if operation == "read":
                         self._queued_reads -= 1
-                status = (
-                    IOStatus.CANCELLED if cancel_event is not None else IOStatus.UNKNOWN
-                )
+                status = IOStatus.CANCELLED if cancel_event is not None else IOStatus.UNKNOWN
                 return self._immediate(operation, status, requested=requested)
             if request.started and operation != "stop":
                 # An in-flight motion or read may have reached the driver,
@@ -408,17 +388,11 @@ class RobotIOScheduler:
         with self._stop_lock:
             with self._condition:
                 if self._closed:
-                    return self._immediate(
-                        "stop", IOStatus.REJECTED, requested=requested
-                    )
+                    return self._immediate("stop", IOStatus.REJECTED, requested=requested)
                 if self._preemptive_active:
-                    return self._immediate(
-                        "stop", IOStatus.REJECTED, requested=requested
-                    )
+                    return self._immediate("stop", IOStatus.REJECTED, requested=requested)
                 if self._queued_stop is not None:
-                    return self._immediate(
-                        "stop", IOStatus.REJECTED, requested=requested
-                    )
+                    return self._immediate("stop", IOStatus.REJECTED, requested=requested)
                 self._preemptive_active = True
 
             done = threading.Event()
@@ -534,11 +508,7 @@ class RobotIOScheduler:
                         driver_returned=True,
                         driver_value=value,
                         feedback=value,
-                        stop_confirmed=(
-                            self._stop_confirmation(value)
-                            if request.operation == "stop"
-                            else None
-                        ),
+                        stop_confirmed=(self._stop_confirmation(value) if request.operation == "stop" else None),
                         elapsed_s=self._monotonic() - started,
                     )
 
@@ -546,10 +516,7 @@ class RobotIOScheduler:
                 self._active = None
                 if request.operation == "stop":
                     with_quarantine = self._quarantined
-                    if (
-                        result.status is IOStatus.FAILED
-                        or result.stop_confirmed is False
-                    ):
+                    if result.status is IOStatus.FAILED or result.stop_confirmed is False:
                         self._quarantined = True
                     result = replace(
                         result,
@@ -593,7 +560,7 @@ class RobotIOScheduler:
     def _drop_queued_motion_locked(self) -> None:
         """Drop queued reads/actions after a stop wait becomes uncertain."""
 
-        retained: Deque[_Request] = deque()
+        retained: deque[_Request] = deque()
         while self._queue:
             request = self._queue.popleft()
             if request.operation == "stop":
@@ -624,9 +591,7 @@ class RobotIOScheduler:
         with self._condition:
             if self._closed:
                 active = self._active
-                drained = (
-                    active is None and not self._queue and not self._preemptive_active
-                )
+                drained = active is None and not self._queue and not self._preemptive_active
                 return IOResult(
                     operation="close",
                     status=IOStatus.COMPLETED if drained else IOStatus.UNKNOWN,
@@ -634,7 +599,7 @@ class RobotIOScheduler:
                     quarantined=not drained or self._quarantined,
                 )
             self._closed = True
-            retained: Deque[_Request] = deque()
+            retained: deque[_Request] = deque()
             while self._queue:
                 request = self._queue.popleft()
                 if request.operation == "stop":

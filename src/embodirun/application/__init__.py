@@ -7,7 +7,7 @@ transport listener at import time. The heavier coordinator is lazy-imported to
 keep contract imports cycle-free.
 """
 
-from .auth import AuthPolicy, AuthenticationError, AuthorizationError, Role
+from .auth import AuthenticationError, AuthorizationError, AuthPolicy, Role
 from .contracts import (
     ControlContractError,
     ControlRuntimeProfile,

@@ -27,10 +27,7 @@ class CameraViewer:
             (
                 sys.executable,
                 "-c",
-                (
-                    "from embodirun.simulators.viewer import main; "
-                    "raise SystemExit(main())"
-                ),
+                ("from embodirun.simulators.viewer import main; raise SystemExit(main())"),
                 "--window",
                 self.window_name,
             ),
@@ -39,15 +36,9 @@ class CameraViewer:
         )
         if self._process.stdout is None or self._process.stdin is None:
             self.close()
-            raise RuntimeError(
-                "simulator viewer could not create its communication pipes"
-            )
+            raise RuntimeError("simulator viewer could not create its communication pipes")
         ready, _, _ = select.select((self._process.stdout,), (), (), _START_TIMEOUT_S)
-        message = (
-            self._process.stdout.readline().decode("utf-8", errors="replace")
-            if ready
-            else ""
-        )
+        message = self._process.stdout.readline().decode("utf-8", errors="replace") if ready else ""
         if message.strip() != "READY":
             self.close()
             detail = message.strip() or "the GUI process did not respond"
@@ -89,9 +80,7 @@ def _encode_frames(frames: Mapping[str, Any]) -> bytes:
     for name, value in frames.items():
         image = np.asarray(value, dtype=np.uint8)
         if image.ndim != 3 or image.shape[-1] != 3:
-            raise ValueError(
-                f"simulator viewer frame {name!r} must be an HWC RGB image"
-            )
+            raise ValueError(f"simulator viewer frame {name!r} must be an HWC RGB image")
         images.append(image)
     if not images:
         raise ValueError("simulator viewer requires at least one camera frame")
@@ -121,9 +110,7 @@ def _encode_frames(frames: Mapping[str, Any]) -> bytes:
     return result
 
 
-def _read_frames(
-    stream: BinaryIO, frames: Queue[bytes | None], stopped: threading.Event
-) -> None:
+def _read_frames(stream: BinaryIO, frames: Queue[bytes | None], stopped: threading.Event) -> None:
     try:
         while True:
             header = _read_exact(stream, 4, stopped)

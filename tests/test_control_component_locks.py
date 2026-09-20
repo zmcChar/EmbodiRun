@@ -65,9 +65,7 @@ def _config(resources):
     )
 
 
-def test_public_control_service_reserves_pair_before_single_alias(
-    monkeypatch, tmp_path: Path
-):
+def test_public_control_service_reserves_pair_before_single_alias(monkeypatch, tmp_path: Path):
     primary = "node:robot:pair|ports=/dev/left|/dev/right"
     resources = (
         {
@@ -104,9 +102,7 @@ def test_public_control_service_reserves_pair_before_single_alias(
     try:
         payload = service.observe(include_robot=True)
         assert payload["robot"]["values"] == {"state": 1}
-        alias_manager = DeviceManager(
-            "node", owner_id="single", lock_dir=tmp_path / "locks"
-        )
+        alias_manager = DeviceManager("node", owner_id="single", lock_dir=tmp_path / "locks")
         with pytest.raises(DeviceBusyError):
             alias_manager.acquire(
                 DeviceResource(

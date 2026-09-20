@@ -21,8 +21,8 @@ from embodirun.deployment.config import config_digest
 from embodirun.deployment.control import ControlClientError, HostControlClient
 from embodirun.deployment.plan import RuntimeSpec
 from embodirun.deployment.state import StateError, StateStore
-from ..context import CommandContext
 
+from ..context import CommandContext
 
 EXIT_OK = 0
 EXIT_USAGE = 2
@@ -103,28 +103,20 @@ def register(commands: Any) -> None:
         parser.add_argument("--request-id", required=True)
         parser.set_defaults(command_handler=handler)
 
-    recording_status = commands.add_parser(
-        "recording-status", help="query recorder state without changing it"
-    )
+    recording_status = commands.add_parser("recording-status", help="query recorder state without changing it")
     _common(recording_status)
     recording_status.set_defaults(command_handler=recording_status_command)
 
-    recording_start = commands.add_parser(
-        "recording-start", help="start service-owned observation recording"
-    )
+    recording_start = commands.add_parser("recording-start", help="start service-owned observation recording")
     _common(recording_start)
     recording_start.set_defaults(command_handler=recording_start_command)
 
-    recording_stop = commands.add_parser(
-        "recording-stop", help="stop service-owned observation recording"
-    )
+    recording_stop = commands.add_parser("recording-stop", help="stop service-owned observation recording")
     _common(recording_stop)
     recording_stop.add_argument("--recording-timeout", type=_nonnegative_number)
     recording_stop.set_defaults(command_handler=recording_stop_command)
 
-    recording_get = commands.add_parser(
-        "recording-get", help="read one recorded observation by ID"
-    )
+    recording_get = commands.add_parser("recording-get", help="read one recorded observation by ID")
     _common(recording_get)
     recording_get.add_argument("--observation-id", required=True)
     recording_get.set_defaults(command_handler=recording_get_command)
@@ -361,22 +353,17 @@ def _resolve_runtime(context: CommandContext, runtime_id: str) -> RuntimeSpec:
     )
     if runtime is None:
         available = ", ".join(item.runtime_id for item in context.deployment.runtimes)
-        raise ControlCommandError(
-            f"unknown runtime {runtime_id!r}; available runtimes: {available or 'none'}"
-        )
+        raise ControlCommandError(f"unknown runtime {runtime_id!r}; available runtimes: {available or 'none'}")
     if runtime.target_kind != "robot":
         raise ControlCommandError(
-            f"runtime {runtime.runtime_id!r} is a simulator; Control robot commands "
-            "require a robot runtime"
+            f"runtime {runtime.runtime_id!r} is a simulator; Control robot commands require a robot runtime"
         )
     try:
         state = StateStore(context.state_path).load()
     except (OSError, StateError, ValueError) as error:
         raise ControlCommandError(f"cannot read initialized deployment state: {error}") from error
     if state is None:
-        raise ControlCommandError(
-            "deployment is not initialized; run `rlinf-deploy ... init`"
-        )
+        raise ControlCommandError("deployment is not initialized; run `rlinf-deploy ... init`")
     try:
         digest = config_digest(context.config)
     except (OSError, ValueError) as error:
@@ -387,18 +374,12 @@ def _resolve_runtime(context: CommandContext, runtime_id: str) -> RuntimeSpec:
         raise ControlCommandError("Deploy revision changed since init; run init again")
     environment = state.environments.get(runtime.environment_id)
     if environment is None or environment.status != "ready":
-        raise ControlCommandError(
-            f"environment {runtime.environment_id!r} is not ready; run init again"
-        )
+        raise ControlCommandError(f"environment {runtime.environment_id!r} is not ready; run init again")
     service = state.services.get(runtime.service_id)
     if service is None or service.status != "running":
-        raise ControlCommandError(
-            f"control service {runtime.service_id!r} is not running; run `rlinf-deploy ... up`"
-        )
+        raise ControlCommandError(f"control service {runtime.service_id!r} is not running; run `rlinf-deploy ... up`")
     if service.node != runtime.node or service.endpoint != runtime.service_endpoint:
-        raise ControlCommandError(
-            f"runtime service {runtime.service_id!r} does not match the configured runtime"
-        )
+        raise ControlCommandError(f"runtime service {runtime.service_id!r} does not match the configured runtime")
     if runtime.node not in state.nodes:
         raise ControlCommandError(f"initialized state is missing node {runtime.node!r}")
     return runtime

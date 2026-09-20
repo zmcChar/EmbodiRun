@@ -78,9 +78,7 @@ class TeleopLocalization:
     def __post_init__(self) -> None:
         if not isinstance(self.pose, Pose2D):
             raise TypeError("localization.pose must be a Pose2D")
-        if isinstance(self.observed_at_s, bool) or not isinstance(
-            self.observed_at_s, (int, float)
-        ):
+        if isinstance(self.observed_at_s, bool) or not isinstance(self.observed_at_s, (int, float)):
             raise TypeError("localization.observed_at_s must be a finite number")
         if not math.isfinite(float(self.observed_at_s)):
             raise ValueError("localization.observed_at_s must be finite")
@@ -107,9 +105,7 @@ def _observation_state(observation: Any) -> Mapping[str, Any]:
             raise XLeRobotTeleopError("XLeRobot read returned an empty tuple")
         observation = observation[0]
     if not isinstance(observation, Mapping):
-        raise XLeRobotTeleopError(
-            "XLeRobot read must return a mapping or (mapping, images)"
-        )
+        raise XLeRobotTeleopError("XLeRobot read must return a mapping or (mapping, images)")
     state = observation.get("state", observation)
     if not isinstance(state, Mapping):
         raise XLeRobotTeleopError("XLeRobot observation state must be a mapping")
@@ -118,11 +114,7 @@ def _observation_state(observation: Any) -> Mapping[str, Any]:
 
 def _number(state: Mapping[str, Any], name: str) -> float:
     value = state.get(name)
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(float(value))
-    ):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
         raise XLeRobotTeleopError(f"XLeRobot observation {name!r} must be finite")
     return float(value)
 
@@ -192,19 +184,11 @@ class XLeRobotTeleopBackend(XLeRobotBackend):
         state = _observation_state(raw)
         localization = self.localize(raw[0] if isinstance(raw, tuple) else raw)
         if not isinstance(localization, TeleopLocalization):
-            raise LocalizationUnavailable(
-                "localization provider must return TeleopLocalization"
-            )
+            raise LocalizationUnavailable("localization provider must return TeleopLocalization")
         now = float(self._clock())
         age = now - float(localization.observed_at_s)
-        if (
-            not math.isfinite(age)
-            or age < -self.localization_timeout_s
-            or age > self.localization_timeout_s
-        ):
-            raise LocalizationStale(
-                f"localization sample age {age:.3f}s exceeds {self.localization_timeout_s:.3f}s"
-            )
+        if not math.isfinite(age) or age < -self.localization_timeout_s or age > self.localization_timeout_s:
+            raise LocalizationStale(f"localization sample age {age:.3f}s exceeds {self.localization_timeout_s:.3f}s")
         velocity = BodyVelocity(
             _number(state, "x.vel"),
             0.0,
@@ -212,17 +196,12 @@ class XLeRobotTeleopBackend(XLeRobotBackend):
         )
         final_state = dict(localization.final_state)
         raw_observation = raw[0] if isinstance(raw, tuple) else raw
-        if (
-            isinstance(raw_observation, Mapping)
-            and "state_timestamp_ns" in raw_observation
-        ):
+        if isinstance(raw_observation, Mapping) and "state_timestamp_ns" in raw_observation:
             # This source timestamp belongs to the wheel/state response.  It
             # is retained separately from the localization timestamp and is
             # never used as pose evidence or relabelled into the monotonic
             # timestamp domain required by the controller.
-            final_state["velocity_source_timestamp_ns"] = raw_observation[
-                "state_timestamp_ns"
-            ]
+            final_state["velocity_source_timestamp_ns"] = raw_observation["state_timestamp_ns"]
         final_state["velocity_feedback_received_at_s"] = now
         return Feedback(
             pose=localization.pose,
@@ -239,17 +218,11 @@ class XLeRobotTeleopBackend(XLeRobotBackend):
         if not isinstance(velocity, BodyVelocity):
             raise TypeError("velocity must be a BodyVelocity")
         if abs(float(velocity.vy)) > self.lateral_tolerance_m_s:
-            raise XLeRobotTeleopCommandError(
-                "the inspected two-wheel XLeRobot API has no lateral velocity command"
-            )
+            raise XLeRobotTeleopCommandError("the inspected two-wheel XLeRobot API has no lateral velocity command")
         if abs(float(velocity.vx)) > self.max_linear_velocity_m_s:
-            raise XLeRobotTeleopCommandError(
-                "x.vel exceeds the configured linear bound"
-            )
+            raise XLeRobotTeleopCommandError("x.vel exceeds the configured linear bound")
         if abs(float(velocity.omega)) > self.max_angular_velocity_rad_s:
-            raise XLeRobotTeleopCommandError(
-                "theta.vel exceeds the configured angular bound"
-            )
+            raise XLeRobotTeleopCommandError("theta.vel exceeds the configured angular bound")
         action = {
             "x.vel": float(velocity.vx),
             "theta.vel": math.degrees(float(velocity.omega)),
@@ -263,9 +236,7 @@ class XLeRobotTeleopBackend(XLeRobotBackend):
                 raise command_error from stop_error
             raise
         if not isinstance(result, Mapping):
-            error = XLeRobotTeleopCommandError(
-                "XLeRobot command returned no acceptance record"
-            )
+            error = XLeRobotTeleopCommandError("XLeRobot command returned no acceptance record")
             try:
                 self.stop(reason="command-unknown")
             except Exception as stop_error:
@@ -279,14 +250,8 @@ class XLeRobotTeleopBackend(XLeRobotBackend):
             and not errors
         )
         if not accepted:
-            detail = (
-                "; ".join(str(item) for item in errors)
-                if isinstance(errors, (list, tuple))
-                else str(errors)
-            )
-            error = XLeRobotTeleopCommandError(
-                "XLeRobot command was not accepted" + (f": {detail}" if detail else "")
-            )
+            detail = "; ".join(str(item) for item in errors) if isinstance(errors, (list, tuple)) else str(errors)
+            error = XLeRobotTeleopCommandError("XLeRobot command was not accepted" + (f": {detail}" if detail else ""))
             try:
                 self.stop(reason="command-rejected")
             except Exception as stop_error:
@@ -323,14 +288,8 @@ class XLeRobotTeleopBackend(XLeRobotBackend):
             and self.last_stop_report.get("physical_outcome") == "stopped"
         ):
             errors = self.last_stop_report.get("errors", ())
-            detail = (
-                "; ".join(str(item) for item in errors)
-                if isinstance(errors, (list, tuple))
-                else str(errors)
-            )
-            raise XLeRobotStopUnconfirmed(
-                "XLeRobot stop was not confirmed" + (f": {detail}" if detail else "")
-            )
+            detail = "; ".join(str(item) for item in errors) if isinstance(errors, (list, tuple)) else str(errors)
+            raise XLeRobotStopUnconfirmed("XLeRobot stop was not confirmed" + (f": {detail}" if detail else ""))
         return self.last_stop_report
 
     def close(self) -> None:
@@ -392,33 +351,18 @@ class XLeRobotTeleopLocalSegmentBackend:
         if not isinstance(raw_observation, Mapping):
             raise XLeRobotTeleopError("XLeRobot observation must be a mapping")
         if raw_observation.get("state_cached") is not False:
-            raise XLeRobotFeedbackCached(
-                "wheel feedback freshness is unknown or cached; require state_cached=False"
-            )
-        if (
-            raw_observation.get("armed") is not True
-            or raw_observation.get("control_owned") is not True
-        ):
-            raise LocalSegmentLeaseLost(
-                "robot no longer reports an active armed control lease"
-            )
+            raise XLeRobotFeedbackCached("wheel feedback freshness is unknown or cached; require state_cached=False")
+        if raw_observation.get("armed") is not True or raw_observation.get("control_owned") is not True:
+            raise LocalSegmentLeaseLost("robot no longer reports an active armed control lease")
         timestamp = raw_observation.get("state_timestamp_ns")
-        if (
-            isinstance(timestamp, bool)
-            or not isinstance(timestamp, int)
-            or timestamp <= 0
-        ):
-            raise XLeRobotTeleopError(
-                "wheel feedback requires a positive state_timestamp_ns"
-            )
+        if isinstance(timestamp, bool) or not isinstance(timestamp, int) or timestamp <= 0:
+            raise XLeRobotTeleopError("wheel feedback requires a positive state_timestamp_ns")
         errors = raw_observation.get("errors")
         if errors:
             raise XLeRobotTeleopError(f"wheel feedback reports errors: {errors!r}")
         collision = raw_observation.get("collision")
         if collision is not None and not isinstance(collision, bool):
-            raise XLeRobotTeleopError(
-                "collision feedback must be boolean when supplied"
-            )
+            raise XLeRobotTeleopError("collision feedback must be boolean when supplied")
         now = float(self._clock())
         final_state = {
             "state_timestamp_ns": timestamp,
@@ -467,24 +411,18 @@ class XLeRobotTeleopLocalSegmentBackend:
                 or (name == "timeout_s" and float(value) <= 0.0)
                 or (name == "poll_s" and float(value) <= 0.0)
             ):
-                raise ValueError(
-                    f"{name} must be finite and non-negative (positive for timeouts/poll)"
-                )
+                raise ValueError(f"{name} must be finite and non-negative (positive for timeouts/poll)")
         self._command_boundary.set_body_velocity(BodyVelocity.zero())
         deadline = time.monotonic() + float(timeout_s)
         last_feedback: LocalSegmentFeedback | None = None
         while True:
             last_feedback = self.fresh_feedback(timeout_s=timeout_s, poll_s=poll_s)
-            if abs(float(last_feedback.velocity.vx)) <= float(
-                linear_tolerance_m_s
-            ) and abs(float(last_feedback.velocity.omega)) <= float(
-                angular_tolerance_rad_s
-            ):
+            if abs(float(last_feedback.velocity.vx)) <= float(linear_tolerance_m_s) and abs(
+                float(last_feedback.velocity.omega)
+            ) <= float(angular_tolerance_rad_s):
                 return last_feedback
             if time.monotonic() >= deadline:
-                raise XLeRobotTeleopError(
-                    "zero command did not receive fresh measured stationary feedback"
-                )
+                raise XLeRobotTeleopError("zero command did not receive fresh measured stationary feedback")
             time.sleep(float(poll_s))
 
     def fresh_feedback(

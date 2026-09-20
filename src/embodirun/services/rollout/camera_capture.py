@@ -16,7 +16,7 @@ import re
 import signal
 import threading
 import time
-from contextlib import nullcontext
+from contextlib import nullcontext, suppress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -32,9 +32,7 @@ def video_device(path: str) -> str:
     return str(resolved)
 
 
-def observation_packet(
-    frames, *, index, state, instruction, started, finished, binary=False
-):
+def observation_packet(frames, *, index, state, instruction, started, finished, binary=False):
     """Keep each response self-contained to avoid mixed camera generations."""
     return {
         "schema": "embodirun.camera-only.v1",
@@ -58,11 +56,7 @@ def observation_packet(
                     if frame.mime_type == "application/x-embodirun-raw-image"
                     else {}
                 ),
-                **(
-                    {"data": frame.data}
-                    if binary
-                    else {"base64": base64.b64encode(frame.data).decode("ascii")}
-                ),
+                **({"data": frame.data} if binary else {"base64": base64.b64encode(frame.data).decode("ascii")}),
                 "sha256": hashlib.sha256(frame.data).hexdigest(),
             }
             for frame in frames
@@ -117,9 +111,7 @@ def make_handler(store, allowed_hosts):
                         name: (
                             {
                                 **{k: v for k, v in frame.items() if k != "data"},
-                                "base64": base64.b64encode(frame["data"]).decode(
-                                    "ascii"
-                                ),
+                                "base64": base64.b64encode(frame["data"]).decode("ascii"),
                             }
                             if "data" in frame
                             else frame
@@ -133,10 +125,8 @@ def make_handler(store, allowed_hosts):
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
-            try:
+            with suppress(BrokenPipeError, ConnectionResetError):
                 self.wfile.write(body)
-            except (BrokenPipeError, ConnectionResetError):
-                pass
 
         def log_message(self, *_args):
             pass
@@ -162,9 +152,7 @@ def run(args):
         raise ValueError("capture-side output resizing requires a GStreamer backend")
     output_width = args.width if output_width is None else output_width
     output_height = args.height if output_height is None else output_height
-    if any(
-        type(n) is not int or not 0 < n <= 16384 for n in (output_width, output_height)
-    ):
+    if any(type(n) is not int or not 0 < n <= 16384 for n in (output_width, output_height)):
         raise ValueError("output dimensions must be integers in 1..16384")
     args.output.mkdir(parents=True, exist_ok=False)
     store = ObservationStore()
@@ -186,9 +174,7 @@ def run(args):
         signal.signal(signum, lambda *_: stopped.set())
     server = None
     try:
-        server = ThreadingHTTPServer(
-            (args.bind, args.port), make_handler(store, set(args.allow_host))
-        )
+        server = ThreadingHTTPServer((args.bind, args.port), make_handler(store, set(args.allow_host)))
         server.daemon_threads = True
         serving = threading.Thread(target=server.serve_forever, daemon=True)
         serving.start()
@@ -318,11 +304,7 @@ def run(args):
                     row = {k: v for k, v in packet.items() if k != "images"}
                     row.update(images=paths, source="live-camera-recording")
                     row["image_metadata"] = {
-                        name: {
-                            k: v
-                            for k, v in image.items()
-                            if k not in {"data", "base64"}
-                        }
+                        name: {k: v for k, v in image.items() if k not in {"data", "base64"}}
                         for name, image in packet["images"].items()
                     }
                     manifest.write(json.dumps(row, allow_nan=False) + "\n")
@@ -363,15 +345,10 @@ def run(args):
                                 "process_cpu_during_capture_s": after_cpu - before_cpu,
                                 "packet_hash_encode_s": packet_finished - after,
                                 "record_io_s": record_finished - packet_finished,
-                                "shm_publish_s": published - publish_started
-                                if shared is not None
-                                else None,
+                                "shm_publish_s": published - publish_started if shared is not None else None,
                                 "work_before_stage_log_s": published - before,
-                                "process_cpu_before_stage_log_s": time.process_time()
-                                - before_cpu,
-                                "image_payload_bytes": sum(
-                                    len(frame.data) for frame in captured
-                                ),
+                                "process_cpu_before_stage_log_s": time.process_time() - before_cpu,
+                                "image_payload_bytes": sum(len(frame.data) for frame in captured),
                                 "recorded": should_record,
                                 "acquisition": acquisition,
                             },
@@ -403,16 +380,12 @@ def run(args):
         server.shutdown()
         server.server_close()
         serving.join(timeout=2)
-        (args.output / "final.json").write_text(
-            json.dumps(store.status, indent=2) + "\n"
-        )
+        (args.output / "final.json").write_text(json.dumps(store.status, indent=2) + "\n")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--camera", action="append", nargs=2, metavar=("NAME", "DEVICE"), required=True
-    )
+    parser.add_argument("--camera", action="append", nargs=2, metavar=("NAME", "DEVICE"), required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--shm-path",
@@ -452,9 +425,7 @@ def main():
     parser.add_argument("--instruction", default="pick up the object")
     args = parser.parse_args()
     names = [name for name, _ in args.camera]
-    if len(set(names)) != len(names) or any(
-        not re.fullmatch(r"[a-z][a-z0-9_]*", n) for n in names
-    ):
+    if len(set(names)) != len(names) or any(not re.fullmatch(r"[a-z][a-z0-9_]*", n) for n in names):
         parser.error("camera names must be unique lowercase identifiers")
     if any(
         not math.isfinite(x) or x <= 0

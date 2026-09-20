@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import http.client
 import json
 import logging
@@ -42,8 +43,7 @@ class SshExecutor:
             import paramiko
         except ImportError as error:  # pragma: no cover - depends on installed group
             raise RuntimeError(
-                "SSH execution requires the host environment; run "
-                "`uv sync --frozen --no-dev --group host`"
+                "SSH execution requires the host environment; run `uv sync --frozen --no-dev --group host`"
             ) from error
 
         client = paramiko.SSHClient()
@@ -64,16 +64,12 @@ class SshExecutor:
         if self._password is not None:
             kwargs["password"] = self._password
         if self.connection.identity_file is not None:
-            kwargs["key_filename"] = os.fspath(
-                Path(self.connection.identity_file).expanduser()
-            )
+            kwargs["key_filename"] = os.fspath(Path(self.connection.identity_file).expanduser())
         proxy = None
         try:
             if self.connection.proxy_command is not None:
                 command = shlex.join(
-                    part.replace("%h", self.connection.host).replace(
-                        "%p", str(self.connection.port)
-                    )
+                    part.replace("%h", self.connection.host).replace("%p", str(self.connection.port))
                     for part in shlex.split(self.connection.proxy_command)
                 )
                 proxy = paramiko.ProxyCommand(command)
@@ -233,10 +229,8 @@ class SshExecutor:
             raise RuntimeError(f"SFTP symlink replacement failed: {detail}") from None
         finally:
             if sftp is not None:
-                try:
+                with contextlib.suppress(OSError):
                     sftp.remove(temporary)
-                except OSError:
-                    pass
                 sftp.close()
 
     def write_bytes(
@@ -265,10 +259,8 @@ class SshExecutor:
             raise RuntimeError(f"SFTP file upload failed: {detail}") from None
         finally:
             if sftp is not None:
-                try:
+                with contextlib.suppress(OSError):
                     sftp.remove(temporary)
-                except OSError:
-                    pass
                 sftp.close()
 
     def close(self) -> None:
@@ -282,10 +274,7 @@ def render_posix(command: Command) -> str:
 
     invocation = shlex.join(command.argv)
     if command.environment:
-        assignments = " ".join(
-            f"{name}={shlex.quote(value)}"
-            for name, value in sorted(command.environment.items())
-        )
+        assignments = " ".join(f"{name}={shlex.quote(value)}" for name, value in sorted(command.environment.items()))
         invocation = f"env {assignments} {invocation}"
     if command.cwd is not None:
         invocation = f"cd {shlex.quote(command.cwd)} && {invocation}"
@@ -297,9 +286,7 @@ def _password_from_environment(connection: ConnectionConfig) -> str | None:
         return None
     password = os.environ.get(connection.password_env)
     if password is None:
-        raise RuntimeError(
-            f"SSH password environment variable {connection.password_env!r} is not set"
-        )
+        raise RuntimeError(f"SSH password environment variable {connection.password_env!r} is not set")
     return password
 
 
@@ -328,9 +315,7 @@ def _request_body(payload: Mapping[str, Any] | None) -> bytes | None:
         raise ValueError("HTTP request payload is not valid JSON") from error
 
 
-def _merge_request_headers(
-    target: dict[str, str], extra: Mapping[str, str] | None
-) -> None:
+def _merge_request_headers(target: dict[str, str], extra: Mapping[str, str] | None) -> None:
     if extra is None:
         return
     for name, value in extra.items():

@@ -5,12 +5,11 @@ from __future__ import annotations
 import ast
 import importlib
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
-
 
 _ROOT = Path(__file__).parents[1]
 _LAYOUT = (
@@ -78,9 +77,7 @@ _LAYOUT = (
 
 
 @pytest.mark.parametrize("legacy_name, canonical_name, symbol", _LAYOUT)
-def test_legacy_imports_resolve_to_one_canonical_module(
-    legacy_name: str, canonical_name: str, symbol: str
-) -> None:
+def test_legacy_imports_resolve_to_one_canonical_module(legacy_name: str, canonical_name: str, symbol: str) -> None:
     legacy = importlib.import_module(legacy_name)
     canonical = importlib.import_module(canonical_name)
     assert legacy is canonical
@@ -106,9 +103,7 @@ def test_device_domain_has_no_upward_service_dependencies() -> None:
             elif isinstance(node, ast.ImportFrom) and node.module:
                 imported.add(node.module)
         assert not any(
-            name in forbidden or name.startswith(f"{prefix}.")
-            for name in imported
-            for prefix in forbidden
+            name in forbidden or name.startswith(f"{prefix}.") for name in imported for prefix in forbidden
         ), path
 
 
@@ -128,9 +123,7 @@ for first, second in orders:
 """
     environment = os.environ.copy()
     source_root = str(_ROOT / "src")
-    environment["PYTHONPATH"] = os.pathsep.join(
-        item for item in (source_root, environment.get("PYTHONPATH")) if item
-    )
+    environment["PYTHONPATH"] = os.pathsep.join(item for item in (source_root, environment.get("PYTHONPATH")) if item)
     result = subprocess.run(
         [sys.executable, "-c", code],
         cwd=_ROOT,

@@ -10,11 +10,7 @@ from .http import SglangHttpClient, SglangHttpError, sglang_server_command
 
 def prepare_sglang_environment() -> None:
     """Find the pip CUDA toolkit unless the service already selected a toolkit."""
-    if (
-        os.environ.get("CUDA_HOME")
-        or os.environ.get("CUDA_PATH")
-        or shutil.which("nvcc")
-    ):
+    if os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH") or shutil.which("nvcc"):
         return
     toolkit = Path(sysconfig.get_path("purelib")) / "nvidia" / "cu13"
     if (toolkit / "bin" / "nvcc").is_file():

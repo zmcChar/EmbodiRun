@@ -27,7 +27,7 @@ def service_host(node: NodeConfig, bind: str, *, remote: bool) -> str:
         address = ip_address(host)
     except ValueError:
         if ":" in host:
-            raise ConfigError(f"node {node.node_id!r} requires a host without port")
+            raise ConfigError(f"node {node.node_id!r} requires a host without port") from None
         loopback = host.rstrip(".").lower() == "localhost"
         unspecified = False
     else:

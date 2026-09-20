@@ -55,8 +55,7 @@ class AuthPolicy:
 
     def __init__(
         self,
-        token_roles: Mapping[str, str | Role | Principal | Mapping[str, object]]
-        | None = None,
+        token_roles: Mapping[str, str | Role | Principal | Mapping[str, object]] | None = None,
     ) -> None:
         values = {} if token_roles is None else dict(token_roles)
         principals: dict[str, Principal] = {}
@@ -78,9 +77,7 @@ class AuthPolicy:
                         session_id=_identity_value(session_id, "session_id"),
                     )
                 else:
-                    principal = Principal(
-                        configured if isinstance(configured, Role) else Role(configured)
-                    )
+                    principal = Principal(configured if isinstance(configured, Role) else Role(configured))
             except (TypeError, ValueError) as error:
                 # Do not include the configured secret in a startup or HTTP
                 # error.  The caller can identify the configuration entry.
@@ -107,9 +104,7 @@ class AuthPolicy:
             raise AuthenticationError("a configured control token is required")
         principal = self._token_principals[token]
         if _ROLE_RANK[principal.role] < _ROLE_RANK[required]:
-            raise AuthorizationError(
-                f"role {principal.role.value!r} cannot perform {required.value!r} operation"
-            )
+            raise AuthorizationError(f"role {principal.role.value!r} cannot perform {required.value!r} operation")
         return principal
 
     def authorize_scope(

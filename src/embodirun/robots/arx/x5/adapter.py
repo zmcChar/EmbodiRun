@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import math
 import sys
@@ -86,8 +87,7 @@ class ARX5Adapter(RobotAdapter):
             return
         if self.config.operator_confirmed is not True:
             raise ARX5AdapterError(
-                "constructing SingleArm may enable motors and enter GO_HOME; "
-                "operator_confirmed=True is required"
+                "constructing SingleArm may enable motors and enter GO_HOME; operator_confirmed=True is required"
             )
         factory = self._single_arm_factory
         if factory is None:
@@ -101,15 +101,11 @@ class ARX5Adapter(RobotAdapter):
                 module = importlib.import_module(self.config.sdk_module)
                 factory = module.SingleArm
             except (ImportError, AttributeError) as error:
-                raise ARX5AdapterError(
-                    f"could not load ARX5 SDK from {self.config.sdk_module!r}: {error}"
-                ) from error
+                raise ARX5AdapterError(f"could not load ARX5 SDK from {self.config.sdk_module!r}: {error}") from error
             finally:
                 sys.path[:] = previous_path
         try:
-            self.arm = factory(
-                {"can_port": self.config.can_port, "type": self.config.robot_type}
-            )
+            self.arm = factory({"can_port": self.config.can_port, "type": self.config.robot_type})
         except Exception:
             # A failed vendor constructor must not leave a half-connected
             # object that later appears usable.
@@ -133,8 +129,7 @@ class ARX5Adapter(RobotAdapter):
 
     def sdk_gripper_to_width_m(self, position: float) -> float:
         fraction = (position - self.config.sdk_gripper_closed_position) / (
-            self.config.sdk_gripper_open_position
-            - self.config.sdk_gripper_closed_position
+            self.config.sdk_gripper_open_position - self.config.sdk_gripper_closed_position
         )
         width = self.config.gripper_width_min_m + fraction * (
             self.config.gripper_width_max_m - self.config.gripper_width_min_m
@@ -153,8 +148,7 @@ class ARX5Adapter(RobotAdapter):
             self.config.gripper_width_max_m - self.config.gripper_width_min_m
         )
         return self.config.sdk_gripper_closed_position + fraction * (
-            self.config.sdk_gripper_open_position
-            - self.config.sdk_gripper_closed_position
+            self.config.sdk_gripper_open_position - self.config.sdk_gripper_closed_position
         )
 
     def observe(self) -> RobotObservation:
@@ -166,9 +160,7 @@ class ARX5Adapter(RobotAdapter):
         return RobotObservation(
             timestamp_s=time.time(),
             values={
-                "eef_xyzrpy_gripper": list(
-                    pose + (self.sdk_gripper_to_width_m(joints[6]),)
-                ),
+                "eef_xyzrpy_gripper": list(pose + (self.sdk_gripper_to_width_m(joints[6]),)),
                 "joint_positions": list(joints),
                 "joint_velocities": list(velocities),
                 "joint_currents": list(currents),
@@ -193,20 +185,14 @@ class ARX5Adapter(RobotAdapter):
         current: tuple[float, ...],
     ) -> list[float]:
         row = _numbers(target, "action row", 7)
-        bounded = [
-            _bounded_delta(row[index], current[index], self.config.max_translation_step_m)
-            for index in range(3)
-        ]
+        bounded = [_bounded_delta(row[index], current[index], self.config.max_translation_step_m) for index in range(3)]
         bounded.extend(
-            _bounded_angle(row[index], current[index], self.config.max_rotation_step_rad)
-            for index in range(3, 6)
+            _bounded_angle(row[index], current[index], self.config.max_rotation_step_rad) for index in range(3, 6)
         )
         bounded.append(
             min(
                 max(
-                    _bounded_delta(
-                        row[6], current[6], self.config.max_gripper_step_m
-                    ),
+                    _bounded_delta(row[6], current[6], self.config.max_gripper_step_m),
                     self.config.gripper_width_min_m,
                 ),
                 self.config.gripper_width_max_m,
@@ -219,19 +205,13 @@ class ARX5Adapter(RobotAdapter):
 
         arm = self._connected_arm()
         if action.metadata.get("action_space") != ARX5_ACTION_SPACE:
-            raise ARX5AdapterError(
-                f"unsupported action space {action.metadata.get('action_space')!r}"
-            )
+            raise ARX5AdapterError(f"unsupported action space {action.metadata.get('action_space')!r}")
         if not isinstance(action.values, Mapping):
             raise ARX5AdapterError("ARX5 action values must be an object")
         if action.values.get("type") != "eef_xyzrpy_gripper":
-            raise ARX5AdapterError(
-                "ARX5 action type must be 'eef_xyzrpy_gripper'"
-            )
+            raise ARX5AdapterError("ARX5 action type must be 'eef_xyzrpy_gripper'")
         if set(action.values) != {"type", "eef_xyzrpy_gripper"}:
-            raise ARX5AdapterError(
-                "ARX5 action must contain exactly one normalized EEF command row"
-            )
+            raise ARX5AdapterError("ARX5 action must contain exactly one normalized EEF command row")
         row = action.values.get("eef_xyzrpy_gripper")
         if isinstance(row, (str, bytes)):
             raise ARX5AdapterError("ARX5 action row must be a numeric sequence")
@@ -249,10 +229,8 @@ class ARX5Adapter(RobotAdapter):
             arm.set_ee_pose_xyzrpy(bounded[:6])
             arm.set_gripper_pos(sdk_gripper_position)
         except Exception:
-            try:
+            with contextlib.suppress(Exception):
                 self.stop()
-            except Exception:
-                pass
             raise
         self.last_executed_rows.append(bounded)
         self.last_executed_sdk_gripper_positions.append(sdk_gripper_position)

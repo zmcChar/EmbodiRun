@@ -64,12 +64,8 @@ def build_parser(environment: Mapping[str, str]) -> argparse.ArgumentParser:
         metavar="WIDTHxHEIGHT@FPS",
         help="requested RGB-D profile (GO2_CAMERA_PROFILE)",
     )
-    parser.add_argument(
-        "--width", type=positive_int, default=environment_value(environment, "WIDTH")
-    )
-    parser.add_argument(
-        "--height", type=positive_int, default=environment_value(environment, "HEIGHT")
-    )
+    parser.add_argument("--width", type=positive_int, default=environment_value(environment, "WIDTH"))
+    parser.add_argument("--height", type=positive_int, default=environment_value(environment, "HEIGHT"))
     parser.add_argument(
         "--fps",
         "--realsense-fps",

@@ -47,17 +47,13 @@ class SimulationServiceConfig:
             if not isinstance(value, str) or not value.strip():
                 raise SimulationContractError(f"{name} must not be empty")
         if self.bind not in {"127.0.0.1", "localhost", "::1"}:
-            raise SimulationContractError(
-                "simulation service must bind to a loopback address"
-            )
+            raise SimulationContractError("simulation service must bind to a loopback address")
         if isinstance(self.port, bool) or not isinstance(self.port, int):
             raise SimulationContractError("port must be an integer")
         if not 1 <= self.port <= 65535:
             raise SimulationContractError("port must be between 1 and 65535")
         if self.inference_transport not in {"http", "wireless"}:
-            raise SimulationContractError(
-                "inference transport must be http or wireless"
-            )
+            raise SimulationContractError("inference transport must be http or wireless")
         if self.inference_backend not in {"vvla", "sglang"}:
             raise SimulationContractError("inference backend must be vvla or sglang")
         for name in ("inference_options", "simulator_options"):
@@ -92,9 +88,7 @@ class SimulationServiceConfig:
         try:
             root = _mapping(json.loads(value), "simulation config")
         except json.JSONDecodeError as error:
-            raise SimulationContractError(
-                f"simulation config is invalid JSON: {error}"
-            ) from error
+            raise SimulationContractError(f"simulation config is invalid JSON: {error}") from error
         if root.get("schema") != SIMULATION_CONFIG_SCHEMA:
             raise SimulationContractError("unsupported simulation config schema")
         server = _mapping(root.get("server"), "simulation config.server")
@@ -110,20 +104,12 @@ class SimulationServiceConfig:
                 "simulation config.inference.backend",
             )
             or "vvla",
-            inference_transport=_string(
-                inference, "transport", "simulation config.inference"
-            ),
-            inference_endpoint=_string(
-                inference, "endpoint", "simulation config.inference"
-            ),
-            inference_options=_mapping(
-                inference.get("options", {}), "simulation config.inference.options"
-            ),
+            inference_transport=_string(inference, "transport", "simulation config.inference"),
+            inference_endpoint=_string(inference, "endpoint", "simulation config.inference"),
+            inference_options=_mapping(inference.get("options", {}), "simulation config.inference.options"),
             simulator_id=_string(simulator, "id", "simulation config.simulator"),
             simulator_kind=_string(simulator, "type", "simulation config.simulator"),
-            simulator_options=_mapping(
-                simulator.get("options", {}), "simulation config.simulator.options"
-            ),
+            simulator_options=_mapping(simulator.get("options", {}), "simulation config.simulator.options"),
         )
 
 
@@ -147,9 +133,7 @@ class EpisodeRequest:
             value = getattr(self, name)
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise SimulationContractError(f"{name} must be non-empty when provided")
-        if self.seed is not None and (
-            isinstance(self.seed, bool) or not isinstance(self.seed, int)
-        ):
+        if self.seed is not None and (isinstance(self.seed, bool) or not isinstance(self.seed, int)):
             raise SimulationContractError("seed must be an integer when provided")
         for name in ("chunk_steps", "max_policy_steps"):
             value = getattr(self, name)
@@ -161,9 +145,7 @@ class EpisodeRequest:
             or not math.isfinite(self.inference_timeout_s)
             or self.inference_timeout_s <= 0
         ):
-            raise SimulationContractError(
-                "inference_timeout_s must be a finite positive number"
-            )
+            raise SimulationContractError("inference_timeout_s must be a finite positive number")
 
     def to_payload(self) -> dict[str, Any]:
         return {

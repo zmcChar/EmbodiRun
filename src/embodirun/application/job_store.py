@@ -7,13 +7,13 @@ atomic request-acceptance boundary used by ``JobRegistry``.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 import fcntl
 import json
 import math
 import os
-from pathlib import Path
 import sqlite3
+from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from .contracts import TaskResult
@@ -29,9 +29,7 @@ class SQLiteJobStore:
 
     def __init__(self, database_path: str | Path) -> None:
         self.database_path = (
-            ":memory:"
-            if str(database_path) == ":memory:"
-            else str(Path(database_path).expanduser().resolve())
+            ":memory:" if str(database_path) == ":memory:" else str(Path(database_path).expanduser().resolve())
         )
         self._lock_fd: int | None = None
         lock_fd: int | None = None
@@ -44,8 +42,7 @@ class SQLiteJobStore:
                     fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError as error:
                     raise RuntimeError(
-                        "job database is already owned by another live registry: "
-                        f"{self.database_path}"
+                        f"job database is already owned by another live registry: {self.database_path}"
                     ) from error
                 self._lock_fd = lock_fd
                 lock_fd = None

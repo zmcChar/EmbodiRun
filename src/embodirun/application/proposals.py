@@ -10,13 +10,13 @@ submits an action to the arbiter.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import replace
-import math
 from typing import Any
 
-from embodirun.robots import RobotAction
 from embodirun.model_services import PolicyObservation, PolicyResult
+from embodirun.robots import RobotAction
 
 
 class ProposalError(RuntimeError):
@@ -42,10 +42,7 @@ def _policy_payload(result: PolicyResult) -> dict[str, Any]:
         "action_space": result.action_space,
         "policy_revision": result.policy_revision,
         "timing": dict(result.timing),
-        "actions": [
-            {"type": action.kind, "values": _json_value(action.values)}
-            for action in result.actions
-        ],
+        "actions": [{"type": action.kind, "values": _json_value(action.values)} for action in result.actions],
     }
 
 
@@ -113,9 +110,7 @@ def generate_proposal(
         if not isinstance(policy_request, PolicyObservation):
             raise ProposalError("binding returned an invalid PolicyObservation")
         metadata = dict(policy_request.metadata)
-        metadata.update(
-            {"observation_id": observation_id, "snapshot_id": observation_id}
-        )
+        metadata.update({"observation_id": observation_id, "snapshot_id": observation_id})
         policy_request = replace(policy_request, metadata=metadata)
         result = client.step(policy_request)
         if not isinstance(result, PolicyResult):
@@ -125,13 +120,9 @@ def generate_proposal(
             or result.session_id != policy_request.session_id
             or result.step_id != policy_request.step_id
         ):
-            raise ProposalError(
-                "inference result request_id/session_id/step_id does not match the proposal"
-            )
+            raise ProposalError("inference result request_id/session_id/step_id does not match the proposal")
         actions = tuple(mapper.map_result(result))
-        if not actions or any(
-            not isinstance(action, RobotAction) for action in actions
-        ):
+        if not actions or any(not isinstance(action, RobotAction) for action in actions):
             raise ProposalError("binding returned no valid RobotAction proposal")
         return {
             "status": "proposed",

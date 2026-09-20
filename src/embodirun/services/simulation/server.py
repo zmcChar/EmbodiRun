@@ -65,11 +65,7 @@ class SimulationRequestHandler(BaseHTTPRequestHandler):
             request = EpisodeRequest.from_payload(self._read_json())
             result = self.server.simulation_service.execute(request)
         except (SimulationContractError, SimulationServiceError, ValueError) as error:
-            status = (
-                HTTPStatus.CONFLICT
-                if "already executing" in str(error)
-                else HTTPStatus.BAD_REQUEST
-            )
+            status = HTTPStatus.CONFLICT if "already executing" in str(error) else HTTPStatus.BAD_REQUEST
             self._send(status, error_payload(str(error)))
             return
         except Exception as error:  # noqa: BLE001
@@ -83,9 +79,7 @@ class SimulationRequestHandler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length") or "")
         except ValueError as error:
-            raise SimulationContractError(
-                "Content-Length must be an integer"
-            ) from error
+            raise SimulationContractError("Content-Length must be an integer") from error
         if not 0 < length <= _MAX_REQUEST_BYTES:
             raise SimulationContractError("request body size is invalid")
         try:
@@ -94,9 +88,7 @@ class SimulationRequestHandler(BaseHTTPRequestHandler):
             raise SimulationContractError("request body must be valid JSON") from error
 
     def _send(self, status: HTTPStatus, payload: Mapping[str, Any]) -> None:
-        body = json.dumps(
-            dict(payload), allow_nan=False, ensure_ascii=False, separators=(",", ":")
-        ).encode("utf-8")
+        body = json.dumps(dict(payload), allow_nan=False, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         self.send_response(status.value)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))

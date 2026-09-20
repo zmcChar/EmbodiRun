@@ -9,14 +9,12 @@ silently converted to an EE or joint command here.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
 import math
 import threading
 import time
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from typing import Any
-
-from embodirun.robots import RobotAction
 
 from embodirun.devices.execution.arbitration import (
     CommandSource,
@@ -24,6 +22,8 @@ from embodirun.devices.execution.arbitration import (
     RobotControlArbiter,
 )
 from embodirun.devices.execution.io import IOResult
+from embodirun.robots import RobotAction
+
 from .jobs import PhysicalStatus
 
 
@@ -114,11 +114,7 @@ class DirectExecutionRunner:
     ) -> None:
         if not callable(arbiter_provider):
             raise TypeError("arbiter_provider must be callable")
-        if (
-            isinstance(max_steps, bool)
-            or not isinstance(max_steps, int)
-            or max_steps <= 0
-        ):
+        if isinstance(max_steps, bool) or not isinstance(max_steps, int) or max_steps <= 0:
             raise ValueError("max_steps must be a positive integer")
         if (
             isinstance(step_timeout_s, bool)
@@ -194,9 +190,7 @@ class DirectExecutionRunner:
                 io_result = ticket.result
                 outcomes.append(_outcome(action, ticket.status, io_result))
                 if ticket.status is CommandStatus.CANCELLED:
-                    raise DirectExecutionCancelled(
-                        "direct command was cancelled", ticket=ticket
-                    )
+                    raise DirectExecutionCancelled("direct command was cancelled", ticket=ticket)
                 if ticket.status is not CommandStatus.EXECUTED:
                     raise DirectExecutionError(
                         f"direct command ended with status {ticket.status.value}",
@@ -204,19 +198,15 @@ class DirectExecutionRunner:
                     )
                 next_tick += period_s
                 remaining = next_tick - self._clock()
-                if remaining > 0 and len(outcomes) < len(action_values):
-                    # Event.wait keeps cadence bounded while allowing a
-                    # cancellation request to interrupt the idle interval.
-                    if cancel_event.wait(remaining):
-                        raise DirectExecutionCancelled("direct segment was cancelled")
+                # Event.wait keeps cadence bounded while allowing a
+                # cancellation request to interrupt the idle interval.
+                if remaining > 0 and len(outcomes) < len(action_values) and cancel_event.wait(remaining):
+                    raise DirectExecutionCancelled("direct segment was cancelled")
             result = DirectExecutionResult(
                 source=source_value.value,
                 requested_steps=len(action_values),
                 dispatched_steps=len(outcomes),
-                executed_steps=sum(
-                    outcome.command_status == CommandStatus.EXECUTED.value
-                    for outcome in outcomes
-                ),
+                executed_steps=sum(outcome.command_status == CommandStatus.EXECUTED.value for outcome in outcomes),
                 observation_id=observation_id,
                 control_hz=float(control_hz),
                 elapsed_s=max(0.0, self._clock() - started),
@@ -230,9 +220,7 @@ class DirectExecutionRunner:
             try:
                 released = arbiter.cancel_automatic_work(control_token)
                 release_status = (
-                    PhysicalStatus.STOP_REQUESTED.value
-                    if released
-                    else PhysicalStatus.STOP_UNCONFIRMED.value
+                    PhysicalStatus.STOP_REQUESTED.value if released else PhysicalStatus.STOP_UNCONFIRMED.value
                 )
             except BaseException as error:
                 release_error = error
@@ -270,9 +258,7 @@ class DirectExecutionRunner:
             }
         return {
             "physical_status": (
-                PhysicalStatus.STOP_REQUESTED.value
-                if accepted
-                else PhysicalStatus.STOP_UNCONFIRMED.value
+                PhysicalStatus.STOP_REQUESTED.value if accepted else PhysicalStatus.STOP_UNCONFIRMED.value
             ),
             "stop_confirmed": False,
         }
@@ -307,13 +293,9 @@ def _automatic_source(value: CommandSource | str) -> CommandSource:
     try:
         source = value if isinstance(value, CommandSource) else CommandSource(value)
     except (TypeError, ValueError) as error:
-        raise DirectExecutionUnsupported(
-            "direct execution source must be 'agent' or 'replay'"
-        ) from error
+        raise DirectExecutionUnsupported("direct execution source must be 'agent' or 'replay'") from error
     if source not in {CommandSource.AGENT, CommandSource.REPLAY}:
-        raise DirectExecutionUnsupported(
-            "direct execution cannot claim model or manual ownership"
-        )
+        raise DirectExecutionUnsupported("direct execution cannot claim model or manual ownership")
     return source
 
 
@@ -340,11 +322,7 @@ def _outcome(
         io_status=None if result is None else result.status.value,
         driver_returned=None if result is None else result.driver_returned,
         # ``driver_value`` is a receipt from the call, not measured feedback.
-        driver_receipt=(
-            None
-            if result is None or not result.driver_returned
-            else _detached(result.driver_value)
-        ),
+        driver_receipt=(None if result is None or not result.driver_returned else _detached(result.driver_value)),
     )
 
 

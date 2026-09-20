@@ -6,10 +6,9 @@ import uuid
 from dataclasses import dataclass
 
 from embodirun.bindings import BindingMapper
+from embodirun.model_services import InferenceClient
 from embodirun.robots import RobotAction
 from embodirun.simulators import SimulatorAdapter, SimulatorObservation
-
-from embodirun.model_services import InferenceClient
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,11 +33,7 @@ class SimulationRuntime:
         mapper: BindingMapper,
         chunk_steps: int,
     ) -> None:
-        if (
-            isinstance(chunk_steps, bool)
-            or not isinstance(chunk_steps, int)
-            or chunk_steps <= 0
-        ):
+        if isinstance(chunk_steps, bool) or not isinstance(chunk_steps, int) or chunk_steps <= 0:
             raise ValueError("chunk_steps must be a positive integer")
         self.simulator = simulator
         self.client = client
@@ -56,17 +51,11 @@ class SimulationRuntime:
     ) -> EpisodeOutcome:
         if instruction is not None and not instruction.strip():
             raise ValueError("instruction must be non-empty when provided")
-        if (
-            isinstance(max_policy_steps, bool)
-            or not isinstance(max_policy_steps, int)
-            or max_policy_steps <= 0
-        ):
+        if isinstance(max_policy_steps, bool) or not isinstance(max_policy_steps, int) or max_policy_steps <= 0:
             raise ValueError("max_policy_steps must be a positive integer")
 
         current = self.simulator.reset(task=task, seed=seed)
-        prompt = (
-            instruction.strip() if instruction is not None else _instruction(current)
-        )
+        prompt = instruction.strip() if instruction is not None else _instruction(current)
         self.session = self.client.open_session(
             robot_id=self.simulator.simulator_id,
             action_space=self.mapper.policy_action_space,
@@ -122,9 +111,7 @@ class SimulationRuntime:
 def _instruction(observation: SimulatorObservation) -> str:
     instruction = observation.robot.metadata.get("instruction")
     if not isinstance(instruction, str) or not instruction.strip():
-        raise RuntimeError(
-            "simulator reset did not provide an instruction; pass one explicitly"
-        )
+        raise RuntimeError("simulator reset did not provide an instruction; pass one explicitly")
     return instruction.strip()
 
 

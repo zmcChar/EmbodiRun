@@ -5,7 +5,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from embodirun_xlerobot_owner.leader_collection import (
     ACTION_NAMES,
     DIRECT_FOLLOW_ACCELERATION_RAW,
@@ -23,10 +22,7 @@ JPEG = b"\xff\xd8so101-test\xff\xd9"
 
 
 def _metadata() -> dict:
-    limits = {
-        name: ([0.0, 100.0] if name.endswith("gripper.pos") else [-180.0, 180.0])
-        for name in ACTION_NAMES
-    }
+    limits = {name: ([0.0, 100.0] if name.endswith("gripper.pos") else [-180.0, 180.0]) for name in ACTION_NAMES}
     return {
         "source": "physical",
         "allow_motion": True,
@@ -47,7 +43,7 @@ class FakeRemote:
     def __init__(self) -> None:
         self.metadata = _metadata()
         self.armed = False
-        self.state = {name: 0.0 for name in ACTION_NAMES}
+        self.state = dict.fromkeys(ACTION_NAMES, 0.0)
         self.timestamp_ns = 1_000_000_000
         self.stop_calls = 0
 
@@ -60,13 +56,11 @@ class FakeRemote:
             "state": dict(self.state),
             "source_timestamp_ns": self.timestamp_ns,
             "state_timestamp_ns": self.timestamp_ns,
-            "camera_timestamps_ns": {
-                role: self.timestamp_ns for role in CAMERA_ROLES
-            },
+            "camera_timestamps_ns": dict.fromkeys(CAMERA_ROLES, self.timestamp_ns),
             "metadata": self.metadata,
             "errors": [],
         }
-        return observation, {role: JPEG for role in CAMERA_ROLES}
+        return observation, dict.fromkeys(CAMERA_ROLES, JPEG)
 
     def arm(self) -> dict:
         self.armed = True
@@ -109,7 +103,7 @@ class FakeLeader:
         self.read_count += 1
         if self.fail_after is not None and self.read_count > self.fail_after:
             raise ConnectionError("leader unplugged")
-        return {name: 0.0 for name in ACTION_NAMES}
+        return dict.fromkeys(ACTION_NAMES, 0.0)
 
     def close(self) -> None:
         self.closed = True
@@ -155,7 +149,7 @@ def test_calibration_conversion_uses_exact_joint_set(tmp_path: Path) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
     calibration = load_leader_calibration(path)
-    action = raw_to_action({name: 100 for name in LEADER_NAMES}, calibration)
+    action = raw_to_action(dict.fromkeys(LEADER_NAMES, 100), calibration)
 
     assert set(action) == set(ACTION_NAMES)
     assert action["left_arm_gripper.pos"] == pytest.approx(100.0)
@@ -216,8 +210,7 @@ def test_supervisor_records_multiple_operator_labeled_episodes(tmp_path: Path) -
     assert first["state"] == "recording"
     _wait_for(
         supervisor,
-        lambda status: status["recording"]
-        and Path(status["episode_path"], "frames.jsonl").stat().st_size > 0,
+        lambda status: status["recording"] and Path(status["episode_path"], "frames.jsonl").stat().st_size > 0,
     )
     result = supervisor.command("finish", success=True)
     assert result["status"] == "succeeded"
@@ -259,8 +252,7 @@ def test_hardware_disconnect_interrupts_episode_and_requires_new_start(tmp_path:
 
     status = _wait_for(
         supervisor,
-        lambda item: item["state"] == "waiting_hardware"
-        and item.get("last_episode") is not None,
+        lambda item: item["state"] == "waiting_hardware" and item.get("last_episode") is not None,
     )
     assert status["recording"] is False
     assert status["armed"] is False

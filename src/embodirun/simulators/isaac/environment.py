@@ -132,13 +132,9 @@ class IsaacEnvironment:
             self._advance(control, 1)
             position, rotation = self._pose()
             if command.kind is NavigationCommandKind.MOVE_FORWARD:
-                reached = (
-                    _planar_distance(position, start_position) >= command.distance_m
-                )
+                reached = _planar_distance(position, start_position) >= command.distance_m
             else:
-                reached = abs(
-                    _angle_delta(_yaw(rotation), _yaw(start_rotation))
-                ) >= math.radians(command.angle_deg)
+                reached = abs(_angle_delta(_yaw(rotation), _yaw(start_rotation))) >= math.radians(command.angle_deg)
             if reached:
                 break
         self._advance(self._zero_command(), self.config.settle_steps)
@@ -216,9 +212,7 @@ def make_isaac_environment(config: IsaacConfig) -> IsaacEnvironment:
     try:
         from isaacsim import SimulationApp
     except ImportError as error:
-        raise RuntimeError(
-            "Isaac execution requires the isolated sim-isaac environment"
-        ) from error
+        raise RuntimeError("Isaac execution requires the isolated sim-isaac environment") from error
     application = SimulationApp({"headless": True, "renderer": "RaytracedLighting"})
     try:
         return IsaacEnvironment(config, application)
@@ -228,9 +222,7 @@ def make_isaac_environment(config: IsaacConfig) -> IsaacEnvironment:
 
 
 def _planar_distance(left: Any, right: Any) -> float:
-    return math.hypot(
-        float(left[0]) - float(right[0]), float(left[1]) - float(right[1])
-    )
+    return math.hypot(float(left[0]) - float(right[0]), float(left[1]) - float(right[1]))
 
 
 def _yaw(rotation_wxyz: Any) -> float:

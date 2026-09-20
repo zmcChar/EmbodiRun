@@ -9,7 +9,6 @@ from .mapper import (
     Pi05SO101MapperError,
 )
 
-
 MAXIMUM_CHUNK_STEPS = 50
 ADAPTER_CONFIG = {
     "state_fields": ("joint_positions_deg", "gripper_position"),

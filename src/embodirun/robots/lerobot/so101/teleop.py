@@ -17,12 +17,17 @@ class SO101TeleopScale:
     gripper_step: float = 2.0
 
 
+# The default scale is an immutable module-level singleton, so the default
+# argument does not build a new object per call.
+SO101_DEFAULT_SCALE = SO101TeleopScale()
+
+
 def resolve_axes_action(
     observation: RobotObservation,
     axes: Mapping[object, object],
     *,
     timestamp_s: float,
-    scale: SO101TeleopScale = SO101TeleopScale(),
+    scale: SO101TeleopScale = SO101_DEFAULT_SCALE,
 ) -> RobotAction:
     action_space = observation.metadata.get("action_space")
     if action_space != SO101_ACTION_SPACE:
@@ -36,9 +41,7 @@ def resolve_axes_action(
     )
     gripper = _number(observation.values.get("gripper_position"), "gripper_position")
     joint_axes = ("left_x", "left_y", "right_x", "right_y", "dpad_x")
-    target_joints = [
-        value + _axis(axes, axis) * scale.joint_step_deg for value, axis in zip(joints, joint_axes)
-    ]
+    target_joints = [value + _axis(axes, axis) * scale.joint_step_deg for value, axis in zip(joints, joint_axes)]
     target_gripper = max(
         0.0,
         min(100.0, gripper + _axis(axes, "dpad_y") * scale.gripper_step),

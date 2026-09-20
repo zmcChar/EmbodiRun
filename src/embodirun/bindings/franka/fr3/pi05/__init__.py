@@ -8,7 +8,6 @@ from .mapper import (
     Pi05FR3MapperError,
 )
 
-
 BINDING_DEFINITION = BindingDefinition(
     kind="franka.fr3.pi05",
     robot_kind="franka.fr3",

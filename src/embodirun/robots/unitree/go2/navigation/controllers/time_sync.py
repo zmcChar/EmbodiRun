@@ -21,12 +21,8 @@ def project_pose_to_time(state: MobileBaseState, captured_at_s: float) -> Pose2D
     if not math.isfinite(delta_s) or abs(delta_s) > MAX_PROJECTION_S:
         return state.pose
     yaw_mid = state.pose.yaw_rad + 0.5 * state.yaw_rate_rps * delta_s
-    world_vx = state.forward_velocity_mps * math.cos(
-        yaw_mid
-    ) - state.lateral_velocity_mps * math.sin(yaw_mid)
-    world_vy = state.forward_velocity_mps * math.sin(
-        yaw_mid
-    ) + state.lateral_velocity_mps * math.cos(yaw_mid)
+    world_vx = state.forward_velocity_mps * math.cos(yaw_mid) - state.lateral_velocity_mps * math.sin(yaw_mid)
+    world_vy = state.forward_velocity_mps * math.sin(yaw_mid) + state.lateral_velocity_mps * math.cos(yaw_mid)
     return Pose2D(
         state.pose.x_m + world_vx * delta_s,
         state.pose.y_m + world_vy * delta_s,

@@ -116,9 +116,7 @@ def test_env_factory_connects_but_does_not_arm_by_default(monkeypatch):
     def fake_request(self, endpoint, data=None, *, timeout=None):
         del data, timeout
         requests.append(endpoint)
-        return (
-            {"metadata": {"control_scopes": ["base"]}} if endpoint == "status" else {}
-        )
+        return {"metadata": {"control_scopes": ["base"]}} if endpoint == "status" else {}
 
     monkeypatch.setattr(RemoteRobot, "_request", fake_request)
     robot = build_remote_robot_from_env(
@@ -245,10 +243,7 @@ class _LeaseAwareOpener:
                 owned = False
                 self.armed = False
             now = time.monotonic()
-            state_cached = (
-                self.last_observe_mono is not None
-                and now - self.last_observe_mono < 0.02
-            )
+            state_cached = self.last_observe_mono is not None and now - self.last_observe_mono < 0.02
             if self.lose_lease_on_observe == self.observe_count:
                 state_cached = False
             if not state_cached:
@@ -261,9 +256,7 @@ class _LeaseAwareOpener:
                     "state": {"x.vel": 0.0, "theta.vel": 0.0},
                     "state_timestamp_ns": self.last_state_timestamp,
                     "state_cached": state_cached,
-                    "camera_status": {
-                        "front": {"fresh": True, "timestamp_ns": self.observe_count}
-                    },
+                    "camera_status": {"front": {"fresh": True, "timestamp_ns": self.observe_count}},
                     "errors": [],
                     "armed": self.armed,
                     "control_owned": owned,

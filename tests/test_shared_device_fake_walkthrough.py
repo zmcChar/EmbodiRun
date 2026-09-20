@@ -3,10 +3,9 @@ from __future__ import annotations
 import base64
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -22,9 +21,7 @@ def test_public_fake_walkthrough_uses_real_server_and_host_cli() -> None:
     """
 
     environment = os.environ.copy()
-    environment["PYTHONPATH"] = str(ROOT / "src") + os.pathsep + environment.get(
-        "PYTHONPATH", ""
-    )
+    environment["PYTHONPATH"] = str(ROOT / "src") + os.pathsep + environment.get("PYTHONPATH", "")
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
     result = subprocess.run(
         [sys.executable, str(ROOT / "examples" / "run_shared_device_fake.py")],

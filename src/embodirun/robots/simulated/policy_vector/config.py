@@ -48,7 +48,7 @@ class PolicyVectorConfig:
         cls,
         robot_id: str,
         value: Mapping[str, Any],
-    ) -> "PolicyVectorConfig":
+    ) -> PolicyVectorConfig:
         """Build config from Host ``robot_options`` using one explicit field."""
 
         if not isinstance(value, Mapping):
@@ -56,9 +56,7 @@ class PolicyVectorConfig:
         options = dict(value)
         unknown = sorted(set(options) - {"initial_state_native"})
         if unknown:
-            raise ValueError(
-                "unknown policy-vector configuration fields: " + ", ".join(unknown)
-            )
+            raise ValueError("unknown policy-vector configuration fields: " + ", ".join(unknown))
         return cls(
             robot_id=robot_id,
             initial_state_native=finite_vector(

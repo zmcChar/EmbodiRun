@@ -4,7 +4,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from embodirun_xlerobot_owner.control import InputClock, MappingConfig
 from embodirun_xlerobot_owner.keyboard import KeyboardFrame
 from embodirun_xlerobot_owner.robot import DemoRobot
@@ -13,25 +12,48 @@ from tests.xlerobot_owner.test_server import HEADERS, station, wait_for
 
 
 def packet(seq=0, keys=(), **extra):
-    return {"type": "keyboard_input", "seq": seq, "timestamp_ms": time.monotonic() * 1000,
-            "keys": list(keys), "focused": True, "video_ready": True, **extra}
+    return {
+        "type": "keyboard_input",
+        "seq": seq,
+        "timestamp_ms": time.monotonic() * 1000,
+        "keys": list(keys),
+        "focused": True,
+        "video_ready": True,
+        **extra,
+    }
 
 
-@pytest.mark.parametrize("keys,expected", [
-    ((), (0, 0)), (("KeyW",), (.05, 0)), (("KeyS",), (-.05, 0)),
-    (("KeyA",), (0, 10)), (("KeyD",), (0, -10)),
-    (("KeyW", "KeyA"), (.05, 10)), (("KeyW", "KeyS", "KeyA", "KeyD"), (0, 0)),
-])
+@pytest.mark.parametrize(
+    "keys,expected",
+    [
+        ((), (0, 0)),
+        (("KeyW",), (0.05, 0)),
+        (("KeyS",), (-0.05, 0)),
+        (("KeyA",), (0, 10)),
+        (("KeyD",), (0, -10)),
+        (("KeyW", "KeyA"), (0.05, 10)),
+        (("KeyW", "KeyS", "KeyA", "KeyD"), (0, 0)),
+    ],
+)
 def test_keyboard_maps_only_two_base_axes(keys, expected):
     result = KeyboardFrame.parse(packet(keys=keys)).action(MappingConfig(enable_base=True))
     assert result == dict(zip(("x.vel", "theta.vel"), expected))
 
 
-@pytest.mark.parametrize("extra", [
-    {"keys": ["KeyX"]}, {"keys": ["KeyW", "KeyW"]}, {"keys": "W"},
-    {"focused": 1}, {"video_ready": None}, {"seq": True}, {"seq": -1},
-    {"timestamp_ms": float("nan")}, {"timestamp_ms": -1},
-])
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"keys": ["KeyX"]},
+        {"keys": ["KeyW", "KeyW"]},
+        {"keys": "W"},
+        {"focused": 1},
+        {"video_ready": None},
+        {"seq": True},
+        {"seq": -1},
+        {"timestamp_ms": float("nan")},
+        {"timestamp_ms": -1},
+    ],
+)
 def test_invalid_keyboard_packets(extra):
     with pytest.raises((ValueError, TypeError)):
         KeyboardFrame.parse(packet(**extra))
@@ -69,7 +91,7 @@ async def test_keyboard_drive_release_and_no_arm_commands(tmp_path):
         before = dict(p.robot.state)
         await enable(p, ws)
         await ws.send_json(packet(1, ("KeyW", "KeyD")))
-        await wait_for(lambda: p.last_action == {"x.vel": .05, "theta.vel": -10})
+        await wait_for(lambda: p.last_action == {"x.vel": 0.05, "theta.vel": -10})
         assert all(p.robot.state[k] == v for k, v in before.items() if k.endswith(".pos"))
         await ws.send_json(packet(2))
         await wait_for(lambda: p.last_action == {"x.vel": 0, "theta.vel": 0})
@@ -89,9 +111,10 @@ async def test_keyboard_faults_stop_and_never_auto_rearm(tmp_path, fault):
         ws = await c.ws_connect("/ws", headers=HEADERS)
         await enable(p, ws)
         await ws.send_json(packet(1, ("KeyW",)))
-        await wait_for(lambda: p.robot.state["x.vel"] == .05)
+        await wait_for(lambda: p.robot.state["x.vel"] == 0.05)
         if fault == "switch_input":
             from tests.xlerobot_owner.test_server import frame
+
             await ws.send_json(frame(2))
         elif fault == "focus":
             await ws.send_json(packet(2, focused=False))
@@ -102,7 +125,7 @@ async def test_keyboard_faults_stop_and_never_auto_rearm(tmp_path, fault):
         await wait_for(lambda: not p.armed and not p.robot.armed, timeout=3)
         assert p.robot.state["x.vel"] == 0
         await ws.send_json(packet(3))
-        await asyncio.sleep(.1)
+        await asyncio.sleep(0.1)
         assert not p.armed
         await ws.close()
 
@@ -119,7 +142,7 @@ async def test_keyboard_refuses_non_neutral_wrong_mode_and_competing_owner(tmp_p
         await wait_for(lambda: p.mapper.control_mode == "drive")
         await ws.send_json(packet(1, ("KeyW",)))
         await ws.send_json({"type": "arm", "activation": "keyboard"})
-        await asyncio.sleep(.1)
+        await asyncio.sleep(0.1)
         assert not p.armed
         await ws.send_json(packet(2))
         await ws.send_json({"type": "arm", "activation": "keyboard"})
@@ -127,7 +150,7 @@ async def test_keyboard_refuses_non_neutral_wrong_mode_and_competing_owner(tmp_p
         observer = await c.ws_connect("/ws", headers=HEADERS)
         await observer.send_json(packet())
         await observer.send_json({"type": "arm", "activation": "keyboard"})
-        await asyncio.sleep(.05)
+        await asyncio.sleep(0.05)
         assert p.status(observer)["control_owner"] == "other"
         await observer.close()
         await ws.close()
@@ -136,8 +159,7 @@ async def test_keyboard_refuses_non_neutral_wrong_mode_and_competing_owner(tmp_p
 @pytest.mark.asyncio
 async def test_keyboard_does_not_arm_a_physical_arm_configuration(tmp_path):
     async with station(tmp_path, mapping=MappingConfig(enable_base=True)) as (p, c):
-        p.robot.metadata.update(source="physical", enable_base=True, allow_motion=True,
-                                enabled_arms=["left", "right"])
+        p.robot.metadata.update(source="physical", enable_base=True, allow_motion=True, enabled_arms=["left", "right"])
         ws = await c.ws_connect("/ws", headers=HEADERS)
         await ws.send_json({"type": "set_control_mode", "mode": "drive"})
         await wait_for(lambda: p.mapper.control_mode == "drive")
@@ -151,8 +173,8 @@ async def test_keyboard_does_not_arm_a_physical_arm_configuration(tmp_path):
 
 def test_base_only_hardware_arm_drive_stop_do_not_write_arm_registers(tmp_path):
     from embodirun_xlerobot_owner.hardware import HardwareRobot
-    config = _config(tmp_path, enabled_arms=[], enable_base=True,
-                     wheel_directions={"left": 1, "right": -1})
+
+    config = _config(tmp_path, enabled_arms=[], enable_base=True, wheel_directions={"left": 1, "right": -1})
     buses = config["_buses"]
     robot = HardwareRobot(config)
     try:
@@ -162,7 +184,7 @@ def test_base_only_hardware_arm_drive_stop_do_not_write_arm_registers(tmp_path):
                 if not name.startswith("base_"):
                     bus.values[name]["Torque_Enable"] = 1  # existing hold remains untouched
         assert robot.arm()["armed"]
-        assert robot.command({"x.vel": .03, "theta.vel": 5})["command_accepted"]
+        assert robot.command({"x.vel": 0.03, "theta.vel": 5})["command_accepted"]
         assert robot.stop()["stop_confirmed"]
         assert all(name.startswith("base_") for bus in buses.values() for _, name, _ in bus.writes)
     finally:
@@ -196,10 +218,10 @@ async def test_delayed_keyboard_packets_pause_without_rearming_or_replaying(tmp_
         await enable(p, ws)
         original_stamp = next(iter(p.frames.values()))[0].timestamp_ms
         await ws.send_json(packet(1, ("KeyW",)))
-        await wait_for(lambda: p.robot.state["x.vel"] == .05)
+        await wait_for(lambda: p.robot.state["x.vel"] == 0.05)
         moving_stamp = next(iter(p.frames.values()))[0].timestamp_ms
         assert moving_stamp > original_stamp
-        await asyncio.sleep(.28)
+        await asyncio.sleep(0.28)
         # Ordered but buffered key press: discarded, not an owner/session error.
         await ws.send_json(packet(2, ("KeyS",), timestamp_ms=moving_stamp + 1))
         await wait_for(lambda: p.delayed_keyboard_packets == 1)
@@ -207,12 +229,12 @@ async def test_delayed_keyboard_packets_pause_without_rearming_or_replaying(tmp_
         assert p.armed and p.keyboard_paused and p.error is None
         # Even fresh held keys cannot restart movement after a pause.
         await ws.send_json(packet(3, ("KeyW",)))
-        await asyncio.sleep(.08)
+        await asyncio.sleep(0.08)
         assert p.robot.state["x.vel"] == 0 and p.keyboard_paused
         await ws.send_json(packet(4))
         await wait_for(lambda: not p.keyboard_paused)
         await ws.send_json(packet(5, ("KeyW",)))
-        await wait_for(lambda: p.robot.state["x.vel"] == .05)
+        await wait_for(lambda: p.robot.state["x.vel"] == 0.05)
         assert p.armed and not ws.closed
         await ws.close()
 
@@ -223,13 +245,13 @@ async def test_keyboard_gap_zeros_at_old_timeout_and_expires_long_gap(tmp_path):
         ws = await c.ws_connect("/ws", headers=HEADERS)
         await enable(p, ws)
         await ws.send_json(packet(1, ("KeyW",)))
-        await wait_for(lambda: p.robot.state["x.vel"] == .05)
-        await wait_for(lambda: p.keyboard_paused, timeout=.6)
+        await wait_for(lambda: p.robot.state["x.vel"] == 0.05)
+        await wait_for(lambda: p.keyboard_paused, timeout=0.6)
         assert p.armed and p.robot.state["x.vel"] == 0
         await wait_for(lambda: not p.armed, timeout=2)
         assert p.error == "controller input timeout" and p.robot.state["x.vel"] == 0
         await ws.send_json(packet(2))
-        await asyncio.sleep(.08)
+        await asyncio.sleep(0.08)
         assert not p.armed  # True expiration never auto-arms.
         await ws.close()
 
@@ -240,27 +262,34 @@ async def test_observer_clock_errors_and_mode_requests_do_not_disturb_driver(tmp
         ws = await c.ws_connect("/ws", headers=HEADERS)
         await enable(p, ws)
         await ws.send_json(packet(1, ("KeyW",)))
-        await wait_for(lambda: p.robot.state["x.vel"] == .05)
+        await wait_for(lambda: p.robot.state["x.vel"] == 0.05)
         owner = p.owner
         observer = await c.ws_connect("/ws", headers=HEADERS)
         await observer.send_json({"type": "set_control_mode", "mode": "drive"})
         await observer.send_json(packet())
         await observer.send_json(packet())  # Observer sequence error.
-        await asyncio.sleep(.05)
+        await asyncio.sleep(0.05)
         assert p.error is None and p.armed and p.owner is owner
         assert p.status()["input_status"]["keys"] == ["KeyW"]
         await observer.close()
         await ws.close()
 
 
-@pytest.mark.parametrize("key,signs", [
-    ("KeyW", (-1, 1)), ("KeyS", (1, -1)),
-    ("KeyA", (1, 1)), ("KeyD", (-1, -1)),
-])
+@pytest.mark.parametrize(
+    "key,signs",
+    [
+        ("KeyW", (-1, 1)),
+        ("KeyS", (1, -1)),
+        ("KeyA", (1, 1)),
+        ("KeyD", (-1, -1)),
+    ],
+)
 def test_verified_left_inversion_preserves_keyboard_axes(tmp_path, key, signs):
     from embodirun_xlerobot_owner.hardware import HardwareRobot
-    config = _config(tmp_path, enabled_arms=[], enable_base=True,
-                     wheel_directions={"base_left_wheel": -1, "base_right_wheel": 1})
+
+    config = _config(
+        tmp_path, enabled_arms=[], enable_base=True, wheel_directions={"base_left_wheel": -1, "base_right_wheel": 1}
+    )
     robot = HardwareRobot(config)
     try:
         robot.connect()
@@ -309,7 +338,7 @@ async def test_disconnect_cannot_cancel_stop_while_waiting_for_robot_io(tmp_path
     async with station(tmp_path) as (p, _):
         p.robot.arm()
         p.armed = True
-        p.robot.state["x.vel"] = .05
+        p.robot.state["x.vel"] = 0.05
         await p.control_lock.acquire()
         await p.io_lock.acquire()
         stopping = asyncio.create_task(p.stop("test disconnect"))

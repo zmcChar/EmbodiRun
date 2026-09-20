@@ -2,16 +2,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from embodirun.services.control.runtime import ControlRuntime
 from embodirun.bindings.lerobot.so101.pi05 import Pi05SO101Mapper
+from embodirun.robots import RobotAction
+from embodirun.robots.sensors.cameras import CameraFrame
+from embodirun.services.control.runtime import ControlRuntime
 from embodirun.services.inference import (
     ImagePayload,
     PolicyAction,
     PolicyResult,
     Session,
 )
-from embodirun.robots import RobotAction
-from embodirun.robots.sensors.cameras import CameraFrame
 
 
 class FakeRobot:
@@ -51,10 +51,7 @@ class FakeMapper(Pi05SO101Mapper):
 
 class ThreeActionMapper(FakeMapper):
     def map_result(self, _result):
-        return tuple(
-            RobotAction(float(index), {"type": "joint_position", "index": index})
-            for index in range(3)
-        )
+        return tuple(RobotAction(float(index), {"type": "joint_position", "index": index}) for index in range(3))
 
 
 class FakeClock:
@@ -84,9 +81,7 @@ def test_so101_binding_converts_camera_frames_to_inference_images() -> None:
     runtime.step((CameraFrame("observation.images.front", "image/jpeg", b"jpeg"),))
 
     assert client.observation is not None
-    assert client.observation.images == (
-        ImagePayload("observation.images.front", "image/jpeg", b"jpeg"),
-    )
+    assert client.observation.images == (ImagePayload("observation.images.front", "image/jpeg", b"jpeg"),)
     assert client.observation.metadata == {"robot_timestamp_s": 1.5}
     assert len(robot.actions) == 1
 
@@ -179,8 +174,6 @@ def test_control_runtime_rejects_short_chunk_before_execution() -> None:
     )
 
     with pytest.raises(RuntimeError, match="fewer than requested"):
-        runtime.step(
-            (CameraFrame("observation.images.front", "image/jpeg", b"jpeg"),)
-        )
+        runtime.step((CameraFrame("observation.images.front", "image/jpeg", b"jpeg"),))
 
     assert robot.actions == []

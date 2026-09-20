@@ -31,9 +31,7 @@ class FakeSource:
                 f"frame-{self.calls}".encode(),
                 captured_timestamp_ns=self.timestamp_ns,
                 received_timestamp_ns=101,
-                clock_domain="host_monotonic_ns"
-                if self.timestamp_ns is not None
-                else None,
+                clock_domain="host_monotonic_ns" if self.timestamp_ns is not None else None,
                 profile={"width": 2, "height": 1},
             ),
         )
@@ -105,9 +103,9 @@ def test_one_producer_shares_immutable_snapshot_with_multiple_consumers() -> Non
 
     snapshot = producer.publish_once()
     assert source.calls == 1
-    assert [
-        subscription.get(timeout=0).observation_id for subscription in subscriptions
-    ] == [snapshot.observation_id] * 4
+    assert [subscription.get(timeout=0).observation_id for subscription in subscriptions] == [
+        snapshot.observation_id
+    ] * 4
     assert snapshot.state["joints"] == (1.0, 2.0)
     with pytest.raises(TypeError):
         snapshot.state["joints"] = (3.0,)  # type: ignore[index]
@@ -378,10 +376,7 @@ def test_state_received_timestamp_is_sampled_after_reader_returns() -> None:
 
     assert snapshot.source_timestamps_ns["state"] == 140
     assert snapshot.source_received_timestamps_ns["state"] == 150
-    assert (
-        snapshot.source_received_timestamps_ns["state"]
-        > snapshot.source_timestamps_ns["state"]
-    )
+    assert snapshot.source_received_timestamps_ns["state"] > snapshot.source_timestamps_ns["state"]
     assert snapshot.clock_domains["state"] == "host_monotonic_ns"
 
 

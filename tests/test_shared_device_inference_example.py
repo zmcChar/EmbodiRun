@@ -3,14 +3,13 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from examples.run_shared_device_inference import (
     FRONT_NAME,
-    ExperimentError,
     MODEL_UNITS,
     POLICY_ACTION_SPACE,
     POLICY_FEATURE_NAMES,
     WRIST_NAME,
+    ExperimentError,
     RecordedReplayCameraSource,
     ReplayInputError,
     build_experiment_config,

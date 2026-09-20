@@ -68,11 +68,7 @@ class ZenohEndpoint:
         self._peers = {peer["node_id"]: peer for peer in peers}
         if self._local in self._peers or len(self._peers) != len(peers):
             raise ValueError("peer IDs must be distinct from each other and local ID")
-        connectors = (
-            [peer for peer in self._peers if peer < self._local]
-            if connect_to is None
-            else list(connect_to)
-        )
+        connectors = [peer for peer in self._peers if peer < self._local] if connect_to is None else list(connect_to)
         if set(connectors) - self._peers.keys():
             raise ValueError("connect_to contains an unknown peer")
         self._peer_keys = {_key(peer): peer for peer in self._peers}
@@ -91,10 +87,7 @@ class ZenohEndpoint:
         self.counters = {"received": 0, "overflow": 0, "missed": 0, "published": 0}
         self._closed = False
         self._session = None
-        self._executors = {
-            peer: concurrent.futures.ThreadPoolExecutor(max_workers=1)
-            for peer in self._peers
-        }
+        self._executors = {peer: concurrent.futures.ThreadPoolExecutor(max_workers=1) for peer in self._peers}
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
         self._thread.start()
@@ -104,8 +97,7 @@ class ZenohEndpoint:
                 "mode": "peer",
                 "listen/endpoints": [f"tcp/{bind_host}:{local['port']}"],
                 "connect/endpoints": [
-                    f"tcp/{self._peers[peer]['host']}:{self._peers[peer]['port']}"
-                    for peer in connectors
+                    f"tcp/{self._peers[peer]['host']}:{self._peers[peer]['port']}" for peer in connectors
                 ],
                 "connect/exit_on_failure": False,
                 "connect/timeout_ms": -1,
@@ -131,21 +123,15 @@ class ZenohEndpoint:
                     subscription,
                     self._receive_sample,
                     history=(
-                        zenoh.ext.HistoryConfig(
-                            detect_late_publishers=True, max_samples=history_samples
-                        )
+                        zenoh.ext.HistoryConfig(detect_late_publishers=True, max_samples=history_samples)
                         if history_samples
                         else None
                     ),
-                    recovery=zenoh.ext.RecoveryConfig(
-                        periodic_queries=None, heartbeat=True
-                    ),
+                    recovery=zenoh.ext.RecoveryConfig(periodic_queries=None, heartbeat=True),
                 )
                 self._miss_listener = self._subscriber.sample_miss_listener(self._miss)
             else:
-                self._subscriber = self._session.declare_subscriber(
-                    subscription, self._receive_sample
-                )
+                self._subscriber = self._session.declare_subscriber(subscription, self._receive_sample)
             self._liveliness = self._session.liveliness().declare_subscriber(
                 f"{self._prefix}/live/*/*", self._live, history=True
             )
@@ -212,9 +198,7 @@ class ZenohEndpoint:
                 or len(queue) >= self._queue_samples
                 or size + len(raw) > self._queue_bytes
             ):
-                self._errors[key] = StreamError(
-                    "Zenoh receive queue overflow; reset trajectory"
-                )
+                self._errors[key] = StreamError("Zenoh receive queue overflow; reset trajectory")
                 self.counters["overflow"] += 1
                 queue.clear()
                 self._sizes[key] = 0
@@ -227,9 +211,7 @@ class ZenohEndpoint:
     def _route(self, peer_id, route):
         if peer_id not in self._peers:
             raise ValueError(f"unknown Zenoh peer {peer_id}")
-        tag = hashlib.sha256(
-            json.dumps(route, separators=(",", ":")).encode()
-        ).hexdigest()
+        tag = hashlib.sha256(json.dumps(route, separators=(",", ":")).encode()).hexdigest()
         return peer_id, tag
 
     def _submit(self, coroutine):
@@ -277,9 +259,7 @@ class ZenohEndpoint:
             while True:
                 event.clear()
                 with self._lock:
-                    alive = any(
-                        f"/live/{_key(peer)}/" in token for token in self._live_tokens
-                    )
+                    alive = any(f"/live/{_key(peer)}/" in token for token in self._live_tokens)
                 if alive:
                     break
                 remaining = deadline - self._loop.time()
@@ -302,41 +282,31 @@ class ZenohEndpoint:
                         self._session,
                         topic,
                         **options,
-                        cache=self._zenoh.ext.CacheConfig(
-                            max_samples=self._cache_samples
-                        ),
+                        cache=self._zenoh.ext.CacheConfig(max_samples=self._cache_samples),
                         sample_miss_detection=self._zenoh.ext.MissDetectionConfig(
                             heartbeat=self._heartbeat, sporadic_heartbeat=None
                         ),
                         publisher_detection=True,
                     )
                 else:
-                    self._publishers[key] = self._session.declare_publisher(
-                        topic, **options
-                    )
+                    self._publishers[key] = self._session.declare_publisher(topic, **options)
             remaining = deadline - self._loop.time()
             if remaining <= 0:
                 raise TimeoutError("Zenoh send preparation exceeded deadline")
-            future = self._loop.run_in_executor(
-                self._executors[peer], self._publishers[key].put, raw
-            )
+            future = self._loop.run_in_executor(self._executors[peer], self._publishers[key].put, raw)
             await asyncio.wait_for(future, remaining)
             with self._lock:
                 self.counters["published"] += 1
             return {"message_bytes": len(raw), "completion": "local_publish"}
         except (TimeoutError, asyncio.CancelledError):
             with self._lock:
-                self._errors[key] = StreamError(
-                    "Zenoh send interrupted; reset trajectory"
-                )
+                self._errors[key] = StreamError("Zenoh send interrupted; reset trajectory")
             raise
         finally:
             lock.release()
 
     async def _shutdown(self):
-        pending = [
-            task for task in asyncio.all_tasks() if task is not asyncio.current_task()
-        ]
+        pending = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
         for task in pending:
             task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
@@ -348,9 +318,7 @@ class ZenohEndpoint:
         try:
             if self._session is not None:
                 self._session.close()
-            asyncio.run_coroutine_threadsafe(self._shutdown(), self._loop).result(
-                self.timeout_s
-            )
+            asyncio.run_coroutine_threadsafe(self._shutdown(), self._loop).result(self.timeout_s)
         finally:
             for executor in self._executors.values():
                 executor.shutdown(wait=True, cancel_futures=True)

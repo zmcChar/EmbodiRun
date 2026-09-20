@@ -21,12 +21,12 @@ from embodirun.services.control.contracts import (
     TaskRequest,
     TaskResult,
 )
+from embodirun.services.control.devices import DeviceManager
 from embodirun.services.control.server import (
     ControlHttpServer,
     ControlService,
     ControlServiceError,
 )
-from embodirun.services.control.devices import DeviceManager
 from embodirun.services.host.control import ControlClient
 from embodirun.services.host.executor import LocalExecutor
 from embodirun.services.inference import VvlaWirelessClient
@@ -113,9 +113,7 @@ def test_host_client_rejects_non_loopback_control_endpoint() -> None:
         ControlClient(LocalExecutor(), "http://192.168.10.10:8100")
 
 
-def test_control_service_executes_chunks_and_releases_resources(
-    monkeypatch, tmp_path
-) -> None:
+def test_control_service_executes_chunks_and_releases_resources(monkeypatch, tmp_path) -> None:
     events: list[object] = []
 
     class Client:
@@ -205,11 +203,7 @@ def test_control_service_executes_chunks_and_releases_resources(
 
         assert result == TaskResult("task-1", "so101-runtime", 2)
         assert events.count("camera.capture") >= 2
-        runtime_steps = [
-            item
-            for item in events
-            if isinstance(item, tuple) and item[0] == "runtime.step"
-        ]
+        runtime_steps = [item for item in events if isinstance(item, tuple) and item[0] == "runtime.step"]
         assert len(runtime_steps) == 2
         assert all(frames and frames[0].data == b"frame" for _, frames in runtime_steps)
         assert events[-2:] == [
@@ -223,10 +217,7 @@ def test_control_service_executes_chunks_and_releases_resources(
     assert "robot.stop" in events
     assert events[-1] == "robot.close"
     runtime_options = next(
-        value
-        for item in events
-        if isinstance(item, tuple) and item[0] == "runtime.options"
-        for value in (item[1],)
+        value for item in events if isinstance(item, tuple) and item[0] == "runtime.options" for value in (item[1],)
     )
     assert runtime_options["instruction"] == "抓取黄色格子"
     assert runtime_options["chunk_steps"] == 10
@@ -304,9 +295,7 @@ def test_host_client_submits_task_to_control_http_service() -> None:
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        result = ControlClient(LocalExecutor(), f"http://127.0.0.1:{port}").run(
-            task_request(), timeout_s=2.0
-        )
+        result = ControlClient(LocalExecutor(), f"http://127.0.0.1:{port}").run(task_request(), timeout_s=2.0)
     finally:
         server.shutdown()
         server.server_close()
@@ -318,9 +307,7 @@ def test_host_client_submits_task_to_control_http_service() -> None:
 
 
 @pytest.mark.parametrize("episode_fails", [False, True])
-def test_simulation_keeps_wireless_connection_until_service_close(
-    monkeypatch, episode_fails
-) -> None:
+def test_simulation_keeps_wireless_connection_until_service_close(monkeypatch, episode_fails) -> None:
     events = []
     calls = []
     created = []
@@ -358,9 +345,7 @@ def test_simulation_keeps_wireless_connection_until_service_close(
             self.session = None
 
         def run(self, **options):
-            self.session = self.client.open_session(
-                robot_id="sim", action_space="pi05.action_chunk.v1"
-            )
+            self.session = self.client.open_session(robot_id="sim", action_space="pi05.action_chunk.v1")
             # A health request while an episode owns the connection must be safe.
             assert service.health()["status"] == "ok"
             assert self.client.timeout_s == 60.0
@@ -408,9 +393,7 @@ def test_simulation_keeps_wireless_connection_until_service_close(
             assert service.health()["status"] == "ok"
         assert len(created) == 1
         assert events == ["session.close", "simulator.close"] * 2
-        assert [timeout for method, timeout in calls if method == "open_session"] == [
-            60.0
-        ] * 2
+        assert [timeout for method, timeout in calls if method == "open_session"] == [60.0] * 2
         assert calls.count(("health", 2.0)) == 5
         assert calls.count(("health", 60.0)) == 2
     finally:

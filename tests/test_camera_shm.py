@@ -7,6 +7,7 @@ from http.server import ThreadingHTTPServer
 from types import SimpleNamespace
 
 import pytest
+
 from embodirun.robots.sensors.cameras import RawCameraFrame
 from embodirun.services.rollout.camera_capture import (
     ObservationStore,
@@ -117,14 +118,9 @@ def test_http_and_shm_decode_identical_recorded_generations(tmp_path, encoding):
         for index in range(6):
             assert a.observation(index) == b.observation(index)
             assert a.last_metadata["frame_index"] == b.last_metadata["frame_index"]
-            assert (
-                a.last_metadata["image_payload_bytes"]
-                == b.last_metadata["image_payload_bytes"]
-            )
+            assert a.last_metadata["image_payload_bytes"] == b.last_metadata["image_payload_bytes"]
             if encoding != "jpeg":
-                expected = Image.new(
-                    "RGB", (224, 224), ["red", "green"][index % 2]
-                ).tobytes()
+                expected = Image.new("RGB", (224, 224), ["red", "green"][index % 2]).tobytes()
                 assert b.observation(index)["images"]["front"] == expected
                 assert b.last_metadata["image_payload_bytes"] == 16 * 16 * 3
     finally:

@@ -9,17 +9,18 @@ perform a second video encoding pass.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import os
 import threading
 import time
 from collections import deque
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from queue import Empty
-from typing import Any, Callable
+from typing import Any
 
 from .observations.store import ObservationStore, ObservationSubscription
 from .observations.values import ObservationSnapshot
@@ -74,9 +75,7 @@ class ActionEvent:
         if self.outcome is not None and not isinstance(self.outcome, str):
             raise TypeError("outcome must be a string or None")
         if self.timestamp_ns is not None and (
-            isinstance(self.timestamp_ns, bool)
-            or not isinstance(self.timestamp_ns, int)
-            or self.timestamp_ns < 0
+            isinstance(self.timestamp_ns, bool) or not isinstance(self.timestamp_ns, int) or self.timestamp_ns < 0
         ):
             raise ValueError("timestamp_ns must be a non-negative integer or None")
         if not isinstance(self.payload, Mapping):
@@ -149,17 +148,13 @@ class ObservationRecorder:
             raise TypeError("require_state must be a boolean")
         if not isinstance(clock_domain, str) or not clock_domain.strip():
             raise ValueError("clock_domain must be a non-empty string")
-        if expected_mount is not None and not isinstance(
-            expected_mount, (str, os.PathLike)
-        ):
+        if expected_mount is not None and not isinstance(expected_mount, (str, os.PathLike)):
             raise TypeError("expected_mount must be a path or None")
         if mount_check is not None and not callable(mount_check):
             raise TypeError("mount_check must be callable or None")
         if not isinstance(recording_id, str) or not recording_id.strip():
             raise ValueError("recording_id must be a non-empty string")
-        if recording_id in {".", ".."} or any(
-            separator in recording_id for separator in ("/", "\\", "\x00")
-        ):
+        if recording_id in {".", ".."} or any(separator in recording_id for separator in ("/", "\\", "\x00")):
             raise ValueError("recording_id must be one safe path component")
         names = tuple(expected_frame_names)
         if any(not isinstance(name, str) or not name.strip() for name in names):
@@ -177,9 +172,7 @@ class ObservationRecorder:
         self.require_state = require_state
         self._clock_ns = clock_ns or time.monotonic_ns
         self.clock_domain = clock_domain
-        self.expected_mount = (
-            Path(expected_mount).resolve() if expected_mount is not None else None
-        )
+        self.expected_mount = Path(expected_mount).resolve() if expected_mount is not None else None
         self._mount_check = mount_check or os.path.ismount
         self._recording_dir = self.root_dir / recording_id
         self._observations_path = self._recording_dir / "observations.jsonl"
@@ -221,9 +214,7 @@ class ObservationRecorder:
                 raise RecordingError(f"recording is already {self._state}")
             try:
                 self._prepare_directory()
-                self._observations_file = self._observations_path.open(
-                    "x", encoding="utf-8"
-                )
+                self._observations_file = self._observations_path.open("x", encoding="utf-8")
                 self._actions_file = self._actions_path.open("x", encoding="utf-8")
                 self._subscription = self.store.subscribe(
                     max_queue=self.queue_size,
@@ -291,20 +282,14 @@ class ObservationRecorder:
         if not joined:
             with self._lock:
                 self._incomplete = True
-                self._error = (
-                    self._error or "recorder worker did not stop within timeout"
-                )
+                self._error = self._error or "recorder worker did not stop within timeout"
         return joined
 
     def status(self) -> RecordingStatus:
         """Return a detached status snapshot suitable for another service."""
 
         with self._lock:
-            dropped_observations = (
-                self._subscription.dropped_count
-                if self._subscription is not None
-                else 0
-            )
+            dropped_observations = self._subscription.dropped_count if self._subscription is not None else 0
             return RecordingStatus(
                 recording_id=self.recording_id,
                 state=self._state,
@@ -347,11 +332,7 @@ class ObservationRecorder:
         if not isinstance(observation_id, str) or not observation_id.strip():
             raise ValueError("observation_id must be a non-empty string")
         return next(
-            (
-                record
-                for record in self.iter_records()
-                if record.get("observation_id") == observation_id
-            ),
+            (record for record in self.iter_records() if record.get("observation_id") == observation_id),
             None,
         )
 
@@ -377,9 +358,7 @@ class ObservationRecorder:
         """State explicitly that LeRobot conversion is outside raw recording."""
 
         del destination
-        raise NotImplementedError(
-            "LeRobot conversion is unsupported; read observations.jsonl and media/"
-        )
+        raise NotImplementedError("LeRobot conversion is unsupported; read observations.jsonl and media/")
 
     def _prepare_directory(self) -> None:
         try:
@@ -394,9 +373,7 @@ class ObservationRecorder:
         except RecordingError:
             raise
         except Exception as error:
-            raise RecordingError(
-                f"recording directory is unavailable: {error}"
-            ) from error
+            raise RecordingError(f"recording directory is unavailable: {error}") from error
 
     def _check_expected_mount(self) -> None:
         """Reject a missing mount before creating a fallback same-named folder."""
@@ -409,9 +386,7 @@ class ObservationRecorder:
         try:
             self.root_dir.resolve().relative_to(mount)
         except ValueError as error:
-            raise RecordingError(
-                f"recording root {self.root_dir} is outside expected mount {mount}"
-            ) from error
+            raise RecordingError(f"recording root {self.root_dir} is outside expected mount {mount}") from error
 
     def _run(self) -> None:
         assert self._subscription is not None
@@ -429,9 +404,7 @@ class ObservationRecorder:
                     continue
                 self._write_snapshot(snapshot)
                 if self._stop_event.is_set():
-                    drain_budget = (
-                        self.queue_size if drain_budget is None else drain_budget - 1
-                    )
+                    drain_budget = self.queue_size if drain_budget is None else drain_budget - 1
                     if drain_budget <= 0:
                         self._incomplete = True
                         break
@@ -462,23 +435,14 @@ class ObservationRecorder:
             if self._observation_count >= self.max_records:
                 raise RecordingError("recording max_records retention limit reached")
             recording_index = self._observation_count + 1
-            dropped = (
-                self._subscription.dropped_count
-                if self._subscription is not None
-                else 0
-            )
-            if (
-                self._last_sequence is not None
-                and snapshot.sequence > self._last_sequence + 1
-            ):
+            dropped = self._subscription.dropped_count if self._subscription is not None else 0
+            if self._last_sequence is not None and snapshot.sequence > self._last_sequence + 1:
                 gap = snapshot.sequence - self._last_sequence - 1
                 self._incomplete = True
             else:
                 gap = 0
             self._last_sequence = snapshot.sequence
-            missing = sorted(
-                self.expected_frame_names - {frame.name for frame in snapshot.cameras}
-            )
+            missing = sorted(self.expected_frame_names - {frame.name for frame in snapshot.cameras})
             if missing:
                 self._missing_frames += len(missing)
                 self._incomplete = True
@@ -509,9 +473,7 @@ class ObservationRecorder:
         for index, frame in enumerate(snapshot.cameras):
             suffix = _MEDIA_SUFFIX.get(frame.mime_type)
             if suffix is None:
-                raise RecordingError(
-                    f"unsupported source media type {frame.mime_type!r}"
-                )
+                raise RecordingError(f"unsupported source media type {frame.mime_type!r}")
             relative = Path("media") / media_snapshot_dir.name / f"{index:03d}{suffix}"
             path = self._recording_dir / relative
             self._write_media(path, frame.data)
@@ -554,9 +516,7 @@ class ObservationRecorder:
                 "stale": snapshot.stale,
                 "available": snapshot.available,
                 "source_timestamps_ns": _json_safe(snapshot.source_timestamps_ns),
-                "source_received_timestamps_ns": _json_safe(
-                    snapshot.source_received_timestamps_ns
-                ),
+                "source_received_timestamps_ns": _json_safe(snapshot.source_received_timestamps_ns),
                 "clock_domains": _json_safe(snapshot.clock_domains),
                 "skew_ns": snapshot.skew_ns,
                 "timestamps": {
@@ -612,19 +572,15 @@ class ObservationRecorder:
                 os.fsync(stream.fileno())
             os.replace(temporary, path)
         finally:
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 temporary.unlink()
-            except FileNotFoundError:
-                pass
         with self._lock:
             self._bytes_written += len(data)
 
     def _append_json(self, stream: Any, value: Mapping[str, Any]) -> None:
         if stream is None:
             raise RecordingError("recording file is closed")
-        encoded = (
-            json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n"
-        ).encode()
+        encoded = (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode()
         with self._lock:
             if self._bytes_written + len(encoded) > self.max_bytes:
                 raise RecordingError("recording max_bytes retention limit reached")
@@ -666,10 +622,8 @@ class ObservationRecorder:
                 os.fsync(stream.fileno())
             os.replace(temporary, self._manifest_path)
         finally:
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 temporary.unlink()
-            except FileNotFoundError:
-                pass
 
     def _close_files(self) -> None:
         for name in ("_observations_file", "_actions_file"):
@@ -694,10 +648,7 @@ def _json_safe(value: Any, *, key: str | None = None) -> Any:
     if key is not None and any(part in key.lower() for part in _SENSITIVE_KEY_PARTS):
         return "<redacted>"
     if isinstance(value, Mapping):
-        return {
-            str(item_key): _json_safe(item_value, key=str(item_key))
-            for item_key, item_value in value.items()
-        }
+        return {str(item_key): _json_safe(item_value, key=str(item_key)) for item_key, item_value in value.items()}
     if isinstance(value, (list, tuple, set, frozenset)):
         return [_json_safe(item) for item in value]
     if value is None or isinstance(value, (str, int, float, bool)):

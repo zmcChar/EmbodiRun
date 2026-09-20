@@ -83,8 +83,7 @@ class Go2ServiceSupervisor:
         supervisor = self._supervisor("python3")
         return {
             "services": {
-                service: _status_payload(supervisor.status(service))
-                for service in selected_services(services)
+                service: _status_payload(supervisor.status(service)) for service in selected_services(services)
             }
         }
 
@@ -92,12 +91,7 @@ class Go2ServiceSupervisor:
         selected = selected_services(services)
         selected.sort(key=lambda name: 0 if name == "control" else 1)
         supervisor = self._supervisor("python3")
-        return {
-            "services": {
-                service: _status_payload(supervisor.stop(service))
-                for service in selected
-            }
-        }
+        return {"services": {service: _status_payload(supervisor.stop(service)) for service in selected}}
 
     def _supervisor(self, python: str) -> ServiceSupervisor:
         return ServiceSupervisor(

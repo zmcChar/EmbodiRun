@@ -28,7 +28,7 @@ class BiSO101Config:
             raise ValueError("left and right arms must use separate calibration files")
 
     @classmethod
-    def from_mapping(cls, robot_id: str, value: Mapping[str, Any]) -> "BiSO101Config":
+    def from_mapping(cls, robot_id: str, value: Mapping[str, Any]) -> BiSO101Config:
         """Parse side-specific ports while sharing the SO-101 safety options."""
 
         options = dict(value)
@@ -37,9 +37,7 @@ class BiSO101Config:
         left_id = options.pop("left_calibration_id", f"{robot_id}_left")
         right_id = options.pop("right_calibration_id", f"{robot_id}_right")
         if "port" in options or "calibration_id" in options:
-            raise ValueError(
-                "use left/right_port and left/right_calibration_id for two arms"
-            )
+            raise ValueError("use left/right_port and left/right_calibration_id for two arms")
         return cls(
             robot_id=robot_id,
             left=SO101Config.from_mapping(

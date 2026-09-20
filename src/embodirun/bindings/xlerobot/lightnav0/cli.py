@@ -100,11 +100,7 @@ class TeleopRunConfig:
             raise ValueError("camera must not be empty")
         if not self.session_id.strip():
             raise ValueError("session_id must not be empty")
-        if (
-            isinstance(self.max_steps, bool)
-            or not isinstance(self.max_steps, int)
-            or self.max_steps <= 0
-        ):
+        if isinstance(self.max_steps, bool) or not isinstance(self.max_steps, int) or self.max_steps <= 0:
             raise ValueError("max_steps must be a positive integer")
         if (
             isinstance(self.prediction_timeout_s, bool)
@@ -142,14 +138,10 @@ def resolve_robot_factory(args: argparse.Namespace) -> Callable[[], Any]:
     custom = getattr(args, "robot_factory", None)
     url = getattr(args, "robot_url", None)
     if bool(custom) == bool(url):
-        raise TeleopFactoryError(
-            "provide exactly one of --robot-factory or --robot-url"
-        )
+        raise TeleopFactoryError("provide exactly one of --robot-factory or --robot-url")
     if custom:
         if getattr(args, "authorize_motion", False):
-            raise TeleopFactoryError(
-                "--authorize-motion applies only to the built-in --robot-url route"
-            )
+            raise TeleopFactoryError("--authorize-motion applies only to the built-in --robot-url route")
         return load_robot_factory(custom)
     token_env = getattr(args, "robot_token_env", "XLEROBOT_TOKEN")
     timeout_s = getattr(args, "robot_timeout_s", 2.0)
@@ -189,28 +181,18 @@ def _json_safe(value: Any) -> Any:
         return _json_safe(tolist())
     if isinstance(value, Mapping):
         return {str(key): _json_safe(item) for key, item in value.items()}
-    if isinstance(value, Sequence) and not isinstance(
-        value, (bytes, bytearray, memoryview)
-    ):
+    if isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray, memoryview)):
         return [_json_safe(item) for item in value]
     raise TypeError(f"value of type {type(value).__name__} is not JSON serializable")
 
 
 def _split_robot_read(raw: Any) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
     if isinstance(raw, tuple):
-        if (
-            len(raw) != 2
-            or not isinstance(raw[0], Mapping)
-            or not isinstance(raw[1], Mapping)
-        ):
-            raise CameraFreshnessUnavailable(
-                "robot.read() must return (observation, images)"
-            )
+        if len(raw) != 2 or not isinstance(raw[0], Mapping) or not isinstance(raw[1], Mapping):
+            raise CameraFreshnessUnavailable("robot.read() must return (observation, images)")
         return raw[0], raw[1]
     if not isinstance(raw, Mapping):
-        raise CameraFreshnessUnavailable(
-            "robot.read() must return a mapping or (mapping, images)"
-        )
+        raise CameraFreshnessUnavailable("robot.read() must return a mapping or (mapping, images)")
     images = raw.get("images")
     if not isinstance(images, Mapping):
         raise CameraFreshnessUnavailable("robot observation has no images mapping")
@@ -231,29 +213,19 @@ def read_fresh_camera(
     raw_observation, images = _split_robot_read(robot.read())
     status_map = raw_observation.get("camera_status")
     if not isinstance(status_map, Mapping):
-        raise CameraFreshnessUnavailable(
-            "camera_status is absent; the source cannot prove a fresh camera frame"
-        )
+        raise CameraFreshnessUnavailable("camera_status is absent; the source cannot prove a fresh camera frame")
     status = status_map.get(camera)
     if not isinstance(status, Mapping) or status.get("fresh") is not True:
         raise CameraFreshnessUnavailable(f"camera {camera!r} is stale or unavailable")
     timestamp_ns = status.get("timestamp_ns")
-    if (
-        isinstance(timestamp_ns, bool)
-        or not isinstance(timestamp_ns, int)
-        or timestamp_ns <= 0
-    ):
-        raise CameraFreshnessUnavailable(
-            f"camera {camera!r} has no valid source timestamp"
-        )
+    if isinstance(timestamp_ns, bool) or not isinstance(timestamp_ns, int) or timestamp_ns <= 0:
+        raise CameraFreshnessUnavailable(f"camera {camera!r} has no valid source timestamp")
     encoded = images.get(camera)
     if isinstance(encoded, str):
         try:
             encoded = base64.b64decode(encoded, validate=True)
         except (ValueError, binascii.Error) as exc:
-            raise CameraFreshnessUnavailable(
-                f"camera {camera!r} payload is not valid base64"
-            ) from exc
+            raise CameraFreshnessUnavailable(f"camera {camera!r} payload is not valid base64") from exc
     if not isinstance(encoded, (bytes, bytearray, memoryview)):
         raise CameraFreshnessUnavailable(f"camera {camera!r} payload is not bytes")
     try:
@@ -263,9 +235,7 @@ def read_fresh_camera(
         with Image.open(io.BytesIO(bytes(encoded))) as image:
             rgb = np.asarray(image.convert("RGB"), dtype=np.uint8).copy()
     except (ImportError, OSError, ValueError) as exc:
-        raise CameraFreshnessUnavailable(
-            f"camera {camera!r} payload is not a readable RGB image"
-        ) from exc
+        raise CameraFreshnessUnavailable(f"camera {camera!r} payload is not a readable RGB image") from exc
     return rgb, timestamp_ns, float(timestamp_ns) / 1_000_000_000.0
 
 
@@ -339,17 +309,10 @@ async def run_local_segment_loop(
             accepted_prediction = False
             for retry in range(config.max_prediction_retries + 1):
                 rgb, camera_timestamp_ns, camera_timestamp_s, camera_received_at_s = (
-                    _read_fresh_camera_with_receive_time(
-                        robot, config.camera, clock=clock
-                    )
+                    _read_fresh_camera_with_receive_time(robot, config.camera, clock=clock)
                 )
-                if (
-                    last_camera_timestamp_ns is not None
-                    and camera_timestamp_ns <= last_camera_timestamp_ns
-                ):
-                    raise CameraFreshnessUnavailable(
-                        "camera source timestamp repeated or moved backwards"
-                    )
+                if last_camera_timestamp_ns is not None and camera_timestamp_ns <= last_camera_timestamp_ns:
+                    raise CameraFreshnessUnavailable("camera source timestamp repeated or moved backwards")
                 last_camera_timestamp_ns = camera_timestamp_ns
                 prediction = await provider.predict(
                     rgb,
@@ -360,9 +323,7 @@ async def run_local_segment_loop(
                 # A long inference may outlive the control lease.  Check a
                 # fresh owned state before deciding whether the prediction is
                 # usable, including on stale-prediction retries.
-                inference_feedback = await asyncio.to_thread(
-                    executor.check_fresh_feedback
-                )
+                inference_feedback = await asyncio.to_thread(executor.check_fresh_feedback)
                 prediction_age_s = float(clock()) - camera_received_at_s
                 if (
                     not math.isfinite(prediction_age_s)
@@ -382,9 +343,7 @@ async def run_local_segment_loop(
                             "camera_received_at_s": camera_received_at_s,
                             "prediction_age_s": prediction_age_s,
                             "parked_feedback": _feedback_summary(parked_feedback),
-                            "post_inference_feedback": _feedback_summary(
-                                inference_feedback
-                            ),
+                            "post_inference_feedback": _feedback_summary(inference_feedback),
                             "reason": "prediction-stale",
                             "metric_pose_available": False,
                         }
@@ -392,17 +351,14 @@ async def run_local_segment_loop(
                     if retry < config.max_prediction_retries:
                         continue
                     raise PredictionStale(
-                        f"prediction age {prediction_age_s:.3f}s exceeds "
-                        f"{config.prediction_timeout_s:.3f}s"
+                        f"prediction age {prediction_age_s:.3f}s exceeds {config.prediction_timeout_s:.3f}s"
                     )
 
                 chunk = prediction.output
                 metadata = dict(chunk.metadata or {})
                 stop = metadata.get("stop")
                 if type(stop) is not bool:
-                    raise RuntimeError(
-                        "LightNav-0 prediction is missing an explicit boolean stop"
-                    )
+                    raise RuntimeError("LightNav-0 prediction is missing an explicit boolean stop")
                 # Normalize recording only; the original provider output is
                 # still passed to the trajectory validator/executor.
                 json_waypoints = _json_safe(chunk.actions)
@@ -426,9 +382,7 @@ async def run_local_segment_loop(
                             "camera_received_at_s": camera_received_at_s,
                             "prediction_age_s": prediction_age_s,
                             "parked_feedback": _feedback_summary(parked_feedback),
-                            "post_inference_feedback": _feedback_summary(
-                                inference_feedback
-                            ),
+                            "post_inference_feedback": _feedback_summary(inference_feedback),
                             "reason": "prediction-stale-before-command",
                             "metric_pose_available": False,
                         }
@@ -436,8 +390,7 @@ async def run_local_segment_loop(
                     if retry < config.max_prediction_retries:
                         continue
                     raise PredictionStale(
-                        f"prediction age {prediction_age_s:.3f}s exceeds "
-                        f"{config.prediction_timeout_s:.3f}s"
+                        f"prediction age {prediction_age_s:.3f}s exceeds {config.prediction_timeout_s:.3f}s"
                     )
                 # Reuse the fresh ownership/velocity sample just checked.  A
                 # second immediate read can be the concrete client's cached
@@ -456,9 +409,7 @@ async def run_local_segment_loop(
                         "camera_received_at_s": camera_received_at_s,
                         "prediction_age_s": prediction_age_s,
                         "parked_feedback": _feedback_summary(parked_feedback),
-                        "post_inference_feedback": _feedback_summary(
-                            inference_feedback
-                        ),
+                        "post_inference_feedback": _feedback_summary(inference_feedback),
                         "wheel_feedback_received_at_s": step.feedback.received_at_s,
                         "wheel_state_timestamp_ns": step.feedback.state_timestamp_ns,
                         "waypoint_index": step.waypoint_index,
@@ -509,9 +460,7 @@ async def run_local_segment_loop(
                 failure = close_error
                 close_failure = close_error
             else:
-                failure.lightnav_close_error = (
-                    f"{type(close_error).__name__}: {close_error}"
-                )
+                failure.lightnav_close_error = f"{type(close_error).__name__}: {close_error}"
         finally:
             if failure is not None:
                 failure.lightnav_stop_report = executor.last_stop_report
@@ -643,29 +592,20 @@ def _prepare_output_path(path_value: str | None) -> Path | None:
 
 
 def _write_result(output: Path, result: Mapping[str, Any]) -> None:
-    output.write_text(
-        json.dumps(_json_safe(result), ensure_ascii=False, indent=2, allow_nan=False)
-        + "\n"
-    )
+    output.write_text(json.dumps(_json_safe(result), ensure_ascii=False, indent=2, allow_nan=False) + "\n")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     robot_source = parser.add_mutually_exclusive_group(required=True)
-    robot_source.add_argument(
-        "--robot-factory", help="module:function returning an authorized robot"
-    )
-    robot_source.add_argument(
-        "--robot-url", help="AGX robot URL for the built-in HTTP RemoteRobot client"
-    )
+    robot_source.add_argument("--robot-factory", help="module:function returning an authorized robot")
+    robot_source.add_argument("--robot-url", help="AGX robot URL for the built-in HTTP RemoteRobot client")
     parser.add_argument(
         "--robot-token-env",
         default="XLEROBOT_TOKEN",
         help="environment variable containing the robot token",
     )
-    parser.add_argument(
-        "--robot-scope", choices=("all", "arms", "base"), default="base"
-    )
+    parser.add_argument("--robot-scope", choices=("all", "arms", "base"), default="base")
     parser.add_argument("--robot-timeout-s", type=float, default=2.0)
     parser.add_argument(
         "--authorize-motion",

@@ -1,7 +1,6 @@
 import asyncio
 
 import pytest
-
 from embodirun_xlerobot_owner.control import JOINT_NAMES
 from embodirun_xlerobot_owner.robot import RemoteRobot
 from tests.xlerobot_owner.test_server import HEADERS, TOKEN, station
@@ -21,9 +20,9 @@ async def test_remote_clients_share_one_robot_without_sharing_ownership(tmp_path
             await asyncio.to_thread(robot.connect)
         await asyncio.to_thread(arms.arm)
         await asyncio.to_thread(base.arm)
-        action = {name: 50. if name.endswith("gripper.pos") else 1. for name in JOINT_NAMES}
+        action = {name: 50.0 if name.endswith("gripper.pos") else 1.0 for name in JOINT_NAMES}
         await asyncio.to_thread(arms.command, action)
-        await asyncio.to_thread(base.command, {"x.vel": .03, "theta.vel": 0})
+        await asyncio.to_thread(base.command, {"x.vel": 0.03, "theta.vel": 0})
         observed, _ = await asyncio.to_thread(observer.read)
         assert not observer.armed and not observed["control_owned"]
         assert observed["control_state"] == {"arms": True, "base": True}
@@ -31,10 +30,10 @@ async def test_remote_clients_share_one_robot_without_sharing_ownership(tmp_path
         assert stopped["stop_confirmed"] and p.robot.control_state() == {"arms": True, "base": False}
         assert all(p.robot.state[n] == action[n] for n in JOINT_NAMES)
         await asyncio.to_thread(base.arm)
-        await asyncio.to_thread(base.command, {"x.vel": .02, "theta.vel": 0})
+        await asyncio.to_thread(base.command, {"x.vel": 0.02, "theta.vel": 0})
         await asyncio.to_thread(arms.stop)
         assert p.robot.control_state() == {"arms": False, "base": True}
-        assert p.robot.state["x.vel"] == .02
+        assert p.robot.state["x.vel"] == 0.02
         await asyncio.to_thread(arms.arm)
         # Explicit whole-robot stop from either scoped client.
         await asyncio.to_thread(base.stop_all)
@@ -61,10 +60,10 @@ async def test_foreign_base_stop_preempts_navigation_without_stopping_arms(tmp_p
         # owner, and its late owner-scoped cleanup cannot release that owner.
         await asyncio.to_thread(human.arm)
         with pytest.raises(RuntimeError, match="does not own control"):
-            await asyncio.to_thread(navigation.command, {"x.vel": .03, "theta.vel": 0})
+            await asyncio.to_thread(navigation.command, {"x.vel": 0.03, "theta.vel": 0})
         released = await asyncio.to_thread(navigation.release)
         assert released == {"released": False, "control_owned": False}
-        await asyncio.to_thread(human.command, {"x.vel": .02, "theta.vel": 0})
+        await asyncio.to_thread(human.command, {"x.vel": 0.02, "theta.vel": 0})
         assert p.robot.control_state() == {"arms": True, "base": True}
         await asyncio.to_thread(arms.stop)
         await asyncio.to_thread(human.stop)
@@ -87,7 +86,7 @@ async def test_scope_violations_legacy_exclusivity_and_expired_owner(tmp_path):
         await p.call("stop", "base")
         newer = headers("base", "new")
         assert (await c.post("/robot/arm", headers=newer, json={})).status == 200
-        response = await c.post("/robot/command", headers=b, json={"action": {"x.vel": .03, "theta.vel": 0}})
+        response = await c.post("/robot/command", headers=b, json={"action": {"x.vel": 0.03, "theta.vel": 0}})
         assert response.status == 400 and p.robot.control_state()["base"]
         assert (await c.post("/robot/stop_all", headers=b, json={})).status == 200
         assert (await c.post("/robot/arm", headers=old, json={})).status == 200
@@ -105,9 +104,9 @@ async def test_cancelled_scoped_stop_still_finishes_without_stopping_arms(tmp_pa
         async with p.control_lock:
             await p.io_lock.acquire()
             pending = asyncio.create_task(p.stop_scope("base"))
-            await asyncio.sleep(.01)
+            await asyncio.sleep(0.01)
             pending.cancel()
-            await asyncio.sleep(.01)
+            await asyncio.sleep(0.01)
             assert not pending.done()
             p.io_lock.release()
             with pytest.raises(asyncio.CancelledError):

@@ -83,17 +83,21 @@ def service_examples(tmp_path_factory):
                 model["server"]["bind"] = "127.0.0.1"
             else:
                 # Exercise explicit transport limits independently of lab defaults.
-                limits = {"max_peer_queued_messages": 16, "max_peer_queued_bytes": 67108864,
-                          "egress_quantum_bytes": 65536, "egress_rate_bytes_per_second": 6250000,
-                          "egress_burst_bytes": 65536}
+                limits = {
+                    "max_peer_queued_messages": 16,
+                    "max_peer_queued_bytes": 67108864,
+                    "egress_quantum_bytes": 65536,
+                    "egress_rate_bytes_per_second": 6250000,
+                    "egress_burst_bytes": 65536,
+                }
                 model["transport_options"] = dict(limits)
                 runtime["inference_client"]["transport_options"] = dict(limits)
-            document["nodes"] = {name: node for name, node in document["nodes"].items()
-                                 if name in {model["node"], robot["node"]}}
+            document["nodes"] = {
+                name: node for name, node in document["nodes"].items() if name in {model["node"], robot["node"]}
+            }
             for node in document["nodes"].values():
                 node["connection"].pop("proxy_command", None)
-            document.update(robots={arm: robot}, sensors=sensors,
-                            runtimes={f"{arm}-runtime": runtime})
+            document.update(robots={arm: robot}, sensors=sensors, runtimes={f"{arm}-runtime": runtime})
             path = directory / f"{transport}.yaml"
             path.write_text(yaml.safe_dump(document, sort_keys=False))
             patch.setattr(sys.modules[__name__], variable, path)
@@ -150,16 +154,10 @@ def simulation_deployment(tmp_path, kind, backend, transport):
                     "sim-runtime": {
                         "simulator": "sim",
                         "model": "policy",
-                        "binding": (
-                            "unitree.go2.streamvln"
-                            if navigation
-                            else "franka.panda.pi05"
-                        ),
+                        "binding": ("unitree.go2.streamvln" if navigation else "franka.panda.pi05"),
                         "server": {"bind": "127.0.0.1", "port": 8100},
                         **(
-                            {"inference_client": {"bind": "127.0.0.1", "port": 9301}}
-                            if transport == "wireless"
-                            else {}
+                            {"inference_client": {"bind": "127.0.0.1", "port": 9301}} if transport == "wireless" else {}
                         ),
                     },
                 },
@@ -179,9 +177,7 @@ def simulation_deployment(tmp_path, kind, backend, transport):
     ]
     + [(kind, "sglang", "http") for kind in ("vlabench", "libero")],
 )
-def test_simulation_plan_preserves_backend_and_environment_boundaries(
-    tmp_path, kind, backend, transport
-) -> None:
+def test_simulation_plan_preserves_backend_and_environment_boundaries(tmp_path, kind, backend, transport) -> None:
     config = simulation_deployment(tmp_path, kind, backend, transport)
     profiles = environment_profiles(config)
     simulation_profile = next(p for p in profiles if p.project == "deploy")
@@ -194,41 +190,29 @@ def test_simulation_plan_preserves_backend_and_environment_boundaries(
     assert ("--extra" in command.argv) == (transport == "wireless")
     if transport == "wireless":
         assert command.argv[-2:] == ("--extra", "wireless")
-    assert model_profile.install == (
-        "packages" if backend == "sglang" else "project-group"
-    )
+    assert model_profile.install == ("packages" if backend == "sglang" else "project-group")
 
     model_service, simulation_service = build_plan(config).services
-    assert model_service.command.argv[0] == (
-        "sglang" if backend == "sglang" else f"vvla-{transport}-serve"
-    )
+    assert model_service.command.argv[0] == ("sglang" if backend == "sglang" else f"vvla-{transport}-serve")
     assert simulation_service.command.argv[0] == "rlinf-simulation-serve"
-    runtime = SimulationServiceConfig.from_json(
-        simulation_service.simulation_config_json
-    )
+    runtime = SimulationServiceConfig.from_json(simulation_service.simulation_config_json)
     assert runtime.inference_backend == backend
     assert runtime.inference_transport == transport
     if transport == "wireless":
         assert runtime.inference_endpoint == "wireless://model.policy"
-        assert runtime.inference_options["comm_config"] == (
-            "simulation-sim-runtime.wireless.json"
-        )
+        assert runtime.inference_options["comm_config"] == ("simulation-sim-runtime.wireless.json")
         server = json.loads(model_service.wireless_config_json)
         client = json.loads(simulation_service.wireless_config_json)
         assert server["local"]["port"] == 9300
         assert client["local"]["port"] == 9301
-        assert client["peers"] == [
-            {key: value for key, value in server["local"].items() if key != "bind_host"}
-        ]
+        assert client["peers"] == [{key: value for key, value in server["local"].items() if key != "bind_host"}]
     else:
         assert model_service.wireless_config_json is None
         assert simulation_service.wireless_config_json is None
 
 
 @pytest.mark.parametrize("wireless_first", [False, True])
-def test_simulators_sharing_environment_union_wireless_dependencies(
-    tmp_path, wireless_first
-) -> None:
+def test_simulators_sharing_environment_union_wireless_dependencies(tmp_path, wireless_first) -> None:
     config = simulation_deployment(tmp_path, "habitat", "vvla", "http")
     other_id = "aaa-wireless" if wireless_first else "zzz-wireless"
     config = replace(
@@ -308,11 +292,7 @@ class FakeNodeExecutor:
         if argv == ("/usr/bin/python3", "--version"):
             return CommandResult(0, "Python 3.10.12\n")
         if "remote" in argv and "get-url" in argv:
-            repository = (
-                DEPLOY_REPOSITORY
-                if argv[2].endswith("/deploy")
-                else INFERENCE_REPOSITORY
-            )
+            repository = DEPLOY_REPOSITORY if argv[2].endswith("/deploy") else INFERENCE_REPOSITORY
             return CommandResult(0, f"{repository}\n", "")
         if "rev-parse" in argv and "HEAD" in argv:
             return CommandResult(0, "resolved\nresolved\n", "")
@@ -473,11 +453,7 @@ class DownExecutor:
 
     def run(self, command, *, check=True):
         self.commands.append((command, check))
-        if (
-            len(command.argv) > 2
-            and command.argv[1].endswith("/supervisor.py")
-            and command.argv[2] == "stop"
-        ):
+        if len(command.argv) > 2 and command.argv[1].endswith("/supervisor.py") and command.argv[2] == "stop":
             return CommandResult(0, "stopped\n")
         raise AssertionError(f"unexpected command: {command.argv!r}")
 
@@ -516,11 +492,7 @@ class ConcurrentDownExecutor(DownExecutor):
         self.waited = False
 
     def run(self, command, *, check=True):
-        if (
-            len(command.argv) > 2
-            and command.argv[1].endswith("/supervisor.py")
-            and not self.waited
-        ):
+        if len(command.argv) > 2 and command.argv[1].endswith("/supervisor.py") and not self.waited:
             self.waited = True
             self.barrier.wait(timeout=1.0)
         return super().run(command, check=check)
@@ -564,10 +536,13 @@ def test_lab_examples_preserve_shared_model_and_launch_arguments(transport):
     assert len(controls) == 2
     assert {control.node for control in controls} == {"jetson-agx-orin-174", "jetson-orin-nx"}
     assert model.command.argv[-5:] == (
-        "--dtype", "bfloat16", "--num-steps", "10", "--capture-full-loop",
+        "--dtype",
+        "bfloat16",
+        "--num-steps",
+        "10",
+        "--capture-full-loop",
     )
-    assert all(json.loads(control.control_config_json)["inference"]["transport"] == transport
-               for control in controls)
+    assert all(json.loads(control.control_config_json)["inference"]["transport"] == transport for control in controls)
 
 
 def test_single_node_environment_and_runtime() -> None:
@@ -615,9 +590,7 @@ def test_single_node_environment_and_runtime() -> None:
         "state_fields": ["joint_positions_deg", "gripper_position"],
     }
     assert {runtime.runtime_id for runtime in plan.runtimes} == {"so101-1-runtime"}
-    assert {runtime.model_endpoint for runtime in plan.runtimes} == {
-        "http://127.0.0.1:8000"
-    }
+    assert {runtime.model_endpoint for runtime in plan.runtimes} == {"http://127.0.0.1:8000"}
     assert control_service.service_id == "control-so101-1-runtime"
     assert control_service.command.argv == ("rlinf-control-serve",)
     assert control_service.health_endpoint == "http://127.0.0.1:8100/healthz"
@@ -698,12 +671,8 @@ def test_wireless_example_generates_complementary_endpoints() -> None:
         "bind_host": "0.0.0.0",
         "port": 9300,
     }
-    assert server["peers"] == [
-        {key: value for key, value in client["local"].items() if key != "bind_host"}
-    ]
-    assert client["peers"] == [
-        {key: value for key, value in server["local"].items() if key != "bind_host"}
-    ]
+    assert server["peers"] == [{key: value for key, value in client["local"].items() if key != "bind_host"}]
+    assert client["peers"] == [{key: value for key, value in server["local"].items() if key != "bind_host"}]
     assert (
         server["comm"]
         == client["comm"]
@@ -736,9 +705,7 @@ def test_wireless_shared_model_has_distinct_runtime_peers(tmp_path) -> None:
     }
     runtime["server"]["port"] = 8101
     runtime["inference_client"]["port"] = 9301
-    runtime["inference_client"]["transport_options"]["egress_rate_bytes_per_second"] = (
-        1000000
-    )
+    runtime["inference_client"]["transport_options"]["egress_rate_bytes_per_second"] = 1000000
     document["runtimes"]["second-runtime"] = runtime
     plan = build_plan(load_document(tmp_path, document))
     assert plan == build_plan(load_document(tmp_path, document))
@@ -748,20 +715,11 @@ def test_wireless_shared_model_has_distinct_runtime_peers(tmp_path) -> None:
         "runtime.so101-2-runtime",
     }
     assert {peer["port"] for peer in server["peers"]} == {9300, 9301}
-    clients = {
-        service.service_id: json.loads(service.wireless_config_json)
-        for service in plan.services[1:]
-    }
+    clients = {service.service_id: json.loads(service.wireless_config_json) for service in plan.services[1:]}
     for client in clients.values():
         assert [peer["node_id"] for peer in client["peers"]] == ["model.pi05-01"]
-    assert (
-        clients["control-second-runtime"]["comm"]["egress_rate_bytes_per_second"]
-        == 1000000
-    )
-    assert (
-        clients["control-so101-2-runtime"]["comm"]["egress_rate_bytes_per_second"]
-        == 6250000
-    )
+    assert clients["control-second-runtime"]["comm"]["egress_rate_bytes_per_second"] == 1000000
+    assert clients["control-so101-2-runtime"]["comm"]["egress_rate_bytes_per_second"] == 6250000
 
 
 def test_wireless_plan_rejects_cross_robot_shared_camera(tmp_path) -> None:
@@ -792,10 +750,7 @@ def test_data_addresses_override_ssh_hosts(tmp_path, transport) -> None:
         del document["runtimes"]["so101-2-runtime"]["inference_client"]
     model, control = build_plan(load_document(tmp_path, document)).services
     if transport == "http":
-        assert (
-            json.loads(control.control_config_json)["inference"]["endpoint"]
-            == "http://192.168.8.1:9300"
-        )
+        assert json.loads(control.control_config_json)["inference"]["endpoint"] == "http://192.168.8.1:9300"
     else:
         server = json.loads(model.wireless_config_json)
         client = json.loads(control.wireless_config_json)
@@ -814,16 +769,9 @@ def test_wireless_multiple_models_keep_their_peers_separate(tmp_path) -> None:
     runtime["inference_client"]["port"] = 9401
     document["runtimes"]["second-runtime"] = runtime
     services = build_plan(load_document(tmp_path, document)).services
-    endpoints = {
-        service.service_id: json.loads(service.wireless_config_json)
-        for service in services
-    }
-    assert [peer["node_id"] for peer in endpoints["policy"]["peers"]] == [
-        "runtime.sim-runtime"
-    ]
-    assert [peer["node_id"] for peer in endpoints["second-model"]["peers"]] == [
-        "runtime.second-runtime"
-    ]
+    endpoints = {service.service_id: json.loads(service.wireless_config_json) for service in services}
+    assert [peer["node_id"] for peer in endpoints["policy"]["peers"]] == ["runtime.sim-runtime"]
+    assert [peer["node_id"] for peer in endpoints["second-model"]["peers"]] == ["runtime.second-runtime"]
     client = endpoints["simulation-second-runtime"]
     assert [peer["node_id"] for peer in client["peers"]] == ["model.second-model"]
     assert len({endpoint["local"]["port"] for endpoint in endpoints.values()}) == 4
@@ -900,9 +848,7 @@ def test_generated_endpoint_files_cannot_overwrite_another_service(tmp_path) -> 
         ),
     ],
 )
-def test_invalid_wireless_configuration_fails_before_execution(
-    tmp_path, path, value, match
-) -> None:
+def test_invalid_wireless_configuration_fails_before_execution(tmp_path, path, value, match) -> None:
     document = wireless_document()
     target = document
     for key in path[:-1]:
@@ -944,9 +890,7 @@ def test_wireless_listeners_conflict_on_same_node(tmp_path, collision) -> None:
 
 
 @pytest.mark.parametrize("target", ["robot", "simulator"])
-def test_wireless_up_writes_native_configs_and_absolute_references(
-    tmp_path, capsys, target
-) -> None:
+def test_wireless_up_writes_native_configs_and_absolute_references(tmp_path, capsys, target) -> None:
     config = (
         load_config(WIRELESS_EXAMPLE)
         if target == "robot"
@@ -964,28 +908,15 @@ def test_wireless_up_writes_native_configs_and_absolute_references(
     executors.clear()
     assert main((*args, "up"), executor_factory=factory) == 0
     assert capsys.readouterr().err == ""
-    files = {
-        path: content
-        for executor in executors
-        for path, (content, mode) in executor.files.items()
-    }
-    wireless_files = {
-        path: json.loads(content)
-        for path, content in files.items()
-        if path.endswith(".wireless.json")
-    }
+    files = {path: content for executor in executors for path, (content, mode) in executor.files.items()}
+    wireless_files = {path: json.loads(content) for path, content in files.items() if path.endswith(".wireless.json")}
     assert len(wireless_files) == 2
     assert all("/generated/" in path for path in wireless_files)
     assert all(
-        mode == 0o600
-        for executor in executors
-        for path, (_, mode) in executor.files.items()
-        if path in wireless_files
+        mode == 0o600 for executor in executors for path, (_, mode) in executor.files.items() if path in wireless_files
     )
     service_configs = [
-        json.loads(content)
-        for path, content in files.items()
-        if path.endswith((".control.json", ".simulation.json"))
+        json.loads(content) for path, content in files.items() if path.endswith((".control.json", ".simulation.json"))
     ]
     assert len(service_configs) == 1
     options = service_configs[0]["inference"]["options"]
@@ -995,16 +926,10 @@ def test_wireless_up_writes_native_configs_and_absolute_references(
         command
         for executor in executors
         for command, _ in executor.commands
-        if len(command.argv) > 2
-        and command.argv[1].endswith("/supervisor.py")
-        and command.argv[2] == "start"
+        if len(command.argv) > 2 and command.argv[1].endswith("/supervisor.py") and command.argv[2] == "start"
     ]
     start_requests = [json.loads(command.stdin) for command in start_commands]
-    model_argv = next(
-        request["argv"]
-        for request in start_requests
-        if "--comm-config" in request["argv"]
-    )
+    model_argv = next(request["argv"] for request in start_requests if "--comm-config" in request["argv"])
     path = model_argv[model_argv.index("--comm-config") + 1]
     assert wireless_files[path]["local"]["node_id"] == options["server_node_id"]
 
@@ -1062,9 +987,7 @@ runtimes:
     profiles = environment_profiles(config)
     plan = build_plan(config)
 
-    identities = {
-        (profile.project, profile.group, profile.install) for profile in profiles
-    }
+    identities = {(profile.project, profile.group, profile.install) for profile in profiles}
     assert identities == {
         ("deploy", "sim-habitat", "project-group"),
         ("inference", "sglang", "packages"),
@@ -1110,8 +1033,7 @@ def test_sglang_pi05_reuses_existing_so101_binding(tmp_path) -> None:
         .replace("backend: vvla", "backend: sglang")
         .replace(
             "    source: /models/pi05_so101\n",
-            '    environment_packages: ["sglang[diffusion]==0.5.18"]\n'
-            "    source: /models/pi05_so101\n",
+            '    environment_packages: ["sglang[diffusion]==0.5.18"]\n    source: /models/pi05_so101\n',
         ),
         encoding="utf-8",
     )
@@ -1147,11 +1069,7 @@ def test_sglang_pi05_reuses_existing_so101_binding(tmp_path) -> None:
 
 
 def test_uv_environment_manager_uses_only_the_selected_group() -> None:
-    profile = next(
-        item
-        for item in environment_profiles(load_config(EXAMPLE))
-        if item.project == "deploy"
-    )
+    profile = next(item for item in environment_profiles(load_config(EXAMPLE)) if item.project == "deploy")
     executor = RecordingExecutor()
     result = UvEnvironmentManager(executor).prepare(
         profile,
@@ -1177,11 +1095,7 @@ def test_uv_environment_manager_uses_only_the_selected_group() -> None:
 
 def test_uv_environment_manager_applies_configured_package_overlay() -> None:
     profile = replace(
-        next(
-            item
-            for item in environment_profiles(load_config(EXAMPLE))
-            if item.project == "inference"
-        ),
+        next(item for item in environment_profiles(load_config(EXAMPLE)) if item.project == "inference"),
         package_index="https://download.pytorch.org/whl/cu130",
         packages=("torch==2.10.0+cu130", "torchvision==0.25.0+cu130"),
     )
@@ -1295,9 +1209,7 @@ def test_standalone_environment_init_is_repeatable(
         manager.prepare(profile, project_dir=str(tmp_path))
     environment_path = tmp_path / profile.path
     config_stat = (environment_path / "pyvenv.cfg").stat()
-    installed_module = (
-        environment_path / f"lib/python{major}.{minor}/site-packages/env_probe.py"
-    )
+    installed_module = environment_path / f"lib/python{major}.{minor}/site-packages/env_probe.py"
     installed_module.write_text("VALUE = 'preserved'\n", encoding="utf-8")
 
     result = manager.prepare(
@@ -1308,9 +1220,7 @@ def test_standalone_environment_init_is_repeatable(
     assert result.stdout == "packages ready\n"
     assert executor.install_attempts == 2
     assert sum(command.argv[1] == "venv" for command in executor.commands) == 1
-    assert (
-        environment_path / "pyvenv.cfg"
-    ).stat().st_mtime_ns == config_stat.st_mtime_ns
+    assert (environment_path / "pyvenv.cfg").stat().st_mtime_ns == config_stat.st_mtime_ns
     probe = executor.run(
         Command(
             (
@@ -1410,17 +1320,10 @@ def test_project_manager_reads_gitlink_from_requested_commit(tmp_path) -> None:
 
     manager = ProjectManager(executor)
     assert (
-        manager.submodule_revision(
-            project_dir=project, revision=deploy_commit, path="third_party/embodiinfer"
-        )
+        manager.submodule_revision(project_dir=project, revision=deploy_commit, path="third_party/embodiinfer")
         == INFERENCE_REVISION
     )
-    assert (
-        manager.submodule_revision(
-            project_dir=project, revision="HEAD", path="third_party/embodiinfer"
-        )
-        == "b" * 40
-    )
+    assert manager.submodule_revision(project_dir=project, revision="HEAD", path="third_party/embodiinfer") == "b" * 40
     assert not (tmp_path / "deploy/third_party/embodiinfer").exists()
 
 
@@ -1536,9 +1439,7 @@ def test_ssh_executor_reads_health_without_remote_script() -> None:
     thread.join(timeout=2.0)
 
     assert response == JsonHttpResponse(200, {"status": "ok"})
-    assert opened == [
-        ("direct-tcpip", ("127.0.0.1", 8000), ("127.0.0.1", 0), 2.0)
-    ]
+    assert opened == [("direct-tcpip", ("127.0.0.1", 8000), ("127.0.0.1", 0), 2.0)]
     assert not thread.is_alive()
 
 
@@ -1639,9 +1540,7 @@ def test_ssh_executor_sends_structured_command_stdin() -> None:
     executor._password = None
     executor.connection = SimpleNamespace(command_timeout_s=30.0)
 
-    result = executor.run(
-        Command(("worker", "argument with spaces"), stdin='{"task":"start"}\n')
-    )
+    result = executor.run(Command(("worker", "argument with spaces"), stdin='{"task":"start"}\n'))
 
     assert result == CommandResult(0, "ready\n", "")
     assert invocations == [("worker 'argument with spaces'", 30.0)]
@@ -1681,21 +1580,33 @@ def test_ssh_proxy_substitutes_endpoint_and_closes_on_failure(monkeypatch, fail)
             raise OSError("fixture connection failure")
 
     client = SimpleNamespace(
-        load_system_host_keys=lambda: None, set_log_channel=lambda _: None,
-        connect=connect, close=lambda: events.append("client-closed"),
+        load_system_host_keys=lambda: None,
+        set_log_channel=lambda _: None,
+        connect=connect,
+        close=lambda: events.append("client-closed"),
     )
 
     def proxy_factory(command):
         assert shlex.split(command) == ["nc", "-X", "5", "-x", "127.0.0.1:1080", "lab-node", "2222"]
         return proxy
 
-    monkeypatch.setitem(sys.modules, "paramiko", SimpleNamespace(
-        SSHClient=lambda: client, ProxyCommand=proxy_factory,
-    ))
-    executor = SshExecutor(ConnectionConfig(
-        kind="ssh", host="lab-node", port=2222, username="user",
-        proxy_command="nc -X 5 -x 127.0.0.1:1080 %h %p",
-    ))
+    monkeypatch.setitem(
+        sys.modules,
+        "paramiko",
+        SimpleNamespace(
+            SSHClient=lambda: client,
+            ProxyCommand=proxy_factory,
+        ),
+    )
+    executor = SshExecutor(
+        ConnectionConfig(
+            kind="ssh",
+            host="lab-node",
+            port=2222,
+            username="user",
+            proxy_command="nc -X 5 -x 127.0.0.1:1080 %h %p",
+        )
+    )
     if fail:
         with pytest.raises(RuntimeError, match="fixture connection failure"):
             executor._connect()
@@ -1718,9 +1629,7 @@ def test_ssh_executor_does_not_leak_paramiko_transport_logs(
             self.log_channel = name
 
         def connect(self, **_options):
-            logging.getLogger(self.log_channel).error(
-                "Secsh channel 5 open FAILED: Connection refused"
-            )
+            logging.getLogger(self.log_channel).error("Secsh channel 5 open FAILED: Connection refused")
 
     client = Client()
     monkeypatch.setitem(
@@ -1816,9 +1725,7 @@ def test_local_service_supervisor_runs_without_embedded_shell(tmp_path) -> None:
     supervisor = ServiceSupervisor(
         LocalExecutor(),
         python=sys.executable,
-        agent_path=str(
-            ROOT / "src/embodirun/services/host/supervisor.py"
-        ),
+        agent_path=str(ROOT / "src/embodirun/services/host/supervisor.py"),
         run_root=str(tmp_path / "run"),
         log_root=str(tmp_path / "logs"),
     )
@@ -1846,11 +1753,7 @@ def test_local_service_supervisor_runs_without_embedded_shell(tmp_path) -> None:
 def test_duplicate_yaml_keys_are_rejected(tmp_path) -> None:
     config_path = tmp_path / "duplicate.yaml"
     config_path.write_text(
-        "metadata:\n"
-        "  name: one\n"
-        "  name: two\n"
-        "  deploy-commit: abc\n"
-        "nodes: {}\n",
+        "metadata:\n  name: one\n  name: two\n  deploy-commit: abc\nnodes: {}\n",
         encoding="utf-8",
     )
 
@@ -1861,9 +1764,7 @@ def test_duplicate_yaml_keys_are_rejected(tmp_path) -> None:
 def test_metadata_rejects_independent_inference_revision(tmp_path) -> None:
     config_path = tmp_path / "obsolete.yaml"
     config_path.write_text(
-        EXAMPLE.read_text(encoding="utf-8").replace(
-            "metadata:\n", "metadata:\n  inference-commit: obsolete\n", 1
-        ),
+        EXAMPLE.read_text(encoding="utf-8").replace("metadata:\n", "metadata:\n  inference-commit: obsolete\n", 1),
         encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="inference-commit"):
@@ -1932,9 +1833,7 @@ def test_cli_init_rejects_deploy_without_inference_gitlink(tmp_path, capsys) -> 
     assert "third_party/embodiinfer" in captured.err
     commands = [command.argv for command, _check in executor.commands]
     assert not any("--group" in argv for argv in commands)
-    assert not any(
-        "-C" in argv and argv[2].endswith("/sources/inference") for argv in commands
-    )
+    assert not any("-C" in argv and argv[2].endswith("/sources/inference") for argv in commands)
     state = StateStore(tmp_path / "thor-so101-pi05.json").load()
     assert state is not None
     assert state.inference_commit is None
@@ -1946,11 +1845,7 @@ def test_cli_init_rejects_inconsistent_inference_gitlinks(tmp_path, capsys) -> N
     config_path = two_node_model_config(tmp_path)
 
     def factory(node):
-        return FakeNodeExecutor(
-            inference_commit=(
-                INFERENCE_REVISION if node.node_id == "jetson-worker" else "b" * 40
-            )
-        )
+        return FakeNodeExecutor(inference_commit=(INFERENCE_REVISION if node.node_id == "jetson-worker" else "b" * 40))
 
     exit_code = main(
         ("--config", str(config_path), "--state-dir", str(tmp_path), "init"),
@@ -1962,15 +1857,11 @@ def test_cli_init_rejects_inconsistent_inference_gitlinks(tmp_path, capsys) -> N
     assert StateStore(tmp_path / "thor-so101-pi05.json").load() is None
 
 
-def test_cli_init_preserves_resolved_revision_after_partial_failure(
-    tmp_path, capsys
-) -> None:
+def test_cli_init_preserves_resolved_revision_after_partial_failure(tmp_path, capsys) -> None:
     config_path = two_node_model_config(tmp_path)
 
     def factory(node):
-        return (
-            FailingExecutor() if node.node_id == "jetson-worker" else FakeNodeExecutor()
-        )
+        return FailingExecutor() if node.node_id == "jetson-worker" else FakeNodeExecutor()
 
     exit_code = main(
         ("--config", str(config_path), "--state-dir", str(tmp_path), "init"),
@@ -2036,13 +1927,9 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
     assert any(argv[-2:] == ("--group", "pi05") for argv in init_argv)
     assert any(argv[-2:] == ("--group", "robot-so101") for argv in init_argv)
     assert executors[0].closed is True
-    active_source = active_deploy_project(
-        "/home/operator/.local/share/rlinf-deploy/thor-so101-pi05"
-    )
+    active_source = active_deploy_project("/home/operator/.local/share/rlinf-deploy/thor-so101-pi05")
     assert executors[0].symlinks == {
-        active_source: (
-            "/home/operator/.local/share/rlinf-deploy/thor-so101-pi05/sources/deploy"
-        )
+        active_source: ("/home/operator/.local/share/rlinf-deploy/thor-so101-pi05/sources/deploy")
     }
 
     up_exit_code = main((*base_args, "up"), executor_factory=factory)
@@ -2072,49 +1959,28 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
     start_commands = [
         command
         for command in up_commands
-        if len(command.argv) > 2
-        and command.argv[1].endswith("/supervisor.py")
-        and command.argv[2] == "start"
+        if len(command.argv) > 2 and command.argv[1].endswith("/supervisor.py") and command.argv[2] == "start"
     ]
     assert len(start_commands) == 2
-    assert all(
-        command.argv[1].startswith(f"{active_source}/")
-        for command in start_commands
-    )
+    assert all(command.argv[1].startswith(f"{active_source}/") for command in start_commands)
     start_requests = [json.loads(command.stdin) for command in start_commands]
-    model_request = next(
-        request for request in start_requests if request["argv"][0].endswith("vvla-http-serve")
-    )
+    model_request = next(request for request in start_requests if request["argv"][0].endswith("vvla-http-serve"))
     assert (
-        model_request["argv"][0]
-        == "/home/operator/.local/share/rlinf-deploy/thor-so101-pi05/"
+        model_request["argv"][0] == "/home/operator/.local/share/rlinf-deploy/thor-so101-pi05/"
         "sources/inference/.venv-vvla/bin/vvla-http-serve"
     )
-    assert any(
-        value.endswith("/thor-so101-pi05/generated/pi05-01.adapter.json")
-        for value in model_request["argv"]
-    )
-    control_request = next(
-        request
-        for request in start_requests
-        if request["argv"][0].endswith("rlinf-control-serve")
-    )
+    assert any(value.endswith("/thor-so101-pi05/generated/pi05-01.adapter.json") for value in model_request["argv"])
+    control_request = next(request for request in start_requests if request["argv"][0].endswith("rlinf-control-serve"))
     assert control_request["cwd"] == active_source
-    assert control_request["environment"]["PYTHONPATH"].endswith(
-        "/overlays/deploy/current/src"
-    )
+    assert control_request["environment"]["PYTHONPATH"].endswith("/overlays/deploy/current/src")
     adapter_path, (adapter_content, adapter_mode) = next(
-        item
-        for item in executors[1].files.items()
-        if item[0].endswith(".adapter.json")
+        item for item in executors[1].files.items() if item[0].endswith(".adapter.json")
     )
     assert adapter_path.endswith("/generated/pi05-01.adapter.json")
     assert json.loads(adapter_content)["return_steps"] == 50
     assert adapter_mode == 0o600
     control_path, (control_content, control_mode) = next(
-        item
-        for item in executors[1].files.items()
-        if item[0].endswith(".control.json")
+        item for item in executors[1].files.items() if item[0].endswith(".control.json")
     )
     assert control_path.endswith("/generated/control-so101-1-runtime.control.json")
     assert json.loads(control_content)["runtime_id"] == "so101-1-runtime"
@@ -2134,10 +2000,7 @@ def test_cli_routes_prompt_to_selected_runtime(tmp_path, capsys) -> None:
         "--state-dir",
         str(state_dir),
     )
-    assert (
-        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
-        == 0
-    )
+    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
     capsys.readouterr()
     assert (
         main(
@@ -2183,9 +2046,7 @@ def test_cli_routes_prompt_to_selected_runtime(tmp_path, capsys) -> None:
     assert executor.closed is True
 
 
-def test_cli_sync_uploads_deploy_overlay_without_touching_inference(
-    tmp_path, capsys
-) -> None:
+def test_cli_sync_uploads_deploy_overlay_without_touching_inference(tmp_path, capsys) -> None:
     state_dir = tmp_path / "state"
     base_args = (
         "--config",
@@ -2193,10 +2054,7 @@ def test_cli_sync_uploads_deploy_overlay_without_touching_inference(
         "--state-dir",
         str(state_dir),
     )
-    assert (
-        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
-        == 0
-    )
+    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
     capsys.readouterr()
     executor = SyncExecutor()
 
@@ -2213,22 +2071,14 @@ def test_cli_sync_uploads_deploy_overlay_without_touching_inference(
     assert "restart control services" in captured.out
     commands = [command for command, _check in executor.commands]
     assert all(command.argv[:2] != ("sh", "-c") for command in commands)
-    assert not any(
-        "inference" in argument
-        for command in commands
-        for argument in command.argv
-    )
+    assert not any("inference" in argument for command in commands for argument in command.argv)
     assert not any("sync" in command.argv for command in commands)
     assert any(command.argv[0] == "tar" for command in commands)
     assert len(executor.symlinks) == 1
     current, release = next(iter(executor.symlinks.items()))
     assert current.endswith("/overlays/deploy/current")
     assert "/overlays/deploy/releases/" in release
-    uploaded = next(
-        content
-        for path, (content, _mode) in executor.files.items()
-        if path.endswith(".tar.gz")
-    )
+    uploaded = next(content for path, (content, _mode) in executor.files.items() if path.endswith(".tar.gz"))
     with tarfile.open(fileobj=BytesIO(uploaded), mode="r:gz") as archive:
         names = set(archive.getnames())
     assert "src/embodirun/services/control/server.py" in names
@@ -2237,9 +2087,7 @@ def test_cli_sync_uploads_deploy_overlay_without_touching_inference(
     assert executor.closed is True
 
 
-def test_cli_sync_updates_only_deploy_dependencies_when_lock_changes(
-    tmp_path, capsys
-) -> None:
+def test_cli_sync_updates_only_deploy_dependencies_when_lock_changes(tmp_path, capsys) -> None:
     state_dir = tmp_path / "state"
     base_args = (
         "--config",
@@ -2247,10 +2095,7 @@ def test_cli_sync_updates_only_deploy_dependencies_when_lock_changes(
         "--state-dir",
         str(state_dir),
     )
-    assert (
-        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
-        == 0
-    )
+    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
     capsys.readouterr()
     executor = SyncExecutor(dependencies_changed=True)
 
@@ -2262,16 +2107,13 @@ def test_cli_sync_updates_only_deploy_dependencies_when_lock_changes(
     captured = capsys.readouterr()
     assert exit_code == 0
     uv_commands = [
-        command
-        for command, _check in executor.commands
-        if "sync" in command.argv and "--group" in command.argv
+        command for command, _check in executor.commands if "sync" in command.argv and "--group" in command.argv
     ]
     assert len(uv_commands) == 1
     assert uv_commands[0].argv[-2:] == ("--group", "robot-so101")
     assert uv_commands[0].environment == {
         "UV_PROJECT_ENVIRONMENT": (
-            "/home/operator/.local/share/rlinf-deploy/thor-so101-pi05/"
-            "sources/deploy/.venv-robot-so101"
+            "/home/operator/.local/share/rlinf-deploy/thor-so101-pi05/sources/deploy/.venv-robot-so101"
         )
     }
     assert "dependencies updated" in captured.out
@@ -2285,10 +2127,7 @@ def test_cli_sync_has_no_obsolete_binding_worker_probe(tmp_path, capsys) -> None
         "--state-dir",
         str(state_dir),
     )
-    assert (
-        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
-        == 0
-    )
+    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
     capsys.readouterr()
     executor = SyncExecutor(worker_running=True)
 
@@ -2300,16 +2139,11 @@ def test_cli_sync_has_no_obsolete_binding_worker_probe(tmp_path, capsys) -> None
     captured = capsys.readouterr()
     assert exit_code == 0
     assert captured.err == ""
-    assert not any(
-        command.argv[:2] == ("pgrep", "-f")
-        for command, _check in executor.commands
-    )
+    assert not any(command.argv[:2] == ("pgrep", "-f") for command, _check in executor.commands)
     assert executor.closed is True
 
 
-def test_cli_down_can_stop_control_without_stopping_inference(
-    tmp_path, capsys
-) -> None:
+def test_cli_down_can_stop_control_without_stopping_inference(tmp_path, capsys) -> None:
     state_dir = tmp_path / "state"
     base_args = (
         "--config",
@@ -2317,10 +2151,7 @@ def test_cli_down_can_stop_control_without_stopping_inference(
         "--state-dir",
         str(state_dir),
     )
-    assert (
-        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
-        == 0
-    )
+    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
     capsys.readouterr()
     assert (
         main(
@@ -2355,10 +2186,7 @@ def test_cli_sync_requires_control_services_to_be_stopped(tmp_path, capsys) -> N
         "--state-dir",
         str(state_dir),
     )
-    assert (
-        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
-        == 0
-    )
+    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
     capsys.readouterr()
     assert (
         main(
@@ -2389,10 +2217,7 @@ def test_cli_sync_allows_unrelated_config_change_after_init(tmp_path, capsys) ->
         "--state-dir",
         str(state_dir),
     )
-    assert (
-        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
-        == 0
-    )
+    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
     capsys.readouterr()
     config_path.write_text(
         config_path.read_text(encoding="utf-8") + "\n# local runtime edit\n",
@@ -2411,9 +2236,7 @@ def test_cli_sync_allows_unrelated_config_change_after_init(tmp_path, capsys) ->
     assert executor.symlinks
 
 
-def test_cli_run_rejects_any_config_change_after_control_started(
-    tmp_path, capsys
-) -> None:
+def test_cli_run_rejects_any_config_change_after_control_started(tmp_path, capsys) -> None:
     config_path = tmp_path / "deployment.yaml"
     config_path.write_text(EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
     state_dir = tmp_path / "state"
@@ -2423,10 +2246,7 @@ def test_cli_run_rejects_any_config_change_after_control_started(
         "--state-dir",
         str(state_dir),
     )
-    assert (
-        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
-        == 0
-    )
+    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
     capsys.readouterr()
     assert (
         main(
@@ -2468,10 +2288,7 @@ def test_cli_run_rejects_changed_model_endpoint(tmp_path, capsys) -> None:
         "--state-dir",
         str(state_dir),
     )
-    assert (
-        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
-        == 0
-    )
+    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
     capsys.readouterr()
     assert (
         main(
@@ -2574,10 +2391,7 @@ def test_cli_runtime_surfaces_remote_binding_error(tmp_path, capsys) -> None:
         "--state-dir",
         str(state_dir),
     )
-    assert (
-        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
-        == 0
-    )
+    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
     capsys.readouterr()
     assert (
         main(
@@ -2636,10 +2450,7 @@ def test_cli_up_fails_until_service_is_healthy(
         "--state-dir",
         str(state_dir),
     )
-    assert (
-        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
-        == 0
-    )
+    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
     capsys.readouterr()
     executor = ServiceReadinessExecutor(
         process_state=process_state,
@@ -2667,9 +2478,7 @@ def test_cli_up_fails_until_service_is_healthy(
     assert executor.closed is True
 
 
-def test_cli_probe_only_checks_connectivity_and_does_not_write_state(
-    tmp_path, capsys
-) -> None:
+def test_cli_probe_only_checks_connectivity_and_does_not_write_state(tmp_path, capsys) -> None:
     executors = []
 
     def factory(_node):
@@ -2704,11 +2513,7 @@ def test_cli_probe_continues_after_one_node_is_unreachable(tmp_path, capsys) -> 
     config_path.write_text(
         EXAMPLE.read_text(encoding="utf-8").replace(
             "\nrobots:\n",
-            "\n  offline-node:\n"
-            "    type: test.node\n"
-            "    connection:\n"
-            "      type: local\n"
-            "\nrobots:\n",
+            "\n  offline-node:\n    type: test.node\n    connection:\n      type: local\n\nrobots:\n",
         ),
         encoding="utf-8",
     )
@@ -2807,10 +2612,7 @@ def test_cli_down_stops_services_after_configuration_changes(tmp_path, capsys) -
     config_path.write_text(EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
     state_dir = tmp_path / "state"
     base_args = ("--config", str(config_path), "--state-dir", str(state_dir))
-    assert (
-        main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor())
-        == 0
-    )
+    assert main((*base_args, "init"), executor_factory=lambda _node: FakeNodeExecutor()) == 0
     capsys.readouterr()
     assert (
         main(
@@ -2854,7 +2656,10 @@ def test_cli_up_rejects_config_changed_after_init(tmp_path, capsys) -> None:
         "--state-dir",
         str(state_dir),
     )
-    factory = lambda _node: FakeNodeExecutor()
+
+    def factory(_node):
+        return FakeNodeExecutor()
+
     assert main((*arguments, "init"), executor_factory=factory) == 0
     capsys.readouterr()
     config_path.write_text(
@@ -2870,9 +2675,7 @@ def test_cli_up_rejects_config_changed_after_init(tmp_path, capsys) -> None:
 
 
 @pytest.mark.parametrize("inference_commit", ["def", None])
-def test_state_store_round_trip_is_atomic_and_secret_free(
-    tmp_path, inference_commit
-) -> None:
+def test_state_store_round_trip_is_atomic_and_secret_free(tmp_path, inference_commit) -> None:
     state_path = tmp_path / "state" / "deployment.json"
     state = DeploymentState(
         name="lab",

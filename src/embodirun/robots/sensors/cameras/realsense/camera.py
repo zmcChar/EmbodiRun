@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import io
 import math
@@ -93,26 +94,18 @@ class RealSenseCameraSource:
             self.close()
             if isinstance(error, RealSenseCameraError):
                 raise
-            raise RealSenseCameraError(
-                f"could not start RealSense color pipeline: {error}"
-            ) from error
+            raise RealSenseCameraError(f"could not start RealSense color pipeline: {error}") from error
 
     def capture(self) -> tuple[CameraFrame, ...]:
         images: list[CameraFrame] = []
         for index, (camera, pipeline) in enumerate(zip(self._cameras, self._pipelines)):
             try:
-                frames = pipeline.wait_for_frames(
-                    max(1, int(camera.frame_timeout_s * 1000))
-                )
+                frames = pipeline.wait_for_frames(max(1, int(camera.frame_timeout_s * 1000)))
                 color = frames.get_color_frame()
             except RuntimeError as error:
-                raise RealSenseCameraError(
-                    f"camera {camera.name!r} frame capture failed: {error}"
-                ) from error
+                raise RealSenseCameraError(f"camera {camera.name!r} frame capture failed: {error}") from error
             if not color:
-                raise RealSenseCameraError(
-                    f"camera {camera.name!r} returned no color frame"
-                )
+                raise RealSenseCameraError(f"camera {camera.name!r} returned no color frame")
             # RealSense's Python API does not provide a portable exposure
             # timestamp for this generic contract.  Capture the host read
             # boundary before copying/encoding the RGB payload instead of
@@ -140,14 +133,10 @@ class RealSenseCameraSource:
     def _now_ns(self) -> int:
         value = self._clock_ns()
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-            raise RealSenseCameraError(
-                "camera clock must return a non-negative integer nanosecond value"
-            )
+            raise RealSenseCameraError("camera clock must return a non-negative integer nanosecond value")
         return value
 
-    def _actual_profile(
-        self, pipeline_profile: Any, color: Any
-    ) -> dict[str, object] | None:
+    def _actual_profile(self, pipeline_profile: Any, color: Any) -> dict[str, object] | None:
         """Return only values reported by the SDK's active color profile."""
 
         stream_profile = None
@@ -156,9 +145,7 @@ class RealSenseCameraSource:
             try:
                 stream = getattr(self._rs, "stream", None)
                 color_stream = getattr(stream, "color", None)
-                stream_profile = (
-                    getter(color_stream) if color_stream is not None else None
-                )
+                stream_profile = getter(color_stream) if color_stream is not None else None
             except Exception:
                 stream_profile = None
         if stream_profile is None:
@@ -193,10 +180,8 @@ class RealSenseCameraSource:
 
     def close(self) -> None:
         for pipeline in reversed(self._pipelines):
-            try:
+            with contextlib.suppress(Exception):
                 pipeline.stop()
-            except Exception:
-                pass
         self._pipelines.clear()
         self._pipeline_profiles.clear()
 
@@ -204,15 +189,11 @@ class RealSenseCameraSource:
 def _encode_rgb_as_jpeg(raw: bytes, width: int, height: int, quality: int) -> bytes:
     expected = width * height * 3
     if len(raw) != expected:
-        raise RealSenseCameraError(
-            f"unexpected RGB8 frame size: got {len(raw)}, expected {expected}"
-        )
+        raise RealSenseCameraError(f"unexpected RGB8 frame size: got {len(raw)}, expected {expected}")
     try:
         from PIL import Image
     except ImportError as error:
-        raise RealSenseCameraError(
-            "RealSense JPEG encoding requires Pillow in the robot environment"
-        ) from error
+        raise RealSenseCameraError("RealSense JPEG encoding requires Pillow in the robot environment") from error
     image = Image.frombytes("RGB", (width, height), raw)
     encoded = io.BytesIO()
     image.save(encoded, format="JPEG", quality=quality)

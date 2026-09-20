@@ -26,9 +26,7 @@ class SimulatorObservation:
             raise TypeError("simulator observation robot must be a RobotObservation")
         frames = tuple(self.frames)
         if not frames or any(not isinstance(frame, CameraFrame) for frame in frames):
-            raise ValueError(
-                "simulator observation frames must contain at least one CameraFrame"
-            )
+            raise ValueError("simulator observation frames must contain at least one CameraFrame")
         names = [frame.name for frame in frames]
         if len(names) != len(set(names)):
             raise ValueError("simulator observation frame names must be unique")
@@ -47,9 +45,7 @@ class SimulationStep:
 
     def __post_init__(self) -> None:
         if not isinstance(self.observation, SimulatorObservation):
-            raise TypeError(
-                "simulation step observation must be a SimulatorObservation"
-            )
+            raise TypeError("simulation step observation must be a SimulatorObservation")
         if isinstance(self.reward, bool) or not isinstance(self.reward, Real):
             raise TypeError("simulation step reward must be a real number")
         reward = float(self.reward)

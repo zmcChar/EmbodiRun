@@ -23,9 +23,7 @@ def _freeze(value: Any) -> Any:
     """
 
     if isinstance(value, Mapping):
-        return MappingProxyType(
-            {copy.deepcopy(key): _freeze(item) for key, item in value.items()}
-        )
+        return MappingProxyType({copy.deepcopy(key): _freeze(item) for key, item in value.items()})
     if isinstance(value, list):
         return tuple(_freeze(item) for item in copy.deepcopy(value))
     if isinstance(value, tuple):
@@ -35,12 +33,7 @@ def _freeze(value: Any) -> Any:
     if isinstance(value, frozenset):
         return frozenset(_freeze(item) for item in copy.deepcopy(value))
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        return MappingProxyType(
-            {
-                item.name: _freeze(getattr(value, item.name))
-                for item in dataclasses.fields(value)
-            }
-        )
+        return MappingProxyType({item.name: _freeze(getattr(value, item.name)) for item in dataclasses.fields(value)})
     # numpy arrays and similar tensor values expose a detached ``tolist``
     # representation.  Convert that representation into immutable tuples
     # rather than retaining a mutable SDK object or array view.
@@ -49,9 +42,7 @@ def _freeze(value: Any) -> Any:
         try:
             return _freeze(to_list())
         except Exception as error:
-            raise TypeError(
-                f"observation value {type(value).__name__} cannot be frozen"
-            ) from error
+            raise TypeError(f"observation value {type(value).__name__} cannot be frozen") from error
     if isinstance(value, (str, bytes, int, float, bool, complex, type(None))):
         return value
     raise TypeError(f"observation value {type(value).__name__} is not immutable")
@@ -72,9 +63,7 @@ def _thaw(value: Any) -> Any:
 
 
 def _validate_timestamp(value: int | None, field_name: str) -> None:
-    if value is not None and (
-        isinstance(value, bool) or not isinstance(value, int) or value < 0
-    ):
+    if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 0):
         raise ValueError(f"{field_name} must be a non-negative integer or None")
 
 
@@ -120,12 +109,8 @@ class SourceStatus:
             raise ValueError("source_id must not be empty")
         if isinstance(self.generation, bool) or not isinstance(self.generation, int):
             raise ValueError("source generation must be an integer")
-        _validate_timestamp(
-            self.last_captured_timestamp_ns, "last_captured_timestamp_ns"
-        )
-        _validate_timestamp(
-            self.last_received_timestamp_ns, "last_received_timestamp_ns"
-        )
+        _validate_timestamp(self.last_captured_timestamp_ns, "last_captured_timestamp_ns")
+        _validate_timestamp(self.last_received_timestamp_ns, "last_received_timestamp_ns")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -168,9 +153,7 @@ class ObservationSnapshot:
     received_timestamp_ns: int | None = None
     published_timestamp_ns: int | None = None
     source_timestamps_ns: Mapping[str, int | None] = field(default_factory=dict)
-    source_received_timestamps_ns: Mapping[str, int | None] = field(
-        default_factory=dict
-    )
+    source_received_timestamps_ns: Mapping[str, int | None] = field(default_factory=dict)
     clock_domains: Mapping[str, str | None] = field(default_factory=dict)
     skew_ns: int | None = None
 
@@ -183,9 +166,7 @@ class ObservationSnapshot:
             value = getattr(self, field_name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ValueError(f"{field_name} must be a non-negative integer")
-        if not isinstance(self.cameras, tuple) or any(
-            not isinstance(frame, CameraFrame) for frame in self.cameras
-        ):
+        if not isinstance(self.cameras, tuple) or any(not isinstance(frame, CameraFrame) for frame in self.cameras):
             raise ValueError("cameras must be a tuple of CameraFrame values")
         for field_name in (
             "captured_timestamp_ns",
@@ -220,9 +201,7 @@ class ObservationSnapshot:
         object.__setattr__(self, "state", _freeze(self.state))
         object.__setattr__(self, "metadata", _freeze(self.metadata))
         object.__setattr__(self, "errors", _freeze(self.errors))
-        object.__setattr__(
-            self, "source_timestamps_ns", _freeze(self.source_timestamps_ns)
-        )
+        object.__setattr__(self, "source_timestamps_ns", _freeze(self.source_timestamps_ns))
         object.__setattr__(
             self,
             "source_received_timestamps_ns",
@@ -267,27 +246,17 @@ class ObservationSnapshot:
         remote monotonic clock with this snapshot's local monotonic clock.
         """
 
-        if now_clock_domain is not None and (
-            not isinstance(now_clock_domain, str) or not now_clock_domain.strip()
-        ):
+        if now_clock_domain is not None and (not isinstance(now_clock_domain, str) or not now_clock_domain.strip()):
             raise ValueError("now_clock_domain must be a non-empty string")
 
-        if (
-            isinstance(max_age_ns, bool)
-            or not isinstance(max_age_ns, int)
-            or max_age_ns < 0
-        ):
+        if isinstance(max_age_ns, bool) or not isinstance(max_age_ns, int) or max_age_ns < 0:
             raise ValueError("max_age_ns must be a non-negative integer")
         if max_skew_ns is not None and (
-            isinstance(max_skew_ns, bool)
-            or not isinstance(max_skew_ns, int)
-            or max_skew_ns < 0
+            isinstance(max_skew_ns, bool) or not isinstance(max_skew_ns, int) or max_skew_ns < 0
         ):
             raise ValueError("max_skew_ns must be a non-negative integer or None")
         age = self.age_ns(now_ns)
-        timing_domains = {
-            domain for domain in self.clock_domains.values() if domain is not None
-        }
+        timing_domains = {domain for domain in self.clock_domains.values() if domain is not None}
         aggregate_domain = self.metadata.get("clock_domain")
         return bool(
             self.available

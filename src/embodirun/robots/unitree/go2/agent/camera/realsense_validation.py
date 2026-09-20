@@ -79,9 +79,7 @@ def validated_frame_bytes(
 
 def validated_depth_scale(pipeline_profile: Any, expected_depth_scale: float) -> float:
     try:
-        actual_depth_scale = float(
-            pipeline_profile.get_device().first_depth_sensor().get_depth_scale()
-        )
+        actual_depth_scale = float(pipeline_profile.get_device().first_depth_sensor().get_depth_scale())
     except Exception as error:
         raise CameraStreamError(f"could not read RealSense depth scale: {error}") from error
     if actual_depth_scale <= 0 or not math.isclose(
@@ -91,8 +89,7 @@ def validated_depth_scale(pipeline_profile: Any, expected_depth_scale: float) ->
         abs_tol=1e-9,
     ):
         raise CameraStreamError(
-            f"RealSense depth scale {actual_depth_scale} does not match confirmed "
-            f"{expected_depth_scale}"
+            f"RealSense depth scale {actual_depth_scale} does not match confirmed {expected_depth_scale}"
         )
     return actual_depth_scale
 

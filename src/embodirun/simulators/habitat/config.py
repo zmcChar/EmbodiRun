@@ -50,31 +50,19 @@ class HabitatConfig:
         }
         unknown = sorted(set(options) - allowed)
         if unknown:
-            raise ValueError(
-                "unknown Habitat configuration fields: " + ", ".join(unknown)
-            )
+            raise ValueError("unknown Habitat configuration fields: " + ", ".join(unknown))
         return cls(
             simulator_id=simulator_id,
             dataset=Path(_text(options.get("dataset"), "dataset")).expanduser(),
-            scenes_dir=Path(
-                _text(options.get("scenes_dir"), "scenes_dir")
-            ).expanduser(),
+            scenes_dir=Path(_text(options.get("scenes_dir"), "scenes_dir")).expanduser(),
             episode_id=_text(options.get("episode_id"), "episode_id"),
-            max_episode_steps=_positive_integer(
-                options.get("max_episode_steps", 500), "max_episode_steps"
-            ),
-            success_distance_m=_positive_number(
-                options.get("success_distance_m", 3.0), "success_distance_m"
-            ),
+            max_episode_steps=_positive_integer(options.get("max_episode_steps", 500), "max_episode_steps"),
+            success_distance_m=_positive_number(options.get("success_distance_m", 3.0), "success_distance_m"),
             width=_positive_integer(options.get("width", 640), "width"),
             height=_positive_integer(options.get("height", 480), "height"),
             hfov_deg=_angle(options.get("hfov_deg", 79.0), "hfov_deg"),
-            camera_height_m=_positive_number(
-                options.get("camera_height_m", 1.25), "camera_height_m"
-            ),
-            gpu_device_id=_gpu_device_id(
-                options.get("gpu_device_id", 0), "gpu_device_id"
-            ),
+            camera_height_m=_positive_number(options.get("camera_height_m", 1.25), "camera_height_m"),
+            gpu_device_id=_gpu_device_id(options.get("gpu_device_id", 0), "gpu_device_id"),
             viewer=_boolean(options.get("viewer", False), "viewer"),
         )
 
@@ -110,9 +98,7 @@ def _positive_integer(value: object, name: str) -> int:
 
 def _gpu_device_id(value: object, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < -1:
-        raise ValueError(
-            f"Habitat {name} must be an integer greater than or equal to -1"
-        )
+        raise ValueError(f"Habitat {name} must be an integer greater than or equal to -1")
     return value
 
 

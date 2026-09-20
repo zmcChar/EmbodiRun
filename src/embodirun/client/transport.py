@@ -125,11 +125,7 @@ def request_json(
         )
     result = dict(body)
     returned_request_id = result.get("request_id")
-    if (
-        request_id is not None
-        and returned_request_id is not None
-        and returned_request_id != request_id
-    ):
+    if request_id is not None and returned_request_id is not None and returned_request_id != request_id:
         raise ControlClientError(
             "control response request_id does not match",
             status=status,

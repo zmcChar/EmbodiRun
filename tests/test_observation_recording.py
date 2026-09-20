@@ -166,9 +166,11 @@ def test_recorder_writes_all_frames_in_one_snapshot_directory(tmp_path) -> None:
         "wrist",
         "depth",
     ]
-    assert [
-        (recorder.path / frame["path"]).read_bytes() for frame in record["cameras"]
-    ] == [b"front", b"wrist", b"depth"]
+    assert [(recorder.path / frame["path"]).read_bytes() for frame in record["cameras"]] == [
+        b"front",
+        b"wrist",
+        b"depth",
+    ]
     assert recorder.status().state == "stopped"
     producer.close()
 
@@ -244,9 +246,7 @@ def test_recorder_exposes_subscription_overflow_and_missing_frames(tmp_path) -> 
     assert status.dropped_observations >= 1
     assert status.missing_frames >= 1
     assert status.incomplete is True
-    assert any(
-        record["missing_frames"] == ["wrist"] for record in recorder.iter_records()
-    )
+    assert any(record["missing_frames"] == ["wrist"] for record in recorder.iter_records())
     producer.close()
 
 

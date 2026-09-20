@@ -49,11 +49,7 @@ def require_motion_ready(
         *state.velocity,
         state.yaw_rate,
     )
-    if (
-        len(state.position) < 2
-        or len(state.velocity) < 2
-        or not all(math.isfinite(value) for value in numeric_state)
-    ):
+    if len(state.position) < 2 or len(state.velocity) < 2 or not all(math.isfinite(value) for value in numeric_state):
         raise ApiError(
             HTTPStatus.SERVICE_UNAVAILABLE,
             "robot state contains invalid numeric data",

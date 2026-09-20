@@ -64,17 +64,13 @@ class ObservationSubscription:
     def get(self, timeout: float | None = None) -> ObservationSnapshot:
         """Read the next snapshot; a slow reader never blocks publication."""
 
-        if timeout is not None and (
-            isinstance(timeout, bool) or not isinstance(timeout, (int, float))
-        ):
+        if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, (int, float))):
             raise TypeError("timeout must be a number or None")
         deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
         with self._condition:
             while not self._queue:
                 if self._closed:
-                    raise ObservationSubscriptionClosed(
-                        "observation subscription is closed"
-                    )
+                    raise ObservationSubscriptionClosed("observation subscription is closed")
                 if deadline is None:
                     self._condition.wait()
                 else:
@@ -113,10 +109,7 @@ class ObservationStore:
             raise ValueError("max_retained must be positive")
         self.max_retained = max_retained
         self.service_instance_id = service_instance_id or _default_service_instance_id()
-        if (
-            not isinstance(self.service_instance_id, str)
-            or not self.service_instance_id.strip()
-        ):
+        if not isinstance(self.service_instance_id, str) or not self.service_instance_id.strip():
             raise ValueError("service_instance_id must not be empty")
         self._lock = threading.RLock()
         self._retained: deque[ObservationSnapshot] = deque(maxlen=max_retained)
@@ -139,9 +132,7 @@ class ObservationStore:
                 raise ObservationError("observation store is closed")
             self._next_sequence += 1
             sequence = self._next_sequence
-            observation_id = (
-                f"{self.service_instance_id}:g{self._generation}:o{sequence}"
-            )
+            observation_id = f"{self.service_instance_id}:g{self._generation}:o{sequence}"
             return observation_id, self._generation, sequence
 
     def publish(self, snapshot: ObservationSnapshot) -> ObservationSnapshot:
@@ -157,10 +148,7 @@ class ObservationStore:
                     snapshot.observation_id,
                     "snapshot belongs to an expired reconnect generation",
                 )
-            if (
-                snapshot.observation_id in self._by_id
-                or snapshot.observation_id in self._retired_ids
-            ):
+            if snapshot.observation_id in self._by_id or snapshot.observation_id in self._retired_ids:
                 raise ValueError("observation_id cannot be published more than once")
             if self._retained and snapshot.sequence <= self._retained[-1].sequence:
                 raise ValueError("observation sequence must increase")

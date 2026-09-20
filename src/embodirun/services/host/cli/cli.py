@@ -11,6 +11,7 @@ from embodirun.deployment.config import ConfigError, NodeConfig, load_config
 from embodirun.deployment.environment import EnvironmentError
 from embodirun.deployment.executor import Executor, executor_for
 from embodirun.deployment.plan import ServiceError, build_plan
+
 from .command import control, down, init, probe, run, sync, up, validate
 from .context import CommandContext, state_path
 from .progress import ConsoleProgressReporter
@@ -22,10 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--state-dir",
         type=Path,
-        help=(
-            "local state directory "
-            "(default: ~/.local/state/rlinf-deploy, kept for compatibility)"
-        ),
+        help=("local state directory (default: ~/.local/state/rlinf-deploy, kept for compatibility)"),
     )
     commands = parser.add_subparsers(dest="command", required=True)
     validate.register(commands)

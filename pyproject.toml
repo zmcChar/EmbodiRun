@@ -58,6 +58,7 @@ dev = [
     "numpy>=1.26,<3",
     "Pillow>=10,<13",
     "pytest>=8,<9",
+    "ruff>=0.10",
 ]
 host = [
     "paramiko>=3.4,<5",
@@ -141,3 +142,18 @@ include = ["embodirun*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I isort, UP pyupgrade, B bugbear, C4 comprehensions, SIM simplify.
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+# E501 (line length) is left to the formatter; B905 (zip strict=) is noise for fixed-shape zips;
+# C408 keeps the readable dict(key=value) form for configuration tables.
+ignore = ["E501", "B905", "C408"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["embodirun", "rlinf_deploy"]

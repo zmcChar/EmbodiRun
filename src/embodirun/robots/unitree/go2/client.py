@@ -50,13 +50,10 @@ class Go2ControlClient:
         except HttpClientError as error:
             raise Go2ClientError(str(error)) from error
 
-    def _state_from_payload(
-        self, payload: Mapping[str, object], *, require_fresh: bool
-    ) -> MobileBaseState:
+    def _state_from_payload(self, payload: Mapping[str, object], *, require_fresh: bool) -> MobileBaseState:
         if self.expected_transport and payload.get("transport") != self.expected_transport:
             raise Go2ClientError(
-                f"unexpected transport {payload.get('transport')!r}; "
-                f"expected {self.expected_transport!r}"
+                f"unexpected transport {payload.get('transport')!r}; expected {self.expected_transport!r}"
             )
         if payload.get("robot_state_available") is not True:
             raise Go2ClientError("robot state is unavailable")
@@ -65,17 +62,9 @@ class Go2ControlClient:
         state = _object(payload.get("robot_state"), "robot_state")
         position = state.get("position")
         velocity = state.get("velocity")
-        if (
-            isinstance(position, (str, bytes))
-            or not isinstance(position, Sequence)
-            or len(position) < 2
-        ):
+        if isinstance(position, (str, bytes)) or not isinstance(position, Sequence) or len(position) < 2:
             raise Go2ClientError("robot position must contain x and y")
-        if (
-            isinstance(velocity, (str, bytes))
-            or not isinstance(velocity, Sequence)
-            or len(velocity) < 2
-        ):
+        if isinstance(velocity, (str, bytes)) or not isinstance(velocity, Sequence) or len(velocity) < 2:
             raise Go2ClientError("robot velocity must contain forward and lateral values")
         sequence = state.get("sequence")
         if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 0:
@@ -131,9 +120,7 @@ class Go2ControlClient:
             raise Go2ClientError("another robot action is active")
         return state
 
-    def start_velocity_lease(
-        self, command: PlanarVelocityCommand, *, duration_s: float = 10.0
-    ) -> str:
+    def start_velocity_lease(self, command: PlanarVelocityCommand, *, duration_s: float = 10.0) -> str:
         result = self._request(
             "POST",
             "/v1/actions",

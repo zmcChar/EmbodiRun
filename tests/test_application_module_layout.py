@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 SRC = ROOT / "src"
@@ -69,9 +69,7 @@ def _run_import_order(old_first: bool) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_legacy_and_canonical_application_imports_share_identity_in_both_orders() -> (
-    None
-):
+def test_legacy_and_canonical_application_imports_share_identity_in_both_orders() -> None:
     for old_first in (True, False):
         result = _run_import_order(old_first)
         assert result.returncode == 0, result.stderr or result.stdout
@@ -87,6 +85,4 @@ def test_application_has_no_dependency_on_legacy_service_entrypoints() -> None:
 def test_devices_and_model_services_do_not_import_application() -> None:
     for package in ("devices", "model_services"):
         for path in (ROOT / "src" / "embodirun" / package).rglob("*.py"):
-            assert "embodirun.application" not in path.read_text(encoding="utf-8"), (
-                path
-            )
+            assert "embodirun.application" not in path.read_text(encoding="utf-8"), path

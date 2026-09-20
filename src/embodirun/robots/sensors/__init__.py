@@ -21,9 +21,7 @@ class SensorInput:
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"sensor input {field_name} must not be empty")
-        if not isinstance(self.options, Mapping) or any(
-            not isinstance(key, str) for key in self.options
-        ):
+        if not isinstance(self.options, Mapping) or any(not isinstance(key, str) for key in self.options):
             raise ValueError("sensor input options must be a mapping with string keys")
         object.__setattr__(self, "options", dict(self.options))
 

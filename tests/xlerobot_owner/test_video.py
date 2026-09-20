@@ -1,11 +1,11 @@
 import asyncio
 
 import pytest
+
 pytest.importorskip("aiohttp")
 pytest.importorskip("aiortc")
 from aiohttp.test_utils import TestClient, TestServer
 from aiortc import RTCBundlePolicy, RTCConfiguration, RTCPeerConnection, RTCSessionDescription
-
 from embodirun_xlerobot_owner.robot import DemoRobot
 from embodirun_xlerobot_owner.server import Platform, create_app
 from embodirun_xlerobot_owner.video import CameraVideoTrack
@@ -17,9 +17,7 @@ TOKEN = "video-test-token-not-real"
 async def test_actual_webrtc_encodes_and_receives_three_tracks(tmp_path):
     platform = Platform(DemoRobot(), TOKEN, output=tmp_path)
     client = TestClient(TestServer(create_app(platform)))
-    receiver = RTCPeerConnection(
-        RTCConfiguration(iceServers=[], bundlePolicy=RTCBundlePolicy.MAX_BUNDLE)
-    )
+    receiver = RTCPeerConnection(RTCConfiguration(iceServers=[], bundlePolicy=RTCBundlePolicy.MAX_BUNDLE))
     received = []
     tasks = []
 
@@ -50,9 +48,7 @@ async def test_actual_webrtc_encodes_and_receives_three_tracks(tmp_path):
         result = await response.json()
         assert result["cameras"] == ["front", "left_wrist", "right_wrist"]
         assert "H264" in result["sdp"]
-        await receiver.setRemoteDescription(
-            RTCSessionDescription(sdp=result["sdp"], type=result["type"])
-        )
+        await receiver.setRemoteDescription(RTCSessionDescription(sdp=result["sdp"], type=result["type"]))
         await asyncio.wait_for(asyncio.gather(*tasks), 12)
         assert len(set(received)) == 3
         assert not platform.armed

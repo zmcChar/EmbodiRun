@@ -21,9 +21,7 @@ RESPONSE_TAG = 0x56564C42
 class VvlaWirelessError(RuntimeError):
     """A VVLA WirelessComm request failed locally or remotely."""
 
-    def __init__(
-        self, message: str, *, status: int | None = None, code: str | None = None
-    ) -> None:
+    def __init__(self, message: str, *, status: int | None = None, code: str | None = None) -> None:
         super().__init__(message)
         self.status = status
         self.code = code
@@ -118,13 +116,9 @@ class VvlaWirelessClient:
             )
         )
         if result.request_id != observation.request_id:
-            raise VvlaWirelessError(
-                "step response request_id does not match the request"
-            )
+            raise VvlaWirelessError("step response request_id does not match the request")
         if result.session_id != observation.session_id:
-            raise VvlaWirelessError(
-                "step response session_id does not match the request"
-            )
+            raise VvlaWirelessError("step response session_id does not match the request")
         if result.step_id != observation.step_id:
             raise VvlaWirelessError("step response step_id does not match the request")
         return result

@@ -47,16 +47,12 @@ class SimulationService:
         finally:
             self._release_inference_client(client)
         if health.get("status") != "ok":
-            raise SimulationServiceError(
-                f"inference service at {self.config.inference_endpoint} is not healthy"
-            )
+            raise SimulationServiceError(f"inference service at {self.config.inference_endpoint} is not healthy")
         return {"status": "ok", "runtime_id": self.config.runtime_id}
 
     def execute(self, request: EpisodeRequest) -> EpisodeResult:
         if request.runtime_id != self.config.runtime_id:
-            raise SimulationServiceError(
-                f"runtime {request.runtime_id!r} is not served here"
-            )
+            raise SimulationServiceError(f"runtime {request.runtime_id!r} is not served here")
         if not self._episode_lock.acquire(blocking=False):
             raise SimulationServiceError("simulation service is already executing")
         try:
@@ -76,9 +72,7 @@ class SimulationService:
                 f"simulator embodiment {definition.embodiment_kind!r}"
             )
         if request.chunk_steps > binding.maximum_chunk_steps:
-            raise SimulationServiceError(
-                f"chunk_steps exceeds binding maximum {binding.maximum_chunk_steps}"
-            )
+            raise SimulationServiceError(f"chunk_steps exceeds binding maximum {binding.maximum_chunk_steps}")
         try:
             simulator_config = definition.config_factory(
                 self.config.simulator_id,
@@ -86,8 +80,7 @@ class SimulationService:
             )
         except (TypeError, ValueError) as error:
             raise SimulationServiceError(
-                f"simulator {self.config.simulator_id!r} configuration is invalid: "
-                f"{error}"
+                f"simulator {self.config.simulator_id!r} configuration is invalid: {error}"
             ) from error
 
         client: Any | None = None

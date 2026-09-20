@@ -9,8 +9,8 @@ process read the source frame; it is not an exposure or device-clock claim.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from types import MappingProxyType
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any, Protocol
 
 
@@ -60,21 +60,15 @@ class CameraFrame:
             raise ValueError("camera frame data must not be empty")
         for field_name in ("captured_timestamp_ns", "received_timestamp_ns"):
             value = getattr(self, field_name)
-            if value is not None and (
-                isinstance(value, bool) or not isinstance(value, int) or value < 0
-            ):
-                raise ValueError(
-                    f"camera frame {field_name} must be a non-negative integer"
-                )
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 0):
+                raise ValueError(f"camera frame {field_name} must be a non-negative integer")
         if (
             self.captured_timestamp_ns is not None
             and self.received_timestamp_ns is not None
             and self.received_timestamp_ns < self.captured_timestamp_ns
         ):
             raise ValueError("camera frame receive time cannot precede capture time")
-        if self.clock_domain is not None and (
-            not isinstance(self.clock_domain, str) or not self.clock_domain.strip()
-        ):
+        if self.clock_domain is not None and (not isinstance(self.clock_domain, str) or not self.clock_domain.strip()):
             raise ValueError("camera frame clock_domain must be a non-empty string")
         if self.profile is not None:
             if not isinstance(self.profile, Mapping):
@@ -120,21 +114,14 @@ class RawCameraFrame:
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
             raise ValueError("camera name must not be empty")
-        if any(
-            type(value) is not int or value <= 0 for value in (self.width, self.height)
-        ):
+        if any(type(value) is not int or value <= 0 for value in (self.width, self.height)):
             raise ValueError("raw camera dimensions must be positive integers")
         if self.pixel_format not in {"bgr8", "rgb8"}:
             raise ValueError("raw camera pixel format must be bgr8 or rgb8")
         if self.mime_type != "application/x-embodirun-raw-image":
             raise ValueError("unexpected raw camera MIME type")
-        if (
-            not isinstance(self.data, bytes)
-            or len(self.data) != self.width * self.height * 3
-        ):
-            raise ValueError(
-                "raw camera payload must contain exactly width*height*3 bytes"
-            )
+        if not isinstance(self.data, bytes) or len(self.data) != self.width * self.height * 3:
+            raise ValueError("raw camera payload must contain exactly width*height*3 bytes")
 
 
 class CameraSource(Protocol):

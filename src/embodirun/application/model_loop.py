@@ -11,9 +11,9 @@ from dataclasses import replace
 from typing import Protocol
 
 from embodirun.bindings import BindingMapper
+from embodirun.model_services import InferenceClient, PolicyResult
 from embodirun.robots import RobotAction, RobotAdapter, RobotObservation
 from embodirun.robots.sensors.cameras import CameraFrame
-from embodirun.model_services import InferenceClient, PolicyResult
 
 
 class ControlRuntimeCancelled(RuntimeError):
@@ -48,11 +48,7 @@ class ControlRuntime:
     ) -> None:
         if not instruction.strip():
             raise ValueError("instruction must not be empty")
-        if (
-            isinstance(chunk_steps, bool)
-            or not isinstance(chunk_steps, int)
-            or chunk_steps <= 0
-        ):
+        if isinstance(chunk_steps, bool) or not isinstance(chunk_steps, int) or chunk_steps <= 0:
             raise ValueError("chunk_steps must be a positive integer")
         if (
             isinstance(control_hz, bool)
@@ -99,11 +95,7 @@ class ControlRuntime:
         if reset:
             self.reset()
         self._raise_if_cancelled()
-        observation = (
-            self.robot.observe()
-            if self.observation_source is None
-            else self.observation_source()
-        )
+        observation = self.robot.observe() if self.observation_source is None else self.observation_source()
         request = self.mapper.map_observation(
             observation,
             session_id=self.session.session_id,
@@ -114,15 +106,11 @@ class ControlRuntime:
         )
         observation_metadata = getattr(observation, "metadata", {})
         observation_id = (
-            observation_metadata.get("observation_id")
-            if isinstance(observation_metadata, Mapping)
-            else None
+            observation_metadata.get("observation_id") if isinstance(observation_metadata, Mapping) else None
         )
         if isinstance(observation_id, str) and observation_id:
             request_metadata = getattr(request, "metadata", {})
-            metadata = (
-                dict(request_metadata) if isinstance(request_metadata, Mapping) else {}
-            )
+            metadata = dict(request_metadata) if isinstance(request_metadata, Mapping) else {}
             metadata.setdefault("observation_id", observation_id)
             metadata.setdefault("snapshot_id", observation_id)
             if hasattr(request, "__dataclass_fields__"):
@@ -133,9 +121,7 @@ class ControlRuntime:
                 try:
                     request.metadata = metadata
                 except AttributeError as error:
-                    raise TypeError(
-                        "mapper request must support metadata propagation"
-                    ) from error
+                    raise TypeError("mapper request must support metadata propagation") from error
         result = self.client.step(request)
         self._raise_if_cancelled()
         actions = tuple(self.mapper.map_result(result))
@@ -157,8 +143,7 @@ class ControlRuntime:
             )
         if len(actions) < self.chunk_steps:
             raise RuntimeError(
-                f"binding returned {len(actions)} action(s), fewer than requested "
-                f"chunk_steps={self.chunk_steps}"
+                f"binding returned {len(actions)} action(s), fewer than requested chunk_steps={self.chunk_steps}"
             )
         actions = actions[: self.chunk_steps]
         deadline_s = self.monotonic()
@@ -215,9 +200,7 @@ class ControlRuntime:
 
     def _raise_if_cancelled(self) -> None:
         if self.cancel_event is not None and self.cancel_event.is_set():
-            raise ControlRuntimeCancelled(
-                "model task was cancelled by control authority"
-            )
+            raise ControlRuntimeCancelled("model task was cancelled by control authority")
 
 
 __all__ = ["CommandSink", "ControlRuntime", "ControlRuntimeCancelled"]

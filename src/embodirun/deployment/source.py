@@ -109,9 +109,7 @@ class ProjectManager:
             )
         ).stdout.strip()
         if repository_identity(origin) != repository_identity(repository):
-            raise SourceError(
-                f"managed checkout {project_dir!r} has unexpected origin {origin!r}"
-            )
+            raise SourceError(f"managed checkout {project_dir!r} has unexpected origin {origin!r}")
         object_name = f"{revision}^{{commit}}"
         present = self.executor.run(
             Command(
@@ -166,9 +164,7 @@ class ProjectManager:
             )
         ).stdout.splitlines()
         if len(resolved) != 2 or resolved[0] != resolved[1]:
-            raise SourceError(
-                f"managed checkout {project_dir!r} did not resolve to {revision!r}"
-            )
+            raise SourceError(f"managed checkout {project_dir!r} did not resolve to {revision!r}")
 
     def submodule_revision(self, *, project_dir: str, revision: str, path: str) -> str:
         """Read a pinned gitlink from a commit without checking out the submodule."""
@@ -195,10 +191,7 @@ class ProjectManager:
             or len(fields[2]) not in {40, 64}
             or any(character not in "0123456789abcdef" for character in fields[2])
         ):
-            raise SourceError(
-                f"Deploy revision {revision!r} does not pin a valid submodule "
-                f"at {path!r}"
-            )
+            raise SourceError(f"Deploy revision {revision!r} does not pin a valid submodule at {path!r}")
         return fields[2]
 
 
@@ -233,16 +226,9 @@ def build_source_archive(value: Path) -> SourceArchive:
     """Validate and archive one local EmbodiRun source tree."""
 
     source = value.expanduser().resolve()
-    missing = [
-        name
-        for name in (*_ROOT_FILES, "src/embodirun")
-        if not (source / name).exists()
-    ]
+    missing = [name for name in (*_ROOT_FILES, "src/embodirun") if not (source / name).exists()]
     if missing:
-        raise SourceError(
-            f"{source} is not an EmbodiRun source tree; missing: "
-            + ", ".join(missing)
-        )
+        raise SourceError(f"{source} is not an EmbodiRun source tree; missing: " + ", ".join(missing))
     package_root = source / "src" / "embodirun"
     if not package_root.is_dir():
         raise SourceError(f"{package_root} is not a directory")
@@ -262,30 +248,32 @@ def build_source_archive(value: Path) -> SourceArchive:
     dependency_files = {name: files[name] for name in _DEPENDENCY_FILES}
     dependency_digest = _content_digest(dependency_files)
     output = io.BytesIO()
-    with gzip.GzipFile(fileobj=output, mode="wb", mtime=0) as compressed:
-        with tarfile.open(
+    with (
+        gzip.GzipFile(fileobj=output, mode="wb", mtime=0) as compressed,
+        tarfile.open(
             fileobj=compressed,
             mode="w",
             format=tarfile.PAX_FORMAT,
-        ) as archive:
-            directories = {
-                parent.as_posix()
-                for name in files
-                for parent in PurePosixPath(name).parents
-                if parent != PurePosixPath(".")
-            }
-            for name in sorted(directories, key=lambda item: (item.count("/"), item)):
-                info = tarfile.TarInfo(name)
-                info.type = tarfile.DIRTYPE
-                info.mode = 0o755
-                _normalize_tar_info(info)
-                archive.addfile(info)
-            for name, content in sorted(files.items()):
-                info = tarfile.TarInfo(name)
-                info.size = len(content)
-                info.mode = 0o644
-                _normalize_tar_info(info)
-                archive.addfile(info, io.BytesIO(content))
+        ) as archive,
+    ):
+        directories = {
+            parent.as_posix()
+            for name in files
+            for parent in PurePosixPath(name).parents
+            if parent != PurePosixPath(".")
+        }
+        for name in sorted(directories, key=lambda item: (item.count("/"), item)):
+            info = tarfile.TarInfo(name)
+            info.type = tarfile.DIRTYPE
+            info.mode = 0o755
+            _normalize_tar_info(info)
+            archive.addfile(info)
+        for name, content in sorted(files.items()):
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            info.mode = 0o644
+            _normalize_tar_info(info)
+            archive.addfile(info, io.BytesIO(content))
     return SourceArchive(output.getvalue(), digest, dependency_digest, dependency_files)
 
 
@@ -328,9 +316,7 @@ def install_source_release(
 
 
 def _excluded(parts: tuple[str, ...]) -> bool:
-    return "__pycache__" in parts or any(
-        part.endswith((".pyc", ".pyo")) for part in parts
-    )
+    return "__pycache__" in parts or any(part.endswith((".pyc", ".pyo")) for part in parts)
 
 
 def _normalize_tar_info(info: tarfile.TarInfo) -> None:

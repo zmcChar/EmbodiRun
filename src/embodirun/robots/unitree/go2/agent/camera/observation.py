@@ -57,9 +57,7 @@ class CameraObservationService:
             depth = source.depth_store.status(source.max_depth_age)
 
         backend = str(depth.get("backend", source.backend))
-        registration_verified = bool(
-            depth.get("registration_verified", source.registration_verified)
-        )
+        registration_verified = bool(depth.get("registration_verified", source.registration_verified))
         rgb_depth_aligned = bool(depth.get("rgb_depth_aligned", False))
         if backend != "realsense" or not registration_verified:
             rgb_depth_aligned = False
@@ -98,9 +96,7 @@ class CameraObservationService:
                 "rgb_profile": rgb_health["rgb_profile"],
                 "pair_sequence_matched": pair_matched,
                 "navigation_ready": navigation_ready,
-                "observation_ready": bool(
-                    navigation_ready and depth.get("raw_depth_available") is True
-                ),
+                "observation_ready": bool(navigation_ready and depth.get("raw_depth_available") is True),
             }
         )
         return depth
@@ -194,10 +190,7 @@ class CameraObservationService:
             )
             dimensions = (*rgb_dimensions, *depth_dimensions)
             if (
-                any(
-                    isinstance(value, bool) or not isinstance(value, int) or value <= 0
-                    for value in dimensions
-                )
+                any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in dimensions)
                 or rgb_dimensions != depth_dimensions
                 or depth_dimensions != (depth_store.width, depth_store.height)
             ):
@@ -226,9 +219,7 @@ class CameraObservationService:
                 "media_type": "image/jpeg",
                 "width": rgb_profile["width"],
                 "height": rgb_profile["height"],
-                "data_url": "data:image/jpeg;base64,{}".format(
-                    base64.b64encode(frame.jpeg).decode("ascii")
-                ),
+                "data_url": "data:image/jpeg;base64,{}".format(base64.b64encode(frame.jpeg).decode("ascii")),
             },
             "depth": {
                 "sequence": sequence,
@@ -241,9 +232,7 @@ class CameraObservationService:
                 "center_distance_m": depth.center_distance_m,
                 "minimum_distance_m": depth.minimum_distance_m,
                 "valid_fraction": depth.valid_fraction,
-                "data_url": "data:image/png;base64,{}".format(
-                    base64.b64encode(depth.depth_png).decode("ascii")
-                ),
+                "data_url": "data:image/png;base64,{}".format(base64.b64encode(depth.depth_png).decode("ascii")),
             },
         }
 

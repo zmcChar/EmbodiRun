@@ -8,9 +8,8 @@ development.  Tests still use ``importorskip`` at the boundaries that need an
 optional runtime such as aiohttp or aiortc.
 """
 
-from pathlib import Path
 import sys
-
+from pathlib import Path
 
 OWNER_SRC = Path(__file__).parents[2] / "integrations" / "xlerobot_owner" / "src"
 if str(OWNER_SRC) not in sys.path:

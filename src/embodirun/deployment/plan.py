@@ -7,10 +7,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Literal
 
+from embodirun.application.contracts import ControlRuntimeProfile, ControlServiceConfig
+from embodirun.application.simulation.contracts import SimulationServiceConfig
 from embodirun.bindings import BindingDefinition, binding_definition
-from embodirun.robots.sensors import SensorInput
-from embodirun.application.contracts import ControlServiceConfig
-from embodirun.application.contracts import ControlRuntimeProfile
 from embodirun.devices import (
     ResourceIdentity,
     canonical_resource_identity,
@@ -20,7 +19,7 @@ from embodirun.model_services.providers import (
     ProviderOptionsContext,
     provider,
 )
-from embodirun.application.simulation.contracts import SimulationServiceConfig
+from embodirun.robots.sensors import SensorInput
 from embodirun.simulators import simulator_definition
 
 from .config import DeploymentConfig, ModelConfig, RuntimeConfig
@@ -86,7 +85,7 @@ class DeploymentPlan:
     environments: tuple[EnvironmentProfile, ...]
     services: tuple[ServiceSpec, ...]
     runtimes: tuple[RuntimeSpec, ...]
-    device_resources: tuple["DeviceOwnerSpec", ...] = ()
+    device_resources: tuple[DeviceOwnerSpec, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,9 +129,7 @@ def build_plan(config: DeploymentConfig) -> DeploymentPlan:
                     f"{robot.owner!r}; only supported external proxy robot types "
                     "may declare an external owner"
                 )
-            _validate_sensor_nodes(
-                config, runtime.runtime_id, runtime.inputs, robot.node
-            )
+            _validate_sensor_nodes(config, runtime.runtime_id, runtime.inputs, robot.node)
             if runtime.model is None:
                 environment = _find_environment(
                     environments,
@@ -167,18 +164,10 @@ def build_plan(config: DeploymentConfig) -> DeploymentPlan:
             control_groups.setdefault(group_key, []).append((runtime_spec, service))
             for resource in _control_resources(config, runtime):
                 resource_groups.setdefault(resource["identity"], set()).add(group_key)
-                resource_owners.setdefault(resource["identity"], set()).add(
-                    resource.get("owner")
-                )
+                resource_owners.setdefault(resource["identity"], set()).add(resource.get("owner"))
                 existing = device_resources.get(resource["identity"])
-                owner_service_id = (
-                    existing.owner_service_id if existing else service.service_id
-                )
-                consumers = tuple(
-                    dict.fromkeys(
-                        (*(existing.consumers if existing else ()), runtime.runtime_id)
-                    )
-                )
+                owner_service_id = existing.owner_service_id if existing else service.service_id
+                consumers = tuple(dict.fromkeys((*(existing.consumers if existing else ()), runtime.runtime_id)))
                 device_resources[resource["identity"]] = DeviceOwnerSpec(
                     resource_id=resource["identity"],
                     node=resource["node"],
@@ -189,10 +178,7 @@ def build_plan(config: DeploymentConfig) -> DeploymentPlan:
                 )
         else:
             if runtime.model is None or runtime.binding is None:
-                raise ServiceError(
-                    f"simulation runtime {runtime.runtime_id!r} requires model "
-                    "and binding"
-                )
+                raise ServiceError(f"simulation runtime {runtime.runtime_id!r} requires model and binding")
             simulator = config.simulators[runtime.simulator]
             definition = simulator_definition(simulator.kind)
             model = config.models[runtime.model]
@@ -220,12 +206,8 @@ def build_plan(config: DeploymentConfig) -> DeploymentPlan:
     for resource_id, groups in resource_groups.items():
         owners = resource_owners.get(resource_id, set())
         if len(owners) > 1:
-            raise ServiceError(
-                f"resource {resource_id!r} has inconsistent owner declarations"
-            )
-        if len(groups) > 1 and resource_id in {
-            key for key, item in device_resources.items() if item.kind == "sensor"
-        }:
+            raise ServiceError(f"resource {resource_id!r} has inconsistent owner declarations")
+        if len(groups) > 1 and resource_id in {key for key, item in device_resources.items() if item.kind == "sensor"}:
             raise ServiceError(
                 f"sensor resource {resource_id!r} is referenced by multiple robot "
                 "owners; a unique sensor owner is required before startup"
@@ -252,7 +234,7 @@ def build_plan(config: DeploymentConfig) -> DeploymentPlan:
                     item,
                     owner_service_id=service_id,
                 )
-        for index, (runtime_spec, _service) in enumerate(pairs):
+        for runtime_spec, _service in pairs:
             runtimes[runtimes.index(runtime_spec)] = replace(
                 runtime_spec,
                 service_id=service_id,
@@ -260,22 +242,15 @@ def build_plan(config: DeploymentConfig) -> DeploymentPlan:
             )
     services = (*models, *controls, *simulations)
     if len({service.service_id for service in services}) != len(services):
-        raise ServiceError(
-            "model IDs must not collide with generated runtime service IDs"
-        )
+        raise ServiceError("model IDs must not collide with generated runtime service IDs")
     wireless = _wireless_endpoint_configs(config)
     return DeploymentPlan(
         name=config.metadata.name,
         deploy_commit=config.metadata.deploy_commit,
         environments=environments,
-        services=tuple(
-            replace(service, wireless_config_json=wireless.get(service.service_id))
-            for service in services
-        ),
+        services=tuple(replace(service, wireless_config_json=wireless.get(service.service_id)) for service in services),
         runtimes=tuple(runtimes),
-        device_resources=tuple(
-            device_resources[key] for key in sorted(device_resources)
-        ),
+        device_resources=tuple(device_resources[key] for key in sorted(device_resources)),
     )
 
 
@@ -289,9 +264,7 @@ def _model_service(
     except ValueError as error:
         raise ServiceError(str(error)) from error
     if descriptor.managed_command is None or not descriptor.supports(model.transport):
-        raise ServiceError(
-            f"model {model.model_id!r} has no managed {model.backend}/{model.transport} service"
-        )
+        raise ServiceError(f"model {model.model_id!r} has no managed {model.backend}/{model.transport} service")
     if model.node is None or model.server is None:
         raise ServiceError(f"managed model {model.model_id!r} is missing node/server")
     environment_group = descriptor.environment_group or model.kind
@@ -302,20 +275,12 @@ def _model_service(
         group=environment_group,
         path=model.environment or f".venv-{model.backend}-{model.kind}",
     )
-    source = (
-        _option_string(model, "source", required=descriptor.requires_checkpoint) or ""
-    )
+    source = _option_string(model, "source", required=descriptor.requires_checkpoint) or ""
     adapter_config_json = _binding_adapter_config(config, model)
     configured_adapter = _option_string(model, "adapter_config")
     gpu = _option_string(model, "gpu")
-    if (
-        descriptor.adapter_config_owned
-        and adapter_config_json is not None
-        and configured_adapter is not None
-    ):
-        raise ServiceError(
-            f"models.{model.model_id}.adapter_config conflicts with binding configuration"
-        )
+    if descriptor.adapter_config_owned and adapter_config_json is not None and configured_adapter is not None:
+        raise ServiceError(f"models.{model.model_id}.adapter_config conflicts with binding configuration")
     options = ManagedCommandOptions(
         checkpoint=source,
         bind=model.server.bind,
@@ -325,9 +290,7 @@ def _model_service(
         device=gpu,
         adapter_config=configured_adapter,
         comm_config=f"{model.model_id}.wireless.json",
-        executable=(
-            _option_string(model, "server_executable") or descriptor.default_executable
-        ),
+        executable=(_option_string(model, "server_executable") or descriptor.default_executable),
         pipeline=_option_string(model, "pipeline"),
         pipeline_config=_option_string(model, "pipeline_config"),
         extra_args=_option_strings(model, "server_args"),
@@ -335,16 +298,12 @@ def _model_service(
     try:
         argv = descriptor.managed_command(options)
     except (TypeError, ValueError) as error:
-        raise ServiceError(
-            f"model {model.model_id!r} has invalid managed options: {error}"
-        ) from error
+        raise ServiceError(f"model {model.model_id!r} has invalid managed options: {error}") from error
     if descriptor.append_server_args:
         argv = (*argv, *options.extra_args)
     endpoint = _endpoint(config, model, consumer_node=model.node)
     command_environment = (
-        descriptor.environment_builder(model.options)
-        if descriptor.environment_builder is not None
-        else {}
+        descriptor.environment_builder(model.options) if descriptor.environment_builder is not None else {}
     )
     return ServiceSpec(
         service_id=model.model_id,
@@ -353,14 +312,10 @@ def _model_service(
         environment_id=environment.environment_id,
         endpoint=endpoint,
         health_endpoint=(
-            f"{endpoint}{descriptor.health_suffix}"
-            if descriptor.health_suffix and model.transport == "http"
-            else None
+            f"{endpoint}{descriptor.health_suffix}" if descriptor.health_suffix and model.transport == "http" else None
         ),
         command=Command(argv, environment=command_environment),
-        adapter_config_json=adapter_config_json
-        if descriptor.adapter_config_owned
-        else None,
+        adapter_config_json=adapter_config_json if descriptor.adapter_config_owned else None,
     )
 
 
@@ -378,14 +333,8 @@ def _device_control_service(
     execution remains explicitly unavailable until a model runtime is added.
     """
 
-    if (
-        runtime.robot is None
-        or runtime.model is not None
-        or runtime.binding is not None
-    ):
-        raise ServiceError(
-            f"runtime {runtime.runtime_id!r} is not a robot-only runtime"
-        )
+    if runtime.robot is None or runtime.model is not None or runtime.binding is not None:
+        raise ServiceError(f"runtime {runtime.runtime_id!r} is not a robot-only runtime")
     robot = config.robots[runtime.robot]
     endpoint = f"http://{_url_host(runtime.server.bind)}:{runtime.server.port}"
     inputs = tuple(
@@ -430,9 +379,7 @@ def _device_control_service(
         command=Command(("rlinf-control-serve",)),
         control_config_json=control_config.to_json(),
         owner_id=f"control:{robot.robot_id}",
-        resource_ids=tuple(
-            item["identity"] for item in _control_resources(config, runtime)
-        ),
+        resource_ids=tuple(item["identity"] for item in _control_resources(config, runtime)),
         runtime_ids=(runtime.runtime_id,),
     )
     return runtime_spec, service
@@ -478,9 +425,7 @@ def _control_service(
         )
         control_config_json = control_config.to_json()
     except (TypeError, ValueError) as error:
-        raise ServiceError(
-            f"runtime {runtime.runtime_id!r} control configuration is invalid: {error}"
-        ) from error
+        raise ServiceError(f"runtime {runtime.runtime_id!r} control configuration is invalid: {error}") from error
     runtime_spec = RuntimeSpec(
         runtime_id=runtime.runtime_id,
         node=robot.node,
@@ -503,9 +448,7 @@ def _control_service(
         command=Command(("rlinf-control-serve",)),
         control_config_json=control_config_json,
         owner_id=f"control:{robot.robot_id}",
-        resource_ids=tuple(
-            item["identity"] for item in _control_resources(config, runtime)
-        ),
+        resource_ids=tuple(item["identity"] for item in _control_resources(config, runtime)),
         runtime_ids=(runtime.runtime_id,),
     )
     return runtime_spec, service
@@ -538,10 +481,7 @@ def _simulation_service(
             simulator_options=simulator.options,
         )
     except (TypeError, ValueError) as error:
-        raise ServiceError(
-            f"runtime {runtime.runtime_id!r} simulation configuration is invalid: "
-            f"{error}"
-        ) from error
+        raise ServiceError(f"runtime {runtime.runtime_id!r} simulation configuration is invalid: {error}") from error
     runtime_spec = RuntimeSpec(
         runtime_id=runtime.runtime_id,
         node=simulator.node,
@@ -602,9 +542,7 @@ def _inference_options(
             )
         )
     except (TypeError, ValueError) as error:
-        raise ServiceError(
-            f"models.{model.model_id} provider options are invalid: {error}"
-        ) from error
+        raise ServiceError(f"models.{model.model_id} provider options are invalid: {error}") from error
     return options
 
 
@@ -617,9 +555,7 @@ def _binding_adapter_config(
         if model.backend != "vvla":
             raise ServiceError(f"models.{model.model_id}.policy_kwargs requires VVLA")
         if any(not isinstance(key, str) or not key.strip() for key in policy_kwargs):
-            raise ServiceError(
-                f"models.{model.model_id}.policy_kwargs keys must be non-empty strings"
-            )
+            raise ServiceError(f"models.{model.model_id}.policy_kwargs keys must be non-empty strings")
     runtime_ids: list[str] = []
     generated: set[str | None] = set()
     for runtime in config.runtimes.values():
@@ -643,15 +579,9 @@ def _binding_adapter_config(
                 runtime_id=runtime.runtime_id,
             )
             if image_keys is not None:
-                resolved_image_keys = {
-                    field: image_keys.get(field, field) for field in image_fields
-                }
-                if len(resolved_image_keys.values()) != len(
-                    set(resolved_image_keys.values())
-                ):
-                    raise ServiceError(
-                        f"models.{model.model_id}.image_keys values must be unique"
-                    )
+                resolved_image_keys = {field: image_keys.get(field, field) for field in image_fields}
+                if len(resolved_image_keys.values()) != len(set(resolved_image_keys.values())):
+                    raise ServiceError(f"models.{model.model_id}.image_keys values must be unique")
                 adapter_config["image_keys"] = image_keys
         try:
             generated.add(
@@ -666,14 +596,11 @@ def _binding_adapter_config(
                 )
             )
         except (TypeError, ValueError) as error:
-            raise ServiceError(
-                f"binding {runtime.binding!r} adapter configuration is not JSON"
-            ) from error
+            raise ServiceError(f"binding {runtime.binding!r} adapter configuration is not JSON") from error
     if len(generated) > 1:
         names = ", ".join(sorted(runtime_ids))
         raise ServiceError(
-            f"model {model.model_id!r} is shared by runtimes with incompatible "
-            f"adapter configurations: {names}"
+            f"model {model.model_id!r} is shared by runtimes with incompatible adapter configurations: {names}"
         )
     result = next(iter(generated), None)
     if policy_kwargs is not None and result is None:
@@ -716,21 +643,13 @@ def _wireless_endpoint_configs(config: DeploymentConfig) -> dict[str, str]:
         if model.lifecycle == "external" or model.transport != "wireless":
             continue
         runtimes = sorted(
-            (
-                runtime
-                for runtime in config.runtimes.values()
-                if runtime.model == model.model_id
-            ),
+            (runtime for runtime in config.runtimes.values() if runtime.model == model.model_id),
             key=lambda runtime: runtime.runtime_id,
         )
-        remote = any(
-            _runtime_node(config, runtime) != model.node for runtime in runtimes
-        )
+        remote = any(_runtime_node(config, runtime) != model.node for runtime in runtimes)
         server = {
             "node_id": _wireless_model_peer_id(model),
-            "host": service_host(
-                config.nodes[model.node], model.server.bind, remote=remote
-            ),
+            "host": service_host(config.nodes[model.node], model.server.bind, remote=remote),
             "port": model.server.port,
         }
         clients = []
@@ -740,9 +659,7 @@ def _wireless_endpoint_configs(config: DeploymentConfig) -> dict[str, str]:
             node = _runtime_node(config, runtime)
             peer = {
                 "node_id": f"runtime.{runtime.runtime_id}",
-                "host": service_host(
-                    config.nodes[node], client.server.bind, remote=node != model.node
-                ),
+                "host": service_host(config.nodes[node], client.server.bind, remote=node != model.node),
                 "port": client.server.port,
             }
             clients.append(peer)
@@ -779,9 +696,7 @@ def _endpoint(
         return model.endpoint
     if model.transport == "wireless":
         return f"wireless://{_wireless_model_peer_id(model)}"
-    host = service_host(
-        config.nodes[model.node], model.server.bind, remote=consumer_node != model.node
-    )
+    host = service_host(config.nodes[model.node], model.server.bind, remote=consumer_node != model.node)
     return f"http://{_url_host(host)}:{model.server.port}"
 
 
@@ -808,20 +723,14 @@ def _find_environment(
         and (path is None or profile.path == path)
     ]
     if len(matches) != 1:
-        raise ServiceError(
-            f"expected one {project}/{group} environment on node {node!r}, "
-            f"found {len(matches)}"
-        )
+        raise ServiceError(f"expected one {project}/{group} environment on node {node!r}, found {len(matches)}")
     return matches[0]
 
 
 def _validate_binding(binding: str, robot_kind: str, model_kind: str) -> None:
     definition = _load_binding(binding)
     if definition.robot_kind != robot_kind or definition.model_kind != model_kind:
-        raise ServiceError(
-            f"binding {binding!r} does not match robot {robot_kind!r} and model "
-            f"{model_kind!r}"
-        )
+        raise ServiceError(f"binding {binding!r} does not match robot {robot_kind!r} and model {model_kind!r}")
 
 
 def _load_binding(binding: str) -> BindingDefinition:
@@ -868,9 +777,7 @@ def _robot_resource(config: DeploymentConfig, robot) -> ResourceIdentity:
     if robot.kind == "lerobot.bi_so101":
         ports = robot_ports(robot)
         if len(ports) != 2:
-            raise ServiceError(
-                f"robot {robot.robot_id!r} must identify both SO-101 ports"
-            )
+            raise ServiceError(f"robot {robot.robot_id!r} must identify both SO-101 ports")
         port_identity = "|".join(ports)
         if isinstance(source, str) and source.strip():
             source = f"{source}|ports={port_identity}"
@@ -878,8 +785,7 @@ def _robot_resource(config: DeploymentConfig, robot) -> ResourceIdentity:
             source = f"ports={port_identity}"
     if not isinstance(source, str) or not source.strip():
         raise ServiceError(
-            f"robot {robot.robot_id!r} has no explicit physical connection identity; "
-            "set robots.<id>.resource"
+            f"robot {robot.robot_id!r} has no explicit physical connection identity; set robots.<id>.resource"
         )
     return canonical_resource_identity(
         robot.node,
@@ -903,18 +809,13 @@ def _sensor_resource(config: DeploymentConfig, sensor) -> ResourceIdentity:
     if source is None:
         # Preserve custom logical sensors, whose adapter may own an endpoint
         # rather than a path; physical camera/bus kinds must be explicit.
-        if any(
-            token in sensor.kind.lower()
-            for token in ("camera", "v4l", "realsense", "serial", "can")
-        ):
+        if any(token in sensor.kind.lower() for token in ("camera", "v4l", "realsense", "serial", "can")):
             raise ServiceError(
                 f"sensor {sensor.sensor_id!r} has no physical identity; "
                 "set sensors.<id>.resource or a driver device/serial field"
             )
         source = sensor.sensor_id
-    return canonical_resource_identity(
-        sensor.node, "sensor", source, resolve_path=False
-    )
+    return canonical_resource_identity(sensor.node, "sensor", source, resolve_path=False)
 
 
 def _control_resources(
@@ -930,9 +831,7 @@ def _control_resources(
             "kind": robot_identity.kind,
             "value": robot_identity.value,
             "owner": robot.owner,
-            "external_owner": bool(
-                robot.owner and robot.owner not in {"deploy", "control"}
-            ),
+            "external_owner": bool(robot.owner and robot.owner not in {"deploy", "control"}),
         }
     ]
     seen = {robot_identity.key}
@@ -957,9 +856,7 @@ def _control_resources(
                 "kind": identity.kind,
                 "value": identity.value,
                 "owner": robot.owner,
-                "external_owner": bool(
-                    robot.owner and robot.owner not in {"deploy", "control"}
-                ),
+                "external_owner": bool(robot.owner and robot.owner not in {"deploy", "control"}),
             }
         )
     for sensor_id in runtime.inputs.values():
@@ -975,13 +872,9 @@ def _control_resources(
             # those IDs in generated metadata so Control can match the
             # selected SensorInput instead of falling back to the first
             # resource declaration.
-            existing = next(
-                item for item in resources if item["identity"] == identity.key
-            )
+            existing = next(item for item in resources if item["identity"] == identity.key)
             if existing.get("kind") == "sensor":
-                sensor_ids = existing.setdefault(
-                    "sensor_ids", [existing.get("sensor_id")]
-                )
+                sensor_ids = existing.setdefault("sensor_ids", [existing.get("sensor_id")])
                 if isinstance(sensor_ids, list) and sensor.sensor_id not in sensor_ids:
                     sensor_ids.append(sensor.sensor_id)
             continue
@@ -995,17 +888,13 @@ def _control_resources(
                 "sensor_id": sensor.sensor_id,
                 "sensor_ids": [sensor.sensor_id],
                 "owner": sensor.owner,
-                "external_owner": bool(
-                    sensor.owner and sensor.owner not in {"deploy", "control"}
-                ),
+                "external_owner": bool(sensor.owner and sensor.owner not in {"deploy", "control"}),
             }
         )
     return resources
 
 
-def _control_resource_ids(
-    config: DeploymentConfig, runtime: RuntimeConfig
-) -> tuple[str, ...]:
+def _control_resource_ids(config: DeploymentConfig, runtime: RuntimeConfig) -> tuple[str, ...]:
     return tuple(item["identity"] for item in _control_resources(config, runtime))
 
 
@@ -1017,25 +906,17 @@ def _merge_control_services(
 ) -> ServiceSpec:
     if not services:
         raise ServiceError("cannot merge an empty control service group")
-    configs = [
-        ControlServiceConfig.from_json(service.control_config_json or "")
-        for service in services
-    ]
+    configs = [ControlServiceConfig.from_json(service.control_config_json or "") for service in services]
     base = configs[0]
     if any(config.inference_enabled != base.inference_enabled for config in configs):
         raise ServiceError(
-            "one physical robot cannot merge device-only and model runtimes; "
-            "use a single configured lifecycle mode"
+            "one physical robot cannot merge device-only and model runtimes; use a single configured lifecycle mode"
         )
     if not base.inference_enabled:
-        raise ServiceError(
-            "multiple device-only runtimes for one robot are unsupported; "
-            "use one robot-only runtime"
-        )
+        raise ServiceError("multiple device-only runtimes for one robot are unsupported; use one robot-only runtime")
     if any(config.inference_transport == "wireless" for config in configs):
         raise ServiceError(
-            "multiple wireless runtimes cannot share one control owner yet; "
-            "use one runtime or separate physical owners"
+            "multiple wireless runtimes cannot share one control owner yet; use one runtime or separate physical owners"
         )
     profiles: dict[str, ControlRuntimeProfile] = {}
     resources: dict[str, Mapping[str, object]] = {}
@@ -1053,29 +934,18 @@ def _merge_control_services(
                     or previous.get("value") != item.get("value")
                     or previous.get("owner") != item.get("owner")
                 ):
-                    raise ServiceError(
-                        f"shared resource {identity!r} has incompatible profiles"
-                    )
+                    raise ServiceError(f"shared resource {identity!r} has incompatible profiles")
                 # Preserve logical aliases when two runtime profiles refer to
                 # the same physical camera identity.
                 merged_item = dict(previous)
                 previous_ids = previous.get("sensor_ids", [previous.get("sensor_id")])
                 incoming_ids = item.get("sensor_ids", [item.get("sensor_id")])
-                aliases = [
-                    value
-                    for value in (*previous_ids, *incoming_ids)
-                    if isinstance(value, str) and value
-                ]
+                aliases = [value for value in (*previous_ids, *incoming_ids) if isinstance(value, str) and value]
                 merged_item["sensor_ids"] = list(dict.fromkeys(aliases))
                 item = merged_item
             resources[identity] = item
-    if (
-        len({config.robot_kind for config in configs}) != 1
-        or len({config.robot_id for config in configs}) != 1
-    ):
-        raise ServiceError(
-            "runtimes sharing one physical robot must use one compatible robot owner"
-        )
+    if len({config.robot_kind for config in configs}) != 1 or len({config.robot_id for config in configs}) != 1:
+        raise ServiceError("runtimes sharing one physical robot must use one compatible robot owner")
     merged = replace(
         base,
         runtime_profiles=profiles,
@@ -1101,10 +971,7 @@ def _option_string(
     if value is None and not required:
         return None
     if not isinstance(value, str) or not value.strip():
-        if required:
-            message = "must be a non-empty string"
-        else:
-            message = "must be a non-empty string when provided"
+        message = "must be a non-empty string" if required else "must be a non-empty string when provided"
         raise ServiceError(f"models.{model.model_id}.{name} {message}")
     return value
 
@@ -1115,9 +982,7 @@ def _option_strings(model: ModelConfig, name: str) -> tuple[str, ...]:
         raise ServiceError(f"models.{model.model_id}.{name} must be a list")
     result = tuple(value)
     if any(not isinstance(item, str) or not item for item in result):
-        raise ServiceError(
-            f"models.{model.model_id}.{name} must contain non-empty strings"
-        )
+        raise ServiceError(f"models.{model.model_id}.{name} must contain non-empty strings")
     reserved = (
         "--host",
         "--port",
@@ -1126,14 +991,9 @@ def _option_strings(model: ModelConfig, name: str) -> tuple[str, ...]:
         "--pipeline-class-name",
         "--pipeline-config-path",
     )
-    if any(
-        item == option or item.startswith(f"{option}=")
-        for item in result
-        for option in reserved
-    ):
+    if any(item == option or item.startswith(f"{option}=") for item in result for option in reserved):
         raise ServiceError(
-            f"models.{model.model_id}.{name} must not override host, port, model "
-            "type, or explicit pipeline settings"
+            f"models.{model.model_id}.{name} must not override host, port, model type, or explicit pipeline settings"
         )
     return result
 
@@ -1159,21 +1019,15 @@ def _configured_image_keys(
     value = _option_mapping(model, "image_keys")
     if value is None:
         return None
-    if any(
-        not isinstance(target, str) or not target.strip() for target in value.values()
-    ):
-        raise ServiceError(
-            f"models.{model.model_id}.image_keys values must be non-empty strings"
-        )
+    if any(not isinstance(target, str) or not target.strip() for target in value.values()):
+        raise ServiceError(f"models.{model.model_id}.image_keys values must be non-empty strings")
     unknown = sorted(set(value) - set(image_fields))
     if unknown:
         raise ServiceError(
             f"models.{model.model_id}.image_keys contains fields not produced "
             f"by runtime {runtime_id!r}: {', '.join(unknown)}"
         )
-    return {
-        source: target for source, target in value.items() if isinstance(target, str)
-    }
+    return {source: target for source, target in value.items() if isinstance(target, str)}
 
 
 __all__ = [

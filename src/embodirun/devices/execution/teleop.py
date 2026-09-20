@@ -83,8 +83,7 @@ class ControlHttpTeleopClient:
         endpoint: str,
         *,
         timeout_s: float = 2.0,
-        transport: Callable[[str, str, Mapping[str, Any] | None], Mapping[str, Any]]
-        | None = None,
+        transport: Callable[[str, str, Mapping[str, Any] | None], Mapping[str, Any]] | None = None,
     ) -> None:
         self.endpoint = endpoint.rstrip("/")
         self.timeout_s = timeout_s
@@ -145,9 +144,7 @@ class ControlHttpTeleopClient:
             detail = _json_response(error.read()).get("error", error.reason)
             raise RuntimeError(f"control service rejected {path}: {detail}") from error
         except URLError as error:
-            raise RuntimeError(
-                f"control service is unreachable: {error.reason}"
-            ) from error
+            raise RuntimeError(f"control service is unreachable: {error.reason}") from error
 
 
 def normalize_robot_kind(value: str) -> str:
@@ -189,17 +186,14 @@ def main(argv: list[str] | None = None) -> int:
         bridge = ControlInputBridge(
             client,
             action_factory=(
-                intent_action_factory(args.robot_kind)
-                if args.robot_kind is not None
-                else _no_motion_action
+                intent_action_factory(args.robot_kind) if args.robot_kind is not None else _no_motion_action
             ),
             keyboard=keyboard,
             joystick=joystick,
         )
         stack.callback(bridge.close)
         print(
-            "Keyboard: space=emergency-stop, r=reset, q=quit. "
-            "Joystick axes submit manual motion intents.",
+            "Keyboard: space=emergency-stop, r=reset, q=quit. Joystick axes submit manual motion intents.",
             file=sys.stderr,
         )
         while bridge.snapshot()["running"]:

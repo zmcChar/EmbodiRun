@@ -46,10 +46,7 @@ def test_video_transport_and_xr_layout_assets():
     assert "const stream = event.streams" not in source
     assert "camera.video.srcObject = stream" in source
     assert "requestVideoFrameCallback" in source
-    assert (
-        "gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, camera.video);"
-        in source
-    )
+    assert "gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, camera.video);" in source
     assert "/api/cameras/" not in source
     assert "XR_MENU_BUTTON_INDEX" not in source
     assert "const XR_STOP_BUTTON_INDEX = 4;" in source
@@ -60,10 +57,7 @@ def test_video_transport_and_xr_layout_assets():
     assert "{ x: 0, y: 0.62, z: -2.9, width: 1.8, height: 1.35 }" in source
     assert "{ x: -0.51, y: -0.48, z: -2.9, width: 0.95, height: 0.7125 }" in source
     assert "{ x: 0.51, y: -0.48, z: -2.9, width: 0.95, height: 0.7125 }" in source
-    assert (
-        "const headRelativeModel = multiplyMatrices(new Float32Array(pose.transform.matrix), model);"
-        in source
-    )
+    assert "const headRelativeModel = multiplyMatrices(new Float32Array(pose.transform.matrix), model);" in source
     assert "const mvp = multiplyMatrices(viewProjection, headRelativeModel);" in source
     assert source.count("gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);") == 1
 
@@ -75,7 +69,7 @@ def test_xr_initial_tracking_waits_before_failsafe_stop():
     assert "controllersReady: false" in source
     assert 'session.addEventListener("visibilitychange"' in source
     assert "if (hasRobotControlIntent() && !app.xr.safetyTripped)" in source
-    assert 'failSafeStop(reason, { endSession: false });' in source
+    assert "failSafeStop(reason, { endSession: false });" in source
     assert "if (pose) drawXrScene(pose, app.xr.layer);" in source
 
 
@@ -104,9 +98,7 @@ def test_robot_fault_status_does_not_become_auth_failure():
     if not node:
         pytest.skip("Node required for browser request helper test")
     source = asset("app.js")
-    helper = source.split("  async function requestJson(", 1)[1].split(
-        "  function readFragmentToken()", 1
-    )[0]
+    helper = source.split("  async function requestJson(", 1)[1].split("  function readFragmentToken()", 1)[0]
     script = (
         """
     const assert = require('node:assert/strict');
@@ -130,9 +122,7 @@ def test_robot_fault_status_does_not_become_auth_failure():
     })().catch(error => { console.error(error); process.exitCode = 1; });
     """
     )
-    result = subprocess.run(
-        [node, "-e", script], capture_output=True, text=True, timeout=10, check=False
-    )
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=10, check=False)
     assert result.returncode == 0, result.stderr
 
 
@@ -141,9 +131,7 @@ def test_shared_signalled_stream_is_split_into_one_track_per_camera():
     if not node:
         pytest.skip("Node required for browser track binding test")
     helper = (
-        asset("app.js")
-        .split("  function handleVideoTrack(", 1)[1]
-        .split("  function handleVideoPeerFailure(", 1)[0]
+        asset("app.js").split("  function handleVideoTrack(", 1)[1].split("  function handleVideoPeerFailure(", 1)[0]
     )
     script = (
         """
@@ -176,9 +164,7 @@ def test_shared_signalled_stream_is_split_into_one_track_per_camera():
     }
     """
     )
-    result = subprocess.run(
-        [node, "-e", script], capture_output=True, text=True, timeout=10, check=False
-    )
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=10, check=False)
     assert result.returncode == 0, result.stderr
 
 
@@ -187,9 +173,7 @@ def test_xr_draw_binds_each_camera_for_both_eyes_and_cached_frames():
     if not node:
         pytest.skip("Node required for XR draw-state test")
     functions = (
-        asset("app.js")
-        .split("  function identityMatrix()", 1)[1]
-        .split("  async function checkXrSupport()", 1)[0]
+        asset("app.js").split("  function identityMatrix()", 1)[1].split("  async function checkXrSupport()", 1)[0]
     )
     script = (
         """
@@ -245,7 +229,5 @@ def test_xr_draw_binds_each_camera_for_both_eyes_and_cached_frames():
     }
     """
     )
-    result = subprocess.run(
-        [node, "-e", script], capture_output=True, text=True, timeout=10, check=False
-    )
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=10, check=False)
     assert result.returncode == 0, result.stderr

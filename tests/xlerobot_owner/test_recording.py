@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import ClassVar
 
 import pytest
-
 from embodirun_xlerobot_owner.recording import (
     CAMERA_ROLES,
     DEFAULT_JOINT_NAMES,
@@ -60,7 +59,7 @@ def _observation(timestamp_ns: int, *, base_velocity: dict | None = None) -> dic
         "state": {name: float(index) for index, name in enumerate(DEFAULT_JOINT_NAMES)},
         "source_timestamp_ns": timestamp_ns,
         "state_timestamp_ns": timestamp_ns,
-        "camera_timestamps_ns": {role: timestamp_ns for role in CAMERA_ROLES},
+        "camera_timestamps_ns": dict.fromkeys(CAMERA_ROLES, timestamp_ns),
         "received_timestamp_ns": timestamp_ns + 1,
     }
     if base_velocity is not None:
@@ -261,9 +260,7 @@ def test_gateway_timestamp_domain_is_retained_without_cross_clock_comparison(tmp
 
 
 @pytest.mark.parametrize("mismatched_domain", ("state", "camera", "sent"))
-def test_robot_timestamp_domain_mismatch_rejects_training_and_export(
-    tmp_path: Path, mismatched_domain: str
-) -> None:
+def test_robot_timestamp_domain_mismatch_rejects_training_and_export(tmp_path: Path, mismatched_domain: str) -> None:
     recorder = EpisodeRecorder(tmp_path / "episodes")
     path = recorder.start("mismatched robot clock", _metadata())
     action = _action()
@@ -425,9 +422,7 @@ def test_export_adapter_resamples_irregular_or_mismatched_source_with_configured
     assert len(FakeDataset.instances[-1].episodes[0]) == 3
 
 
-def test_export_resampling_preserves_epoch_sized_integer_origin(
-    tmp_path: Path, monkeypatch, export_dependencies
-):
+def test_export_resampling_preserves_epoch_sized_integer_origin(tmp_path: Path, monkeypatch, export_dependencies):
     FakeDataset = _install_fake_lerobot(monkeypatch)
     recorder = EpisodeRecorder(tmp_path / "episodes", fps=15)
     path = recorder.start("epoch resample", _metadata(fps=15))

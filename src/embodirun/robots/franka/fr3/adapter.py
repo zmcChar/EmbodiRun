@@ -37,8 +37,7 @@ class FR3Adapter(RobotAdapter):
                 import franky as franky_module
             except ImportError as error:
                 raise FR3AdapterError(
-                    "FR3 support requires franky-control; run "
-                    "`uv sync --frozen --no-dev --group robot-fr3`"
+                    "FR3 support requires franky-control; run `uv sync --frozen --no-dev --group robot-fr3`"
                 ) from error
         self.config = config
         self.franky = franky_module
@@ -52,11 +51,7 @@ class FR3Adapter(RobotAdapter):
         robot = self.franky.Robot(self.config.host)
         robot.recover_from_errors()
         robot.relative_dynamics_factor = self.config.relative_dynamics_factor
-        gripper = (
-            self.franky.Gripper(self.config.host)
-            if self.config.enable_gripper
-            else None
-        )
+        gripper = self.franky.Gripper(self.config.host) if self.config.enable_gripper else None
         self.robot = robot
         self.gripper = gripper
 
@@ -73,9 +68,7 @@ class FR3Adapter(RobotAdapter):
         if hasattr(state, "dq"):
             values["joint_velocities_rad_s"] = list(_numbers(state.dq, "state.dq", 7))
         if hasattr(state, "O_T_EE"):
-            values["base_to_end_effector"] = list(
-                _numbers(state.O_T_EE, "state.O_T_EE", 16)
-            )
+            values["base_to_end_effector"] = list(_numbers(state.O_T_EE, "state.O_T_EE", 16))
         if self.gripper is not None:
             values["gripper_width_m"] = float(self.gripper.width)
         return RobotObservation(
@@ -92,9 +85,7 @@ class FR3Adapter(RobotAdapter):
         self._connected_robot()
         declared_space = action.metadata.get("action_space")
         if declared_space is not None and declared_space != FR3_ACTION_SPACE:
-            raise FR3AdapterError(
-                f"unsupported action space {declared_space!r}; expected {FR3_ACTION_SPACE!r}"
-            )
+            raise FR3AdapterError(f"unsupported action space {declared_space!r}; expected {FR3_ACTION_SPACE!r}")
         if not isinstance(action.values, Mapping):
             raise FR3AdapterError("FR3 action values must be an object")
         values = dict(action.values)
@@ -114,14 +105,9 @@ class FR3Adapter(RobotAdapter):
         robot = self._connected_robot()
         target = _numbers(values.get("joint_positions_rad"), "joint_positions_rad", 7)
         current = _numbers(robot.state.q, "state.q", 7)
-        maximum = max(
-            abs(next_value - old_value)
-            for old_value, next_value in zip(current, target)
-        )
+        maximum = max(abs(next_value - old_value) for old_value, next_value in zip(current, target))
         if maximum > self.config.max_joint_step_rad:
-            raise FR3AdapterError(
-                f"joint step {maximum:.6f} exceeds {self.config.max_joint_step_rad:.6f} rad"
-            )
+            raise FR3AdapterError(f"joint step {maximum:.6f} exceeds {self.config.max_joint_step_rad:.6f} rad")
         robot.move(self.franky.JointMotion(list(target)))
         if "gripper_width_m" in values:
             self._move_gripper(values)
@@ -130,9 +116,7 @@ class FR3Adapter(RobotAdapter):
         robot = self._connected_robot()
         delta = _numbers(values.get("translation_m"), "translation_m", 3)
         if max(abs(item) for item in delta) > self.config.max_cartesian_step_m:
-            raise FR3AdapterError(
-                "Cartesian translation exceeds the configured per-step limit"
-            )
+            raise FR3AdapterError("Cartesian translation exceeds the configured per-step limit")
         target = self.franky.Affine(list(delta))
         motion = self.franky.CartesianMotion(
             target,
@@ -144,10 +128,7 @@ class FR3Adapter(RobotAdapter):
         if self.gripper is None:
             raise FR3AdapterError("gripper control is disabled")
         width = float(values.get("gripper_width_m"))
-        if (
-            not math.isfinite(width)
-            or not 0 <= width <= self.config.max_gripper_width_m
-        ):
+        if not math.isfinite(width) or not 0 <= width <= self.config.max_gripper_width_m:
             raise FR3AdapterError("gripper_width_m is outside the configured range")
         if not self.gripper.move(width, self.config.gripper_speed_mps):
             raise FR3AdapterError("Franky gripper did not accept the command")

@@ -64,24 +64,16 @@ class FrameStore:
 
         with self._lock:
             next_sequence = self._sequence + 1 if sequence is None else sequence
-            if (
-                isinstance(next_sequence, bool)
-                or not isinstance(next_sequence, int)
-                or next_sequence <= self._sequence
-            ):
+            if isinstance(next_sequence, bool) or not isinstance(next_sequence, int) or next_sequence <= self._sequence:
                 raise ValueError("frame sequence must increase")
             snapshot = FrameSnapshot(
                 jpeg=bytes(jpeg),
                 sequence=next_sequence,
-                captured_at_unix=(
-                    self._wall_clock() if captured_at_unix is None else float(captured_at_unix)
-                ),
+                captured_at_unix=(self._wall_clock() if captured_at_unix is None else float(captured_at_unix)),
                 captured_at_monotonic=(
                     self._clock() if captured_at_monotonic is None else float(captured_at_monotonic)
                 ),
-                source_timestamp_ms=(
-                    None if source_timestamp_ms is None else float(source_timestamp_ms)
-                ),
+                source_timestamp_ms=(None if source_timestamp_ms is None else float(source_timestamp_ms)),
                 source_frame_number=source_frame_number,
             )
             self._sequence = next_sequence

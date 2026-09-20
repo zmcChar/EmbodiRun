@@ -2,6 +2,7 @@ import json
 import time
 
 import pytest
+
 pytest.importorskip("PIL")
 
 from embodirun_xlerobot_owner.dualsense_drive import ZERO, BaseSession
@@ -20,15 +21,25 @@ class Observer:
 
     def read(self):
         now = time.time_ns()
-        return {"metadata": {"source": "physical"}, "state": self.demo.state,
-                "source_timestamp_ns": now, "state_timestamp_ns": now,
-                "camera_timestamps_ns": dict.fromkeys(self.images, now),
-                "raw": {"base_left_wheel": {"Present_Position": 2001}}}, self.images
+        return {
+            "metadata": {"source": "physical"},
+            "state": self.demo.state,
+            "source_timestamp_ns": now,
+            "state_timestamp_ns": now,
+            "camera_timestamps_ns": dict.fromkeys(self.images, now),
+            "raw": {"base_left_wheel": {"Present_Position": 2001}},
+        }, self.images
 
 
 def recorder(tmp_path, observer=None):
-    return DemoRecording(tmp_path, "reference demo", "http://127.0.0.1:8766", "secret",
-                         {"source": "physical"}, observer=observer or Observer())
+    return DemoRecording(
+        tmp_path,
+        "reference demo",
+        "http://127.0.0.1:8766",
+        "secret",
+        {"source": "physical"},
+        observer=observer or Observer(),
+    )
 
 
 def test_camera_raw_and_exact_command_feedback_are_saved_without_observer_control(tmp_path):
@@ -37,7 +48,7 @@ def test_camera_raw_and_exact_command_feedback_are_saved_without_observer_contro
     robot = FakeRobot()
     session = BaseSession(robot, recording)
     session.enable()
-    session.send({"x.vel": .02, "theta.vel": 0}, input_record(sample(["r1"])))
+    session.send({"x.vel": 0.02, "theta.vel": 0}, input_record(sample(["r1"])))
     session.stop()
     result = recording.close()
     assert result["frame_count"] >= 1

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import inspect
+import json
 import math
 import os
 import time
@@ -95,9 +95,7 @@ def _default_calibration_dir() -> Path:
         if lerobot_home:
             root = Path(lerobot_home).expanduser() / "calibration"
         else:
-            hf_home = Path(
-                os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")
-            ).expanduser()
+            hf_home = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")).expanduser()
             root = hf_home / "lerobot" / "calibration"
     return root / "robots" / "so_follower"
 
@@ -109,17 +107,11 @@ def _load_calibration(config: SO101Config) -> dict[str, _MotorCalibration]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        raise SO101AdapterError(
-            f"SO-101 calibration file does not exist: {path}"
-        ) from None
+        raise SO101AdapterError(f"SO-101 calibration file does not exist: {path}") from None
     except (OSError, json.JSONDecodeError) as error:
-        raise SO101AdapterError(
-            f"failed to read SO-101 calibration file {path}: {error}"
-        ) from error
+        raise SO101AdapterError(f"failed to read SO-101 calibration file {path}: {error}") from error
     if not isinstance(value, Mapping):
-        raise SO101AdapterError(
-            f"SO-101 calibration file must contain an object: {path}"
-        )
+        raise SO101AdapterError(f"SO-101 calibration file must contain an object: {path}")
 
     expected = set(SO101_MOTORS)
     actual = set(value)
@@ -141,27 +133,18 @@ def _load_calibration(config: SO101Config) -> dict[str, _MotorCalibration]:
     for motor in SO101_MOTORS:
         item = value[motor]
         if not isinstance(item, Mapping) or set(item) != required_fields:
-            raise SO101AdapterError(
-                f"SO-101 calibration for {motor!r} must contain "
-                f"{sorted(required_fields)!r}"
-            )
+            raise SO101AdapterError(f"SO-101 calibration for {motor!r} must contain {sorted(required_fields)!r}")
         motor_id = _integer(item["id"], f"calibration.{motor}.id")
         drive_mode = _integer(item["drive_mode"], f"calibration.{motor}.drive_mode")
-        homing_offset = _integer(
-            item["homing_offset"], f"calibration.{motor}.homing_offset"
-        )
+        homing_offset = _integer(item["homing_offset"], f"calibration.{motor}.homing_offset")
         range_min = _integer(item["range_min"], f"calibration.{motor}.range_min")
         range_max = _integer(item["range_max"], f"calibration.{motor}.range_max")
         if motor_id != _MOTOR_IDS[motor]:
-            raise SO101AdapterError(
-                f"calibration.{motor}.id must be {_MOTOR_IDS[motor]}, got {motor_id}"
-            )
+            raise SO101AdapterError(f"calibration.{motor}.id must be {_MOTOR_IDS[motor]}, got {motor_id}")
         if drive_mode not in (0, 1):
             raise SO101AdapterError(f"calibration.{motor}.drive_mode must be 0 or 1")
         if range_min == range_max:
-            raise SO101AdapterError(
-                f"calibration.{motor} range_min and range_max must differ"
-            )
+            raise SO101AdapterError(f"calibration.{motor} range_min and range_max must differ")
         calibration[motor] = _MotorCalibration(
             motor_id=motor_id,
             drive_mode=drive_mode,
@@ -189,8 +172,7 @@ class _FeetechSO101Controller:
             import scservo_sdk
         except ImportError as error:
             raise SO101AdapterError(
-                "SO-101 support requires the Feetech servo SDK; run "
-                "`uv sync --frozen --no-dev --group robot-so101`"
+                "SO-101 support requires the Feetech servo SDK; run `uv sync --frozen --no-dev --group robot-so101`"
             ) from error
 
         self.config = config
@@ -220,9 +202,7 @@ class _FeetechSO101Controller:
     def _set_packet_timeout(self, packet_length: int) -> None:
         self.port_handler.packet_start_time = self.port_handler.getCurrentTime()
         byte_time = self.port_handler.tx_time_per_byte
-        self.port_handler.packet_timeout = (
-            byte_time * packet_length + byte_time * 3 + 50
-        )
+        self.port_handler.packet_timeout = byte_time * packet_length + byte_time * 3 + 50
 
     def _communication_error(self, operation: str, result: int, error: int) -> None:
         if result != self.sdk.COMM_SUCCESS:
@@ -248,15 +228,9 @@ class _FeetechSO101Controller:
         for attempt in range(retries + 1):
             value, result, error = read(self.port_handler, motor_id, address)
             if result == self.sdk.COMM_SUCCESS and not error:
-                return (
-                    _decode_sign_magnitude(value, sign_bit)
-                    if sign_bit is not None
-                    else value
-                )
+                return _decode_sign_magnitude(value, sign_bit) if sign_bit is not None else value
             if attempt == retries:
-                self._communication_error(
-                    f"read register {address} from motor {motor_id}", result, error
-                )
+                self._communication_error(f"read register {address} from motor {motor_id}", result, error)
         raise AssertionError("unreachable")
 
     def _write_register(
@@ -282,9 +256,7 @@ class _FeetechSO101Controller:
             if result == self.sdk.COMM_SUCCESS and not error:
                 return
             if attempt == retries:
-                self._communication_error(
-                    f"write register {address} on motor {motor_id}", result, error
-                )
+                self._communication_error(f"write register {address} on motor {motor_id}", result, error)
 
     def _handshake(self) -> None:
         firmware_versions: set[tuple[int, int]] = set()
@@ -293,8 +265,7 @@ class _FeetechSO101Controller:
             self._communication_error(f"ping motor {motor!r}", result, error)
             if model != _STS3215_MODEL_NUMBER:
                 raise SO101AdapterError(
-                    f"motor {motor!r} has model number {model}; "
-                    f"expected STS3215 ({_STS3215_MODEL_NUMBER})"
+                    f"motor {motor!r} has model number {model}; expected STS3215 ({_STS3215_MODEL_NUMBER})"
                 )
             firmware_versions.add(
                 (
@@ -304,21 +275,17 @@ class _FeetechSO101Controller:
             )
         if len(firmware_versions) != 1:
             raise SO101AdapterError(
-                "SO-101 motors must use the same firmware version; "
-                f"found {sorted(firmware_versions)!r}"
+                f"SO-101 motors must use the same firmware version; found {sorted(firmware_versions)!r}"
             )
 
     def _matches_calibration(self) -> bool:
-        for motor, item in self.calibration.items():
+        for item in self.calibration.values():
             motor_id = item.motor_id
             if self._read_register(motor_id, _MIN_POSITION) != item.range_min:
                 return False
             if self._read_register(motor_id, _MAX_POSITION) != item.range_max:
                 return False
-            if (
-                self._read_register(motor_id, _HOMING_OFFSET, sign_bit=11)
-                != item.homing_offset
-            ):
+            if self._read_register(motor_id, _HOMING_OFFSET, sign_bit=11) != item.homing_offset:
                 return False
         return True
 
@@ -386,16 +353,12 @@ class _FeetechSO101Controller:
 
     def connect(self, *, calibrate: bool, prepare: bool = True) -> None:
         if calibrate:
-            raise SO101AdapterError(
-                "interactive calibration is not supported by the Deploy runtime"
-            )
+            raise SO101AdapterError("interactive calibration is not supported by the Deploy runtime")
         if self.is_connected:
             return
         try:
             if not self.port_handler.openPort():
-                raise SO101AdapterError(
-                    f"failed to open SO-101 port {self.config.port}"
-                )
+                raise SO101AdapterError(f"failed to open SO-101 port {self.config.port}")
             self._connected = True
             self.port_handler.setPacketTimeoutMillis(1000)
             self._handshake()
@@ -424,9 +387,7 @@ class _FeetechSO101Controller:
         item = self.calibration[motor]
         if motor == "gripper":
             bounded = min(item.range_max, max(item.range_min, raw))
-            normalized = (
-                (bounded - item.range_min) * 100 / (item.range_max - item.range_min)
-            )
+            normalized = (bounded - item.range_min) * 100 / (item.range_max - item.range_min)
             return 100 - normalized if item.drive_mode else normalized
         midpoint = (item.range_min + item.range_max) / 2
         return (raw - midpoint) * 360 / (_ENCODER_RESOLUTION - 1)
@@ -437,22 +398,16 @@ class _FeetechSO101Controller:
             bounded = min(100.0, max(0.0, normalized))
             if item.drive_mode:
                 bounded = 100 - bounded
-            return int(
-                bounded / 100 * (item.range_max - item.range_min) + item.range_min
-            )
+            return int(bounded / 100 * (item.range_max - item.range_min) + item.range_min)
         midpoint = (item.range_min + item.range_max) / 2
         return int(normalized * (_ENCODER_RESOLUTION - 1) / 360 + midpoint)
 
     def _read_positions(self) -> dict[str, float]:
         address, size = _PRESENT_POSITION
-        reader = self.sdk.GroupSyncRead(
-            self.port_handler, self.packet_handler, address, size
-        )
+        reader = self.sdk.GroupSyncRead(self.port_handler, self.packet_handler, address, size)
         for motor_id in _MOTOR_IDS.values():
             if not reader.addParam(motor_id):
-                raise SO101AdapterError(
-                    f"failed to prepare position read for motor {motor_id}"
-                )
+                raise SO101AdapterError(f"failed to prepare position read for motor {motor_id}")
         for attempt in range(_READ_RETRIES + 1):
             result = reader.txRxPacket()
             if result == self.sdk.COMM_SUCCESS:
@@ -463,9 +418,7 @@ class _FeetechSO101Controller:
         positions: dict[str, float] = {}
         for motor, motor_id in _MOTOR_IDS.items():
             if not reader.isAvailable(motor_id, address, size):
-                raise SO101AdapterError(
-                    f"position response for motor {motor!r} is incomplete"
-                )
+                raise SO101AdapterError(f"position response for motor {motor!r} is incomplete")
             raw = _decode_sign_magnitude(reader.getData(motor_id, address, size), 15)
             positions[f"{motor}.pos"] = self._normalized_position(motor, raw)
         return positions
@@ -481,17 +434,13 @@ class _FeetechSO101Controller:
         if not self.is_connected:
             raise SO101AdapterError("SO-101 is not connected")
         address, size = _GOAL_POSITION
-        writer = self.sdk.GroupSyncWrite(
-            self.port_handler, self.packet_handler, address, size
-        )
+        writer = self.sdk.GroupSyncWrite(self.port_handler, self.packet_handler, address, size)
         for motor, motor_id in _MOTOR_IDS.items():
             raw = self._raw_position(motor, action[f"{motor}.pos"])
             encoded = _encode_sign_magnitude(raw, 15)
             data = [self.sdk.SCS_LOBYTE(encoded), self.sdk.SCS_HIBYTE(encoded)]
             if not writer.addParam(motor_id, data):
-                raise SO101AdapterError(
-                    f"failed to prepare position command for motor {motor!r}"
-                )
+                raise SO101AdapterError(f"failed to prepare position command for motor {motor!r}")
         result = writer.txPacket()
         self._communication_error("write SO-101 positions", result, 0)
 
@@ -547,7 +496,10 @@ class SO101Adapter(RobotAdapter):
     """Synchronous adapter for one calibrated SO-101 follower arm."""
 
     def __init__(
-        self, config: SO101Config, *, controller: _SO101Controller | None = None,
+        self,
+        config: SO101Config,
+        *,
+        controller: _SO101Controller | None = None,
         read_only: bool = False,
     ) -> None:
         if not isinstance(read_only, bool):
@@ -574,9 +526,7 @@ class SO101Adapter(RobotAdapter):
             except (TypeError, ValueError):
                 parameters = {}
             if not prepare and "prepare" not in parameters:
-                raise SO101AdapterError(
-                    "SO-101 controller does not expose a passive connect boundary"
-                )
+                raise SO101AdapterError("SO-101 controller does not expose a passive connect boundary")
             if "prepare" in parameters:
                 connect(calibrate=False, prepare=prepare)
             else:
@@ -587,9 +537,7 @@ class SO101Adapter(RobotAdapter):
             raise
         if not self.controller.is_calibrated:
             self.controller.disconnect()
-            raise SO101AdapterError(
-                "SO-101 motor calibration does not match the configured calibration file"
-            )
+            raise SO101AdapterError("SO-101 motor calibration does not match the configured calibration file")
         self._prepared = prepare and not self.read_only
 
     def prepare(self) -> None:
@@ -601,9 +549,7 @@ class SO101Adapter(RobotAdapter):
             self.connect(prepare=False)
         prepare = getattr(self.controller, "prepare", None)
         if not callable(prepare):
-            raise SO101AdapterError(
-                "SO-101 controller does not expose an explicit prepare operation"
-            )
+            raise SO101AdapterError("SO-101 controller does not expose an explicit prepare operation")
         prepare()
         self._prepared = True
 
@@ -615,9 +561,7 @@ class SO101Adapter(RobotAdapter):
             raise SO101AdapterError("SO-101 observation must be an object")
         missing = set(SO101_POSITION_FEATURES) - raw.keys()
         if missing:
-            raise SO101AdapterError(
-                f"SO-101 observation is missing features: {sorted(missing)!r}"
-            )
+            raise SO101AdapterError(f"SO-101 observation is missing features: {sorted(missing)!r}")
         return tuple(_number(raw[name], name) for name in SO101_POSITION_FEATURES)
 
     def observe(self) -> RobotObservation:
@@ -643,9 +587,7 @@ class SO101Adapter(RobotAdapter):
         if self.read_only:
             raise SO101AdapterError("read-only SO-101 connection cannot execute actions")
         if not self._prepared:
-            raise SO101AdapterError(
-                "SO-101 motors are not prepared; call prepare explicitly before execute"
-            )
+            raise SO101AdapterError("SO-101 motors are not prepared; call prepare explicitly before execute")
         if isinstance(action.values, Mapping) and action.values.get("type") == "stop":
             if action.values != {"type": "stop"}:
                 raise SO101AdapterError("stop action must not contain parameters")
@@ -653,22 +595,15 @@ class SO101Adapter(RobotAdapter):
             return
         target_joints, target_gripper = self.validate_action(action)
         current = self._read_positions()
-        maximum_joint_step = max(
-            abs(target - present)
-            for target, present in zip(target_joints, current[:-1])
-        )
+        maximum_joint_step = max(abs(target - present) for target, present in zip(target_joints, current[:-1]))
         gripper_step = abs(target_gripper - current[-1])
         if self.config.step_limit_mode == "reject":
             if maximum_joint_step > self.config.max_joint_step_deg:
                 raise SO101AdapterError(
-                    f"joint step {maximum_joint_step:.6f} exceeds "
-                    f"{self.config.max_joint_step_deg:.6f} degrees"
+                    f"joint step {maximum_joint_step:.6f} exceeds {self.config.max_joint_step_deg:.6f} degrees"
                 )
             if gripper_step > self.config.max_gripper_step:
-                raise SO101AdapterError(
-                    f"gripper step {gripper_step:.6f} exceeds "
-                    f"{self.config.max_gripper_step:.6f}"
-                )
+                raise SO101AdapterError(f"gripper step {gripper_step:.6f} exceeds {self.config.max_gripper_step:.6f}")
         else:
             target_joints = tuple(
                 _clip_step(target, present, self.config.max_joint_step_deg)
@@ -679,13 +614,12 @@ class SO101Adapter(RobotAdapter):
                 current[-1],
                 self.config.max_gripper_step,
             )
-        command = {
-            feature: value
-            for feature, value in zip(
+        command = dict(
+            zip(
                 SO101_POSITION_FEATURES,
                 (*target_joints, target_gripper),
             )
-        }
+        )
         self.controller.send_action(command)
 
     def validate_action(self, action: RobotAction) -> tuple[tuple[float, ...], float]:
@@ -699,14 +633,10 @@ class SO101Adapter(RobotAdapter):
         if self.read_only:
             raise SO101AdapterError("read-only SO-101 connection cannot execute actions")
         if not self._prepared:
-            raise SO101AdapterError(
-                "SO-101 motors are not prepared; call prepare explicitly before execute"
-            )
+            raise SO101AdapterError("SO-101 motors are not prepared; call prepare explicitly before execute")
         declared_space = action.metadata.get("action_space")
         if declared_space is not None and declared_space != SO101_ACTION_SPACE:
-            raise SO101AdapterError(
-                f"unsupported action space {declared_space!r}; expected {SO101_ACTION_SPACE!r}"
-            )
+            raise SO101AdapterError(f"unsupported action space {declared_space!r}; expected {SO101_ACTION_SPACE!r}")
         if not isinstance(action.values, Mapping):
             raise SO101AdapterError("SO-101 action values must be an object")
         values = dict(action.values)
@@ -721,29 +651,20 @@ class SO101Adapter(RobotAdapter):
                 "SO-101 joint_position fields do not match the contract; "
                 f"missing={sorted(missing)!r}, unexpected={sorted(unexpected)!r}"
             )
-        target_joints = _numbers(
-            values["joint_positions_deg"], "joint_positions_deg", 5
-        )
+        target_joints = _numbers(values["joint_positions_deg"], "joint_positions_deg", 5)
         target_gripper = _number(values["gripper_position"], "gripper_position")
         if not 0.0 <= target_gripper <= 100.0:
             raise SO101AdapterError("gripper_position must be in [0, 100]")
         current = self._read_positions()
-        maximum_joint_step = max(
-            abs(target - present)
-            for target, present in zip(target_joints, current[:-1])
-        )
+        maximum_joint_step = max(abs(target - present) for target, present in zip(target_joints, current[:-1]))
         gripper_step = abs(target_gripper - current[-1])
         if self.config.step_limit_mode == "reject":
             if maximum_joint_step > self.config.max_joint_step_deg:
                 raise SO101AdapterError(
-                    f"joint step {maximum_joint_step:.6f} exceeds "
-                    f"{self.config.max_joint_step_deg:.6f} degrees"
+                    f"joint step {maximum_joint_step:.6f} exceeds {self.config.max_joint_step_deg:.6f} degrees"
                 )
             if gripper_step > self.config.max_gripper_step:
-                raise SO101AdapterError(
-                    f"gripper step {gripper_step:.6f} exceeds "
-                    f"{self.config.max_gripper_step:.6f}"
-                )
+                raise SO101AdapterError(f"gripper step {gripper_step:.6f} exceeds {self.config.max_gripper_step:.6f}")
         return target_joints, target_gripper
 
     def stop(self) -> None:
@@ -751,9 +672,7 @@ class SO101Adapter(RobotAdapter):
         if self.read_only:
             raise SO101AdapterError("read-only SO-101 connection cannot command a hold")
         if not self._prepared:
-            raise SO101AdapterError(
-                "SO-101 motors are not prepared; call prepare explicitly before stop"
-            )
+            raise SO101AdapterError("SO-101 motors are not prepared; call prepare explicitly before stop")
         positions = self._read_positions()
         self.controller.send_action(dict(zip(SO101_POSITION_FEATURES, positions)))
 

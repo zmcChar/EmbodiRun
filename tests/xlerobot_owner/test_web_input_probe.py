@@ -11,7 +11,8 @@ PROBE = Path(__file__).parents[2] / "integrations/xlerobot_owner/src/embodirun_x
 @pytest.mark.parametrize("entry", ["request", "offer"])
 def test_input_probe_uses_native_sources_and_never_sends_arm_or_robot_actions(entry):
     source = PROBE.read_text()
-    _run_node("""
+    _run_node(
+        """
     const assert = require('node:assert/strict');
     let click, nativeClick, raf, now=100;
     const entry = ENTRY_VALUE;
@@ -52,7 +53,9 @@ def test_input_probe_uses_native_sources_and_never_sends_arm_or_robot_actions(en
       constructor(url){assert.equal(url,'wss://test.invalid/ws');this.readyState=1;}
       send(value){sent.push(JSON.parse(value));} close(){}
     };
-    """.replace("ENTRY_VALUE", json.dumps(entry)) + source + """
+    """.replace("ENTRY_VALUE", json.dumps(entry))
+        + source
+        + """
     (async()=>{
       (entry==='offer' ? nativeClick : click)();
       await new Promise(resolve=>setImmediate(resolve));
@@ -79,7 +82,8 @@ def test_input_probe_uses_native_sources_and_never_sends_arm_or_robot_actions(en
       assert.equal(sent.some(packet=>'action' in packet),false);
       assert.match(elements['check-status'].textContent,/原生输入源:2/);
     })().catch(error=>{console.error(error);process.exitCode=1;});
-    """)
+    """
+    )
 
 
 def test_probe_is_a_standalone_page_without_video_or_external_scripts():

@@ -140,28 +140,16 @@ class _FakeSegmentBackend:
 
 
 def test_local_waypoint_velocity_overflow_fails_closed_and_executor_stops():
-    backend = _FakeSegmentBackend(
-        LocalSegmentFeedback(
-            BodyVelocity.zero(), received_at_s=0.0, state_timestamp_ns=1
-        )
-    )
-    executor = LocalSegmentExecutor(
-        backend, LocalSegmentConfig(duration_s=math.nextafter(0.0, 1.0))
-    )
+    backend = _FakeSegmentBackend(LocalSegmentFeedback(BodyVelocity.zero(), received_at_s=0.0, state_timestamp_ns=1))
+    executor = LocalSegmentExecutor(backend, LocalSegmentConfig(duration_s=math.nextafter(0.0, 1.0)))
     with pytest.raises(ValueError, match="effective duration"):
         executor.execute(_output([[1e308, 0.0, 0.0]]), now_s=0.0)
     assert backend.stops == ["local-segment-exception"]
 
 
 def test_local_segment_executor_sends_forward_yaw_without_pose():
-    backend = _FakeSegmentBackend(
-        LocalSegmentFeedback(
-            BodyVelocity.zero(), received_at_s=0.0, state_timestamp_ns=1
-        )
-    )
-    executor = LocalSegmentExecutor(
-        backend, LocalSegmentConfig(duration_s=0.25), clock=lambda: 0.0
-    )
+    backend = _FakeSegmentBackend(LocalSegmentFeedback(BodyVelocity.zero(), received_at_s=0.0, state_timestamp_ns=1))
+    executor = LocalSegmentExecutor(backend, LocalSegmentConfig(duration_s=0.25), clock=lambda: 0.0)
     step = executor.execute(_output([[0.0, 0.2, 0.0], [0.1, 0.0, 0.2]]), now_s=0.0)
     assert step.waypoint_index == 1
     assert step.command == BodyVelocity(0.3, 0.0, 0.6)
@@ -169,11 +157,7 @@ def test_local_segment_executor_sends_forward_yaw_without_pose():
 
 
 def test_local_segment_executor_stale_feedback_stops_fail_closed():
-    backend = _FakeSegmentBackend(
-        LocalSegmentFeedback(
-            BodyVelocity.zero(), received_at_s=-1.0, state_timestamp_ns=1
-        )
-    )
+    backend = _FakeSegmentBackend(LocalSegmentFeedback(BodyVelocity.zero(), received_at_s=-1.0, state_timestamp_ns=1))
     executor = LocalSegmentExecutor(backend, clock=lambda: 0.0)
     with pytest.raises(LocalSegmentFeedbackStale):
         executor.execute(_output([[0.1, 0.0, 0.0]]), now_s=0.0)
@@ -280,9 +264,7 @@ def test_local_segment_backend_reuses_command_and_stop_safety():
     assert feedback.state_timestamp_ns > 0
     backend.set_body_velocity(BodyVelocity(0.2, 0.0, 0.4))
     assert robot.commands[-1]["x.vel"] == pytest.approx(0.2)
-    assert robot.commands[-1]["theta.vel"] == pytest.approx(
-        0.4 * 180.0 / 3.141592653589793
-    )
+    assert robot.commands[-1]["theta.vel"] == pytest.approx(0.4 * 180.0 / 3.141592653589793)
     backend.stop(reason="test")
     assert backend.last_stop_report["stationary_confirmed"] is True
 

@@ -33,18 +33,13 @@ class SimulatorDefinition:
             raise TypeError("simulator config_factory must be callable")
         if not issubclass(self.adapter_type, SimulatorAdapter):
             raise TypeError("simulator adapter_type must inherit SimulatorAdapter")
-        if not self.image_fields or any(
-            not isinstance(field, str) or not field.strip()
-            for field in self.image_fields
-        ):
+        if not self.image_fields or any(not isinstance(field, str) or not field.strip() for field in self.image_fields):
             raise ValueError("simulator image_fields must contain non-empty strings")
         if len(self.image_fields) != len(set(self.image_fields)):
             raise ValueError("simulator image_fields must be unique")
 
 
-_SIMULATOR_KIND = re.compile(
-    r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\Z"
-)
+_SIMULATOR_KIND = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\Z")
 
 
 @cache
@@ -57,23 +52,17 @@ def simulator_definition(kind: str) -> SimulatorDefinition:
     try:
         module = import_module(module_name)
     except ModuleNotFoundError as error:
-        if error.name is not None and (
-            error.name == module_name or module_name.startswith(f"{error.name}.")
-        ):
+        if error.name is not None and (error.name == module_name or module_name.startswith(f"{error.name}.")):
             raise KeyError(kind) from None
         raise
     try:
         definition = module.SIMULATOR_DEFINITION
     except AttributeError:
-        raise TypeError(
-            f"{module_name} does not declare SIMULATOR_DEFINITION"
-        ) from None
+        raise TypeError(f"{module_name} does not declare SIMULATOR_DEFINITION") from None
     if not isinstance(definition, SimulatorDefinition):
         raise TypeError(f"{module_name}.SIMULATOR_DEFINITION is invalid")
     if definition.kind != kind:
-        raise TypeError(
-            f"{module_name}.SIMULATOR_DEFINITION declares kind {definition.kind!r}"
-        )
+        raise TypeError(f"{module_name}.SIMULATOR_DEFINITION declares kind {definition.kind!r}")
     return definition
 
 

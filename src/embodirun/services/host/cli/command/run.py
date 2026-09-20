@@ -8,13 +8,13 @@ import uuid
 from typing import Any
 
 from embodirun.bindings import binding_definition
-from embodirun.services.control.contracts import TaskRequest
-from embodirun.services.simulation.contracts import EpisodeRequest
-
 from embodirun.deployment.config import config_digest
 from embodirun.deployment.control import ControlClient
 from embodirun.deployment.simulation import SimulationClient
 from embodirun.deployment.state import StateStore
+from embodirun.services.control.contracts import TaskRequest
+from embodirun.services.simulation.contracts import EpisodeRequest
+
 from ..context import CommandContext
 
 
@@ -55,10 +55,7 @@ def register(commands: Any) -> None:
         type=_positive_integer,
         default=DEFAULT_MAX_STEPS,
         metavar="N",
-        help=(
-            "maximum inference/action chunks to execute "
-            f"(default: {DEFAULT_MAX_STEPS})"
-        ),
+        help=(f"maximum inference/action chunks to execute (default: {DEFAULT_MAX_STEPS})"),
     )
     parser.add_argument(
         "--control-hz",
@@ -72,10 +69,7 @@ def register(commands: Any) -> None:
         type=_positive_number,
         default=DEFAULT_REQUEST_TIMEOUT_S,
         metavar="SECONDS",
-        help=(
-            "timeout for one inference request "
-            f"(default: {DEFAULT_REQUEST_TIMEOUT_S:g})"
-        ),
+        help=(f"timeout for one inference request (default: {DEFAULT_REQUEST_TIMEOUT_S:g})"),
     )
     parser.set_defaults(command_handler=run)
 
@@ -84,19 +78,12 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
     if args.prompt is not None and not args.prompt.strip():
         raise RunError("--prompt must not be empty")
     runtime = next(
-        (
-            item
-            for item in context.deployment.runtimes
-            if item.runtime_id == args.runtime
-        ),
+        (item for item in context.deployment.runtimes if item.runtime_id == args.runtime),
         None,
     )
     if runtime is None:
         available = ", ".join(item.runtime_id for item in context.deployment.runtimes)
-        raise RunError(
-            f"unknown runtime {args.runtime!r}; available runtimes: "
-            f"{available or 'none'}"
-        )
+        raise RunError(f"unknown runtime {args.runtime!r}; available runtimes: {available or 'none'}")
     if runtime.model is None:
         raise RunError(
             f"runtime {runtime.runtime_id!r} is device-only and has no inference "
@@ -104,29 +91,22 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
         )
     if runtime.target_kind == "robot" and args.prompt is None:
         raise RunError("--prompt is required for robot runtimes")
-    if runtime.target_kind == "robot" and (
-        args.task is not None or args.seed is not None
-    ):
+    if runtime.target_kind == "robot" and (args.task is not None or args.seed is not None):
         raise RunError("--task and --seed are only valid for simulator runtimes")
     definition = binding_definition(runtime.binding)
     chunk_steps = (
-        min(DEFAULT_CHUNK_STEPS, definition.maximum_chunk_steps)
-        if args.chunk_steps is None
-        else args.chunk_steps
+        min(DEFAULT_CHUNK_STEPS, definition.maximum_chunk_steps) if args.chunk_steps is None else args.chunk_steps
     )
     if chunk_steps > definition.maximum_chunk_steps:
         raise RunError(
-            f"--chunk-steps {chunk_steps} exceeds binding "
-            f"{runtime.binding!r} maximum {definition.maximum_chunk_steps}"
+            f"--chunk-steps {chunk_steps} exceeds binding {runtime.binding!r} maximum {definition.maximum_chunk_steps}"
         )
 
     progress = context.progress
     progress.begin("run", context.deployment.name)
     progress.add_node(runtime.node, total=2)
     try:
-        progress.update(
-            runtime.node, "Validating control service", detail=runtime.runtime_id
-        )
+        progress.update(runtime.node, "Validating control service", detail=runtime.runtime_id)
         state = StateStore(context.state_path).load()
         if state is None:
             raise RunError("deployment is not initialized; run `rlinf-deploy ... init`")
@@ -136,19 +116,15 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
             raise RunError("Deploy revision changed since init; run init again")
         environment = state.environments.get(runtime.environment_id)
         if environment is None or environment.status != "ready":
-            raise RunError(
-                f"environment {runtime.environment_id!r} is not ready; run init again"
-            )
+            raise RunError(f"environment {runtime.environment_id!r} is not ready; run init again")
         service = state.services.get(runtime.service_id)
         if service is None or service.status != "running":
             raise RunError(
-                f"{runtime.target_kind} service {runtime.service_id!r} is not running; "
-                "run `rlinf-deploy ... up`"
+                f"{runtime.target_kind} service {runtime.service_id!r} is not running; run `rlinf-deploy ... up`"
             )
         if service.node != runtime.node or service.endpoint != runtime.service_endpoint:
             raise RunError(
-                f"runtime service {runtime.service_id!r} does not match "
-                "the configured runtime; restart the deployment"
+                f"runtime service {runtime.service_id!r} does not match the configured runtime; restart the deployment"
             )
         if runtime.node not in state.nodes:
             raise RunError(f"initialized state is missing node {runtime.node!r}")
@@ -156,20 +132,12 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
         progress.advance(runtime.node)
 
         playback_s = (
-            args.max_steps * max(0, chunk_steps - 1) / args.control_hz
-            if runtime.target_kind == "robot"
-            else 0.0
+            args.max_steps * max(0, chunk_steps - 1) / args.control_hz if runtime.target_kind == "robot" else 0.0
         )
-        task_timeout_s = max(
-            60.0, args.max_steps * args.request_timeout + playback_s + 30.0
-        )
+        task_timeout_s = max(60.0, args.max_steps * args.request_timeout + playback_s + 30.0)
         progress.update(
             runtime.node,
-            (
-                "Executing control task"
-                if runtime.target_kind == "robot"
-                else "Executing simulation episode"
-            ),
+            ("Executing control task" if runtime.target_kind == "robot" else "Executing simulation episode"),
             detail=f"{args.max_steps} chunk(s), {chunk_steps} action(s) each",
         )
         with context.executor(runtime.node) as executor:
@@ -183,13 +151,8 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
                     control_hz=args.control_hz,
                     inference_timeout_s=args.request_timeout,
                 )
-                result = ControlClient(executor, runtime.service_endpoint).run(
-                    request, timeout_s=task_timeout_s
-                )
-                detail = (
-                    f"Completed {result.completed_steps} chunk(s), "
-                    f"{chunk_steps} action(s) each"
-                )
+                result = ControlClient(executor, runtime.service_endpoint).run(request, timeout_s=task_timeout_s)
+                detail = f"Completed {result.completed_steps} chunk(s), {chunk_steps} action(s) each"
             else:
                 request = EpisodeRequest(
                     request_id=request_id,
@@ -201,9 +164,7 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
                     max_policy_steps=args.max_steps,
                     inference_timeout_s=args.request_timeout,
                 )
-                result = SimulationClient(executor, runtime.service_endpoint).run(
-                    request, timeout_s=task_timeout_s
-                )
+                result = SimulationClient(executor, runtime.service_endpoint).run(request, timeout_s=task_timeout_s)
                 detail = (
                     f"Episode completed: {result.policy_steps} policy step(s), "
                     f"{result.environment_steps} environment step(s), "

@@ -168,10 +168,7 @@ class VvlaHttpClient:
 
 def _multipart(observation: PolicyObservation) -> tuple[bytes, str]:
     boundary = f"rlinf-{uuid.uuid4().hex}"
-    image_metadata = [
-        {"name": image.name, "mime_type": image.mime_type}
-        for image in observation.images
-    ]
+    image_metadata = [{"name": image.name, "mime_type": image.mime_type} for image in observation.images]
     metadata = json.dumps(
         {
             "schema": "vvla.policy.step.v1",
@@ -201,10 +198,7 @@ def _part(boundary: str, name: str, body: bytes, mime: str, filename: str) -> by
     return b"".join(
         (
             f"--{boundary}\r\n".encode("ascii"),
-            (
-                f'Content-Disposition: form-data; name="{name}"; '
-                f'filename="{safe_filename}"\r\n'
-            ).encode("utf-8"),
+            (f'Content-Disposition: form-data; name="{name}"; filename="{safe_filename}"\r\n').encode(),
             f"Content-Type: {mime}\r\n\r\n".encode("ascii"),
             body,
             b"\r\n",

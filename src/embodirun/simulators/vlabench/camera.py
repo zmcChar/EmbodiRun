@@ -63,20 +63,14 @@ def compiled_camera_names(model: Any) -> list[str | None]:
     try:
         camera_count = int(model.ncam)
     except (AttributeError, TypeError, ValueError) as error:
-        raise VLABenchCameraMappingError(
-            "compiled VLABench model does not expose a valid ncam"
-        ) from error
+        raise VLABenchCameraMappingError("compiled VLABench model does not expose a valid ncam") from error
     id2name = getattr(model, "id2name", None)
     if not callable(id2name):
-        raise VLABenchCameraMappingError(
-            "compiled VLABench model does not expose id2name()"
-        )
+        raise VLABenchCameraMappingError("compiled VLABench model does not expose id2name()")
     try:
         return [id2name(index, "camera") for index in range(camera_count)]
     except (TypeError, ValueError) as error:
-        raise VLABenchCameraMappingError(
-            "failed to read camera names from the compiled VLABench model"
-        ) from error
+        raise VLABenchCameraMappingError("failed to read camera names from the compiled VLABench model") from error
 
 
 class VLABenchSemanticCameraMixin:
@@ -91,9 +85,7 @@ class VLABenchSemanticCameraMixin:
         """Render only the left, right, and Franka wrist cameras by name."""
 
         if self._env is None:
-            raise RuntimeError(
-                "VLABench environment must be initialized before observation"
-            )
+            raise RuntimeError("VLABench environment must be initialized before observation")
 
         import numpy as np
 
@@ -119,17 +111,9 @@ class VLABenchSemanticCameraMixin:
             dtype=np.float64,
         ).ravel()
         pos_world = raw[:3] if raw.size >= 3 else np.zeros(3, dtype=np.float64)
-        quat_wxyz = (
-            raw[3:7]
-            if raw.size >= 7
-            else np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
-        )
+        quat_wxyz = raw[3:7] if raw.size >= 7 else np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
         gripper = float(raw[7]) if raw.size >= 8 else 0.0
-        base = (
-            self._robot_base_xyz
-            if self._robot_base_xyz is not None
-            else np.zeros(3, dtype=np.float64)
-        )
+        base = self._robot_base_xyz if self._robot_base_xyz is not None else np.zeros(3, dtype=np.float64)
         pos_robot = pos_world - base
         euler_xyz = _quaternion_wxyz_to_euler_xyz(quat_wxyz)
         agent_pos = np.concatenate([pos_robot, euler_xyz, [gripper]]).astype(np.float64)
@@ -146,10 +130,7 @@ def _semantic_vlabench_environment_type() -> type[Any]:
     try:
         from lerobot.envs.vlabench import VLABenchEnv
     except ImportError as error:
-        raise RuntimeError(
-            "semantic VLABench observations require the isolated LeRobot 0.6 "
-            "environment"
-        ) from error
+        raise RuntimeError("semantic VLABench observations require the isolated LeRobot 0.6 environment") from error
 
     class SemanticVLABenchEnv(VLABenchSemanticCameraMixin, VLABenchEnv):
         """LeRobot VLABench environment with dataset-aligned camera semantics."""
@@ -164,9 +145,7 @@ def make_semantic_vlabench_environment(**kwargs: Any) -> Any:
 
 
 def _has_component_suffix(name: str, component: str) -> bool:
-    return name == component or any(
-        name.endswith(f"{separator}{component}") for separator in ("/", "\\", ":")
-    )
+    return name == component or any(name.endswith(f"{separator}{component}") for separator in ("/", "\\", ":"))
 
 
 def _quaternion_wxyz_to_euler_xyz(quaternion: Any) -> Any:
@@ -176,14 +155,10 @@ def _quaternion_wxyz_to_euler_xyz(quaternion: Any) -> Any:
 
     values = np.asarray(quaternion, dtype=np.float64).reshape(-1)
     if values.shape != (4,) or not np.isfinite(values).all():
-        raise VLABenchCameraMappingError(
-            "VLABench end-effector quaternion must be finite wxyz"
-        )
+        raise VLABenchCameraMappingError("VLABench end-effector quaternion must be finite wxyz")
     norm = float(np.linalg.norm(values))
     if not math.isfinite(norm) or norm <= 0:
-        raise VLABenchCameraMappingError(
-            "VLABench end-effector quaternion must be non-zero"
-        )
+        raise VLABenchCameraMappingError("VLABench end-effector quaternion must be non-zero")
     w, x, y, z = (float(value) / norm for value in values)
     roll = math.atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y))
     pitch_sine = max(-1.0, min(1.0, 2.0 * (w * y - z * x)))
@@ -198,26 +173,18 @@ def _to_hwc3(frame: Any, *, height: int, width: int) -> Any:
     image = np.asarray(frame)
     while image.ndim > 3 and image.shape[0] == 1:
         image = image[0]
-    if (
-        image.ndim == 3
-        and image.shape[0] in (1, 3, 4)
-        and image.shape[-1] not in (1, 3, 4)
-    ):
+    if image.ndim == 3 and image.shape[0] in (1, 3, 4) and image.shape[-1] not in (1, 3, 4):
         image = np.transpose(image, (1, 2, 0))
     if image.ndim == 2:
         image = np.stack([image] * 3, axis=-1)
     if image.ndim != 3:
-        raise VLABenchCameraMappingError(
-            f"VLABench camera returned an unsupported image shape {image.shape}"
-        )
+        raise VLABenchCameraMappingError(f"VLABench camera returned an unsupported image shape {image.shape}")
     if image.shape[-1] == 1:
         image = np.repeat(image, 3, axis=-1)
     elif image.shape[-1] == 4:
         image = image[..., :3]
     elif image.shape[-1] != 3:
-        raise VLABenchCameraMappingError(
-            f"VLABench camera returned an unsupported channel count {image.shape[-1]}"
-        )
+        raise VLABenchCameraMappingError(f"VLABench camera returned an unsupported channel count {image.shape[-1]}")
     if image.shape[:2] != (height, width):
         import cv2
 

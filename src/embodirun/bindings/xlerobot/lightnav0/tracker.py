@@ -58,9 +58,7 @@ def _sequence(value: Any, name: str) -> Sequence[Any]:
     return value
 
 
-def _triple(
-    value: Any, name: str, error_type: type[Exception] = LightNav0OutputError
-) -> tuple[float, float, float]:
+def _triple(value: Any, name: str, error_type: type[Exception] = LightNav0OutputError) -> tuple[float, float, float]:
     try:
         values = _sequence(value, name)
     except LightNav0OutputError as exc:
@@ -149,9 +147,7 @@ class LightNav0Trajectory:
         if not self.waypoints:
             raise LightNav0OutputError("waypoints must contain at least one row")
         if len(self.waypoints) > MAX_WAYPOINTS:
-            raise LightNav0OutputError(
-                f"waypoints must contain at most {MAX_WAYPOINTS} rows"
-            )
+            raise LightNav0OutputError(f"waypoints must contain at most {MAX_WAYPOINTS} rows")
         if not isinstance(self.stop, bool):
             raise LightNav0OutputError("stop must be boolean")
         if not isinstance(self.capture_pose, Pose2D):
@@ -199,13 +195,8 @@ def parse_lightnav0_output(
         raise LightNav0OutputError("stop must be boolean")
     rows = _sequence(output["waypoints"], "waypoints")
     if not rows or len(rows) > MAX_WAYPOINTS:
-        raise LightNav0OutputError(
-            f"waypoints must contain one to {MAX_WAYPOINTS} rows"
-        )
-    waypoints = tuple(
-        LightNav0Waypoint.from_value(row, name=f"waypoints[{index}]")
-        for index, row in enumerate(rows)
-    )
+        raise LightNav0OutputError(f"waypoints must contain one to {MAX_WAYPOINTS} rows")
+    waypoints = tuple(LightNav0Waypoint.from_value(row, name=f"waypoints[{index}]") for index, row in enumerate(rows))
     pose = Pose2D.from_value(capture_pose, name="capture_pose")
     timestamp = _finite(captured_at_s, "captured_at_s")
     return LightNav0Trajectory(waypoints, stop, pose, timestamp)
@@ -222,9 +213,7 @@ def project_body_to_world(
     result: list[Pose2D] = []
     for index, raw in enumerate(waypoints):
         wp = (
-            raw
-            if isinstance(raw, LightNav0Waypoint)
-            else LightNav0Waypoint.from_value(raw, name=f"waypoints[{index}]")
+            raw if isinstance(raw, LightNav0Waypoint) else LightNav0Waypoint.from_value(raw, name=f"waypoints[{index}]")
         )
         result.append(
             Pose2D(
@@ -236,9 +225,7 @@ def project_body_to_world(
     return tuple(result)
 
 
-def project_world_to_body(
-    world_pose: Pose2D | Sequence[float], current_pose: Pose2D | Sequence[float]
-) -> Pose2D:
+def project_world_to_body(world_pose: Pose2D | Sequence[float], current_pose: Pose2D | Sequence[float]) -> Pose2D:
     """Express one world pose as forward/left/yaw error at ``current_pose``."""
 
     target = Pose2D.from_value(world_pose, name="world_pose")
@@ -337,9 +324,7 @@ class TrackingDecision:
 class LightNav0Tracker:
     """Track a validated trajectory using fresh measured pose feedback."""
 
-    def __init__(
-        self, config: TrackerConfig | None = None, *, clock: Any = time.monotonic
-    ) -> None:
+    def __init__(self, config: TrackerConfig | None = None, *, clock: Any = time.monotonic) -> None:
         self.config = config or TrackerConfig()
         self._clock = clock
         self._trajectory: LightNav0Trajectory | None = None
@@ -356,9 +341,7 @@ class LightNav0Tracker:
     def clear(self) -> None:
         self._trajectory = None
 
-    def decide(
-        self, feedback: Feedback, *, now_s: float | None = None
-    ) -> TrackingDecision:
+    def decide(self, feedback: Feedback, *, now_s: float | None = None) -> TrackingDecision:
         if not isinstance(feedback, Feedback):
             raise TypeError("feedback must be a Feedback")
         now = float(self._clock() if now_s is None else now_s)
@@ -367,9 +350,7 @@ class LightNav0Tracker:
         if age < -self.config.feedback_timeout_s:
             return TrackingDecision(BodyVelocity.zero(), "feedback-from-future")
         if age > self.config.feedback_timeout_s:
-            return TrackingDecision(
-                BodyVelocity.zero(), "stale-feedback", trajectory_stale=True
-            )
+            return TrackingDecision(BodyVelocity.zero(), "stale-feedback", trajectory_stale=True)
         if feedback.collision:
             return TrackingDecision(BodyVelocity.zero(), "collision")
         trajectory = self._trajectory
@@ -377,21 +358,15 @@ class LightNav0Tracker:
             return TrackingDecision(BodyVelocity.zero(), "no-trajectory")
         trajectory_age = now - trajectory.captured_at_s
         if trajectory_age < -self.config.trajectory_timeout_s:
-            return TrackingDecision(
-                BodyVelocity.zero(), "trajectory-from-future", trajectory_stale=True
-            )
+            return TrackingDecision(BodyVelocity.zero(), "trajectory-from-future", trajectory_stale=True)
         if trajectory_age > self.config.trajectory_timeout_s:
             self._trajectory = None
-            return TrackingDecision(
-                BodyVelocity.zero(), "stale-trajectory", trajectory_stale=True
-            )
+            return TrackingDecision(BodyVelocity.zero(), "stale-trajectory", trajectory_stale=True)
         if trajectory.stop:
             self._trajectory = None
             return TrackingDecision(BodyVelocity.zero(), "explicit-stop")
 
-        world_points = project_body_to_world(
-            trajectory.waypoints, trajectory.capture_pose
-        )
+        world_points = project_body_to_world(trajectory.waypoints, trajectory.capture_pose)
         prefix = world_points[: self.config.waypoint_prefix]
         target_index, target = self._select_target(prefix, feedback.pose)
         error = project_world_to_body(target, feedback.pose)
@@ -428,9 +403,7 @@ class LightNav0Tracker:
         )
         return TrackingDecision(BodyVelocity(vx, vy, omega), "tracking", target_index)
 
-    def _select_target(
-        self, points: Sequence[Pose2D], current: Pose2D
-    ) -> tuple[int, Pose2D]:
+    def _select_target(self, points: Sequence[Pose2D], current: Pose2D) -> tuple[int, Pose2D]:
         for index, point in enumerate(points):
             error = project_world_to_body(point, current)
             if (
@@ -492,9 +465,7 @@ class LightNav0Controller:
                 trajectory = parse_lightnav0_output(
                     output,
                     capture_pose=capture_pose,
-                    captured_at_s=self._clock()
-                    if captured_at_s is None
-                    else captured_at_s,
+                    captured_at_s=self._clock() if captured_at_s is None else captured_at_s,
                 )
         except BaseException:
             self._safe_stop(reason="invalid-model-output")

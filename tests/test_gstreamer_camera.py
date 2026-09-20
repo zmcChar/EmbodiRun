@@ -18,9 +18,7 @@ from embodirun.robots.sensors.cameras.v4l2.camera import CameraError
 
 def test_camera_profiles_are_explicit_and_reject_non_video_paths():
     base = dict(name="front", device="/dev/video0", width=640, height=480, fps=30)
-    cpu, required = GStreamerCameraConfig(
-        **base, output_width=224, output_height=224
-    ).pipeline()
+    cpu, required = GStreamerCameraConfig(**base, output_width=224, output_height=224).pipeline()
     assert "format=BGR,width=224,height=224" in cpu
     assert "add-borders=false" in cpu and "max-buffers=1" in cpu
     assert "jpegdec" in required and "nvv4l2decoder" not in required
@@ -48,13 +46,9 @@ def test_missing_plugins_fail_before_any_pipeline_is_created(monkeypatch):
     monkeypatch.setattr(gstreamer, "load_gstreamer", lambda: (fake, None))
     monkeypatch.setattr(Path, "resolve", lambda self, **_kwargs: self)
     monkeypatch.setattr(Path, "exists", lambda _self: True)
-    camera = GStreamerCameraConfig(
-        "front", "/dev/video0", 640, 480, 30, conversion="jetson"
-    )
+    camera = GStreamerCameraConfig("front", "/dev/video0", 640, 480, 30, conversion="jetson")
     with pytest.raises(CameraError, match="missing GStreamer plugins.*nvv4l2decoder"):
-        GStreamerCameraSource(
-            [camera]
-        )  # fake has no parse_launch: cannot open anything.
+        GStreamerCameraSource([camera])  # fake has no parse_launch: cannot open anything.
 
 
 @pytest.fixture
@@ -96,9 +90,7 @@ def push(gst, pipeline, data, *, pts=0, layout=None):
             [offset, 0, 0, 0],
             [stride, 0, 0, 0],
         )
-    assert (
-        pipeline.get_by_name("camera").emit("push-buffer", buffer) == Gst.FlowReturn.OK
-    )
+    assert pipeline.get_by_name("camera").emit("push-buffer", buffer) == Gst.FlowReturn.OK
     return buffer
 
 
@@ -107,9 +99,7 @@ def test_native_mapping_handles_padding_offsets_and_owned_bytes(gst, layout):
     pipeline, stream = app_stream(gst)
     offset, stride = (0, 24) if layout is None else layout[:2]
     data = bytes((i * 37) % 256 for i in range(offset + stride * 5))
-    expected = b"".join(
-        data[offset + row * stride : offset + row * stride + 21] for row in range(5)
-    )
+    expected = b"".join(data[offset + row * stride : offset + row * stride + 21] for row in range(5))
     try:
         push(gst, pipeline, data, layout=layout)
         first = stream.read()

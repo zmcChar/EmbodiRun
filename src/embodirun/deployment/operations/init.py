@@ -75,10 +75,7 @@ def initialize(context: DeploymentContext, managed_root_base: str) -> int:
         progress.finish(success=False)
         raise
     progress.finish(success=True)
-    progress.message(
-        f"State saved to {context.state_path} "
-        f"({len(state.environments)} environments ready)"
-    )
+    progress.message(f"State saved to {context.state_path} ({len(state.environments)} environments ready)")
     return 0
 
 
@@ -91,15 +88,10 @@ def _initialize(
     previous = store.load()
     digest = config_digest(context.config)
     if previous is not None and previous.config_digest != digest:
-        running = [
-            service.service_id
-            for service in previous.services.values()
-            if service.status == "running"
-        ]
+        running = [service.service_id for service in previous.services.values() if service.status == "running"]
         if running:
             raise InitError(
-                "configuration changed while services are recorded as running: "
-                + ", ".join(sorted(running))
+                "configuration changed while services are recorded as running: " + ", ".join(sorted(running))
             )
 
     def initialize(node_id: str) -> NodeInitialization:
@@ -115,9 +107,7 @@ def _initialize(
 
     results = run_on_nodes(context.config.nodes, initialize)
     inference_commits = {
-        result.inference_commit
-        for result in results.values.values()
-        if result.inference_commit is not None
+        result.inference_commit for result in results.values.values() if result.inference_commit is not None
     }
     if len(inference_commits) > 1:
         raise InitError(
@@ -174,9 +164,7 @@ def _initialize_node(
             python_version=probe.python_version,
         )
         progress.update(node_id, "Preparing locked sources")
-        inference_commit = _prepare_projects(
-            context, executor, node_state, git=probe.git
-        )
+        inference_commit = _prepare_projects(context, executor, node_state, git=probe.git)
         executor.replace_symlink(
             active_deploy_project(node_state.root),
             node_state.deploy_project,
@@ -218,9 +206,7 @@ def _profiles_on(
     deployment: DeploymentPlan,
     node_id: str,
 ) -> tuple[EnvironmentProfile, ...]:
-    return tuple(
-        profile for profile in deployment.environments if profile.node == node_id
-    )
+    return tuple(profile for profile in deployment.environments if profile.node == node_id)
 
 
 def _prepare_projects(
@@ -230,9 +216,7 @@ def _prepare_projects(
     *,
     git: str,
 ) -> str | None:
-    projects = {
-        profile.project for profile in _profiles_on(context.deployment, node.node_id)
-    }
+    projects = {profile.project for profile in _profiles_on(context.deployment, node.node_id)}
     projects.add("deploy")
     manager = ProjectManager(executor, git_executable=git)
     if "deploy" in projects:
@@ -253,21 +237,10 @@ def _prepare_projects(
     if "inference" in projects and not needs_inference_source:
         executor.run(Command(("mkdir", "-p", node.inference_project)))
     if "inference" in projects and needs_inference_source:
-        repositories = {
-            descriptor.source_repository for descriptor in source_descriptors
-        }
-        submodule_paths = {
-            descriptor.source_submodule_path for descriptor in source_descriptors
-        }
-        if (
-            None in repositories
-            or None in submodule_paths
-            or len(repositories) != 1
-            or len(submodule_paths) != 1
-        ):
-            raise InitError(
-                "managed inference providers declare incompatible source checkouts"
-            )
+        repositories = {descriptor.source_repository for descriptor in source_descriptors}
+        submodule_paths = {descriptor.source_submodule_path for descriptor in source_descriptors}
+        if None in repositories or None in submodule_paths or len(repositories) != 1 or len(submodule_paths) != 1:
+            raise InitError("managed inference providers declare incompatible source checkouts")
         repository = next(iter(repositories))
         submodule_path = next(iter(submodule_paths))
         assert repository is not None and submodule_path is not None
@@ -315,9 +288,7 @@ def _probe_resources(
                         executor,
                         posixpath.join(calibration_path, f"{calibration_id}.json"),
                         kind="f",
-                        description=(
-                            f"robot {robot.robot_id!r} calibration {calibration_id!r}"
-                        ),
+                        description=(f"robot {robot.robot_id!r} calibration {calibration_id!r}"),
                     )
     for model in context.config.models.values():
         if model.lifecycle == "external" or model.node != node.node_id:
@@ -359,11 +330,7 @@ def _initial_service_state(
     preserve = previous is not None and previous.config_digest == digest
     for service in deployment.services:
         old = previous.services.get(service.service_id) if preserve else None
-        if (
-            old is not None
-            and old.node == service.node
-            and old.endpoint == service.endpoint
-        ):
+        if old is not None and old.node == service.node and old.endpoint == service.endpoint:
             result[service.service_id] = old
         else:
             result[service.service_id] = ServiceState(
@@ -407,9 +374,7 @@ def _require_path(
 
 
 def _node_error_summary(command: str, errors: dict[str, Exception]) -> str:
-    details = "; ".join(
-        f"{node_id}: {error}" for node_id, error in sorted(errors.items())
-    )
+    details = "; ".join(f"{node_id}: {error}" for node_id, error in sorted(errors.items()))
     return f"{command} failed on {len(errors)} node(s): {details}"
 
 

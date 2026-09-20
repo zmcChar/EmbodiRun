@@ -48,9 +48,7 @@ class SharedCameraStore:
         self._clock_identity = self.clock_identity()
         self._lock = threading.Lock()
         self._closed = False
-        if create and not (
-            0 < record_capacity <= 4096 and 1024 <= slot_bytes <= 64 * 1024**2
-        ):
+        if create and not (0 < record_capacity <= 4096 and 1024 <= slot_bytes <= 64 * 1024**2):
             raise ValueError("Invalid camera shared-memory capacity")
         if not create and not stat.S_ISREG(self.path.lstat().st_mode):
             raise ValueError("Camera shared-memory readers require a regular file")
@@ -58,24 +56,14 @@ class SharedCameraStore:
         self._fd = os.open(self.path, flags | os.O_NOFOLLOW, 0o600)
         try:
             if create:
-                os.ftruncate(
-                    self._fd, _HEADER_SIZE + (record_capacity + 1) * slot_bytes
-                )
-            self._map = mmap.mmap(
-                self._fd, 0, access=mmap.ACCESS_WRITE if create else mmap.ACCESS_READ
-            )
+                os.ftruncate(self._fd, _HEADER_SIZE + (record_capacity + 1) * slot_bytes)
+            self._map = mmap.mmap(self._fd, 0, access=mmap.ACCESS_WRITE if create else mmap.ACCESS_READ)
             if create:
                 self.capacity, self.slot_bytes = record_capacity, slot_bytes
                 self._write_header({"state": "starting", "motor_access": False}, 0)
             else:
-                magic, self.capacity, self.slot_bytes, _, _ = _HEADER.unpack_from(
-                    self._map
-                )
-                if (
-                    magic != _MAGIC
-                    or len(self._map)
-                    != _HEADER_SIZE + (self.capacity + 1) * self.slot_bytes
-                ):
+                magic, self.capacity, self.slot_bytes, _, _ = _HEADER.unpack_from(self._map)
+                if magic != _MAGIC or len(self._map) != _HEADER_SIZE + (self.capacity + 1) * self.slot_bytes:
                     raise ValueError("Invalid camera shared-memory layout")
         except BaseException:
             if hasattr(self, "_map"):
@@ -98,10 +86,7 @@ class SharedCameraStore:
         metadata = json.dumps(status, allow_nan=False, separators=(",", ":")).encode()
         if len(metadata) + _HEADER.size > _HEADER_SIZE:
             raise ValueError("Camera status exceeds shared-memory header capacity")
-        return (
-            _HEADER.pack(_MAGIC, self.capacity, self.slot_bytes, count, len(metadata))
-            + metadata
-        )
+        return _HEADER.pack(_MAGIC, self.capacity, self.slot_bytes, count, len(metadata)) + metadata
 
     def _write_header(self, status: dict, count: int) -> None:
         encoded = self._encode_header(status, count)
@@ -119,19 +104,13 @@ class SharedCameraStore:
             if not isinstance(value, bytes):
                 raise TypeError("Camera shared-memory payloads must be bytes")
             metadata["images"][name] = {
-                **{
-                    k: v
-                    for k, v in image.items()
-                    if k not in {"data", "base64", "offset", "length"}
-                },
+                **{k: v for k, v in image.items() if k not in {"data", "base64", "offset", "length"}},
                 "offset": total,
                 "length": len(value),
             }
             buffers.append(value)
             total += len(value)
-        description = json.dumps(
-            metadata, allow_nan=False, separators=(",", ":")
-        ).encode()
+        description = json.dumps(metadata, allow_nan=False, separators=(",", ":")).encode()
         if _SLOT.size + len(description) + total > self.slot_bytes:
             raise ValueError("Camera packet exceeds shared-memory slot capacity")
         return description, buffers, total
@@ -194,10 +173,7 @@ class SharedCameraStore:
                     raise KeyError(path)
                 offset = _HEADER_SIZE + index * self.slot_bytes
                 metadata_size, data_size = _SLOT.unpack_from(self._map, offset)
-                if (
-                    not metadata_size
-                    or _SLOT.size + metadata_size + data_size > self.slot_bytes
-                ):
+                if not metadata_size or _SLOT.size + metadata_size + data_size > self.slot_bytes:
                     raise ValueError("Invalid camera snapshot lengths")
                 start = offset + _SLOT.size
                 packet = json.loads(self._map[start : start + metadata_size])
@@ -206,9 +182,7 @@ class SharedCameraStore:
                     position, length = image.pop("offset"), image.pop("length")
                     if position < 0 or length < 0 or position + length > data_size:
                         raise ValueError("Invalid camera image buffer bounds")
-                    image["data"] = self._map[
-                        start + position : start + position + length
-                    ]
+                    image["data"] = self._map[start + position : start + position + length]
                 return packet
             finally:
                 fcntl.flock(self._fd, fcntl.LOCK_UN)
@@ -222,9 +196,7 @@ class SharedCameraStore:
             with self._lock:
                 fcntl.flock(self._fd, fcntl.LOCK_EX)
                 try:
-                    self._write_header(
-                        dict(status, state="stopped"), status["recorded"]
-                    )
+                    self._write_header(dict(status, state="stopped"), status["recorded"])
                 finally:
                     fcntl.flock(self._fd, fcntl.LOCK_UN)
         self._map.close()

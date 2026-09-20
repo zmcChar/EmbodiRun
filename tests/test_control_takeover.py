@@ -11,8 +11,7 @@ from embodirun.robots import RobotAction, RobotObservation
 from embodirun.robots.sensors.cameras import CameraFrame
 from embodirun.services.control.arbitration import CommandCancelled
 from embodirun.services.control.devices import DeviceManager
-from embodirun.services.control.server import ControlService, ControlTaskRejected
-from embodirun.services.control.server import ControlHttpServer
+from embodirun.services.control.server import ControlHttpServer, ControlService, ControlTaskRejected
 from embodirun.services.control.teleop import ControlHttpTeleopClient
 from test_control_services import _unused_loopback_port, control_config, task_request
 
@@ -108,9 +107,7 @@ def controlled_service(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("release_manual", [False, True])
-def test_takeover_cancels_late_inference_and_task_cleanup_keeps_robot(
-    controlled_service, release_manual
-):
+def test_takeover_cancels_late_inference_and_task_cleanup_keeps_robot(controlled_service, release_manual):
     service, started, release, moved, actions, stops, closed = controlled_service
     errors = []
 
@@ -175,9 +172,7 @@ def test_manual_execution_failure_is_visible_and_latched(controlled_service):
     # Synchronize on the worker's following hold rather than assuming ticket
     # completion and fault reporting are a single thread scheduling instant.
     with arbiter._condition:
-        assert arbiter._condition.wait_for(
-            lambda: arbiter._authority.value == "estop_latched", timeout=2
-        )
+        assert arbiter._condition.wait_for(lambda: arbiter._authority.value == "estop_latched", timeout=2)
     state = service.control_snapshot()
     assert state["authority"] == "estop_latched"
     assert state["last_error"] == "motor feedback lost"

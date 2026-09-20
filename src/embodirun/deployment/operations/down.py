@@ -44,25 +44,13 @@ def stop_services(context: DeploymentContext, target: str) -> int:
 
     for service_id, service in state.services.items():
         if service.node not in state.nodes or service.node not in context.config.nodes:
-            raise DownError(
-                f"initialized service {service_id!r} references unavailable "
-                f"node {service.node!r}"
-            )
+            raise DownError(f"initialized service {service_id!r} references unavailable node {service.node!r}")
     selected_ids = {
-        service.service_id
-        for service in context.deployment.services
-        if target == "all" or service.kind == target
+        service.service_id for service in context.deployment.services if target == "all" or service.kind == target
     }
-    selected_services = tuple(
-        service
-        for service in state.services.values()
-        if service.service_id in selected_ids
-    )
+    selected_services = tuple(service for service in state.services.values() if service.service_id in selected_ids)
     services_by_node = {
-        node_id: tuple(
-            service for service in selected_services if service.node == node_id
-        )
-        for node_id in state.nodes
+        node_id: tuple(service for service in selected_services if service.node == node_id) for node_id in state.nodes
     }
     progress = context.progress
     progress.begin("down", context.deployment.name)
@@ -97,10 +85,7 @@ def stop_services(context: DeploymentContext, target: str) -> int:
         progress.finish(success=False)
         raise
     progress.finish(success=True)
-    stopped = sum(
-        state.services[service.service_id].status == "stopped"
-        for service in selected_services
-    )
+    stopped = sum(state.services[service.service_id].status == "stopped" for service in selected_services)
     label = "services" if target == "all" else f"{target} services"
     progress.message(f"{stopped}/{len(selected_services)} {label} stopped")
     return 0
@@ -150,9 +135,7 @@ def _down_node(
 
 
 def _node_error_summary(command: str, errors: dict[str, Exception]) -> str:
-    details = "; ".join(
-        f"{node_id}: {error}" for node_id, error in sorted(errors.items())
-    )
+    details = "; ".join(f"{node_id}: {error}" for node_id, error in sorted(errors.items()))
     return f"{command} failed on {len(errors)} node(s): {details}"
 
 

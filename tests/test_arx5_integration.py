@@ -42,9 +42,7 @@ def test_standard_host_plan_selects_arx5_and_dm05(tmp_path):
         "robot-arx5",
         "dm05",
     }
-    model_service = next(
-        service for service in plan.services if service.kind == "model"
-    )
+    model_service = next(service for service in plan.services if service.kind == "model")
     assert model_service.command.argv[:3] == ("vvla-http-serve", "--policy", "dm05")
     args = model_service.command.argv
     assert args[args.index("--adapter-config") + 1] == str(adapter_config)
@@ -99,9 +97,7 @@ def test_binding_preserves_last_action_and_normalized_gripper():
             PolicyAction(
                 "action_chunk",
                 {
-                    "data": [
-                        [index / 1000, 0, 0, 0, 0, 0, 0.04] for index in range(50)
-                    ],
+                    "data": [[index / 1000, 0, 0, 0, 0, 0, 0.04] for index in range(50)],
                     "feature_names": ACTION_FEATURE_NAMES,
                     "representation": ACTION_REPRESENTATION,
                     "output_transform_applied": True,

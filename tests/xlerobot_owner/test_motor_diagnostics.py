@@ -1,7 +1,6 @@
 import copy
 
 import pytest
-
 from embodirun_xlerobot_owner.motor_diagnostics import read_sts3215_present_block
 from tests.xlerobot_owner.test_hardware import _robot
 from tests.xlerobot_owner.test_server import HEADERS, station
@@ -27,18 +26,24 @@ class Packet:
         name = next(n for n, spec in self.bus.motors.items() if spec["id"] == motor_id)
         fields = self.bus.values[name]
         values = {
-            3: word(777), 0: [2, 54], 80: [1, 20, 50],
-            56: (word(fields["Present_Position"]) + word(fields["Present_Velocity"])
-                 + [0, 0, 120, 35, 0, 0, fields["Moving"]]),
-            46: word(fields["Goal_Velocity"]), 33: [fields["Operating_Mode"]],
-            40: [fields["Torque_Enable"]], 69: [12, 0],
+            3: word(777),
+            0: [2, 54],
+            80: [1, 20, 50],
+            56: (
+                word(fields["Present_Position"])
+                + word(fields["Present_Velocity"])
+                + [0, 0, 120, 35, 0, 0, fields["Moving"]]
+            ),
+            46: word(fields["Goal_Velocity"]),
+            33: [fields["Operating_Mode"]],
+            40: [fields["Torque_Enable"]],
+            69: [12, 0],
         }
         return values[address], 0, 0
 
 
 def setup(tmp_path):
-    robot, buses = _robot(tmp_path, enable_base=True,
-                         wheel_directions={"left": -1, "right": 1})
+    robot, buses = _robot(tmp_path, enable_base=True, wheel_directions={"left": -1, "right": 1})
     bus = buses["right"]
     bus.port_handler = object()
     bus.packet_handler = Packet(bus)
@@ -59,12 +64,22 @@ def test_present_block_sign_magnitude_and_single_transaction(tmp_path, velocity)
         robot.close()
 
 
-@pytest.mark.parametrize("response", [
-    ([0] * 10, 0, 0), ([0] * 12, 0, 0), ([0] * 11, -3002, 0),
-    ([0] * 11, 0, 8), ([0] * 11, None, 0), ([0] * 11, 0, None),
-    ([True] * 11, 0, 0), ([256] * 11, 0, 0), ([0] * 11, False, 0),
-    (None, 0, 0), OSError("checksum/transport failure"),
-])
+@pytest.mark.parametrize(
+    "response",
+    [
+        ([0] * 10, 0, 0),
+        ([0] * 12, 0, 0),
+        ([0] * 11, -3002, 0),
+        ([0] * 11, 0, 8),
+        ([0] * 11, None, 0),
+        ([0] * 11, 0, None),
+        ([True] * 11, 0, 0),
+        ([256] * 11, 0, 0),
+        ([0] * 11, False, 0),
+        (None, 0, 0),
+        OSError("checksum/transport failure"),
+    ],
+)
 def test_bad_reply_never_decodes_as_zero_or_falls_back(tmp_path, response):
     robot, buses, packet = setup(tmp_path)
     try:
@@ -113,19 +128,21 @@ def test_wheel_preflight_uses_block_not_interleaved_scalar_reads(tmp_path):
         robot.close()
 
 
-@pytest.mark.parametrize("sequence,expected", [
-    ([(50, 1), (0, 0), (0, 0), (0, 0)], True),
-    ([(-50, 1), (0, 0), (0, 0), (50, 1), (0, 0), (0, 0), (0, 0)], True),
-    ([(50, 1)] * 41, False),
-    ([(50, 1), (0, 0), (0, 0)] * 14, False),
-    ([(50, 1), None, (0, 0), (0, 0), (0, 0)], False),
-    # Observed nine-packet prefix; only a hypothetical tenth zero completes
-    # settling. This tests the limit, not a claim that real hardware did so.
-    ([(-50, 1), (0, 0), (50, 1), (0, 0), (0, 0), (50, 1),
-      (-50, 1), (0, 0), (0, 0), (0, 0)], True),
-    ([(50, 1)] * 38 + [(0, 0)] * 3, True),
-    ([(50, 1)] * 39 + [(0, 0)] * 2, False),
-])
+@pytest.mark.parametrize(
+    "sequence,expected",
+    [
+        ([(50, 1), (0, 0), (0, 0), (0, 0)], True),
+        ([(-50, 1), (0, 0), (0, 0), (50, 1), (0, 0), (0, 0), (0, 0)], True),
+        ([(50, 1)] * 41, False),
+        ([(50, 1), (0, 0), (0, 0)] * 14, False),
+        ([(50, 1), None, (0, 0), (0, 0), (0, 0)], False),
+        # Observed nine-packet prefix; only a hypothetical tenth zero completes
+        # settling. This tests the limit, not a claim that real hardware did so.
+        ([(-50, 1), (0, 0), (50, 1), (0, 0), (0, 0), (50, 1), (-50, 1), (0, 0), (0, 0), (0, 0)], True),
+        ([(50, 1)] * 38 + [(0, 0)] * 3, True),
+        ([(50, 1)] * 39 + [(0, 0)] * 2, False),
+    ],
+)
 def test_stopped_owned_wheel_wait_retains_every_packet(tmp_path, monkeypatch, sequence, expected):
     robot, buses, packet = setup(tmp_path)
     bus = buses["right"]

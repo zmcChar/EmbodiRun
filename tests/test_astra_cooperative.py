@@ -1,21 +1,19 @@
 from __future__ import annotations
 
 import json
-from itertools import repeat
 import os
-from pathlib import Path
 import subprocess
 import sys
+from itertools import repeat
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from agents.astra_pi05.cooperative import CooperativeLoop, Proposal
+
 from embodirun.client import Observation, UnsupportedOperation
-
-from test_agent_client import _close, _client_server
-
+from test_agent_client import _client_server, _close
 
 NAMES = tuple(f"joint_{index}" for index in range(12))
 
@@ -71,15 +69,9 @@ def test_post_observation_waits_past_intermediate_publication() -> None:
     try:
         observations = iter(
             [
-                Observation(
-                    "obs-before", {"observation_id": "obs-before", "sequence": 1}
-                ),
-                Observation(
-                    "obs-during", {"observation_id": "obs-during", "sequence": 2}
-                ),
-                Observation(
-                    "obs-after", {"observation_id": "obs-after", "sequence": 3}
-                ),
+                Observation("obs-before", {"observation_id": "obs-before", "sequence": 1}),
+                Observation("obs-during", {"observation_id": "obs-during", "sequence": 2}),
+                Observation("obs-after", {"observation_id": "obs-after", "sequence": 3}),
             ]
         )
         client.observe = lambda **_kwargs: next(observations)  # type: ignore[method-assign]
@@ -204,9 +196,7 @@ def test_hold_and_unsupported_correction_do_not_send_actions() -> None:
                 "reason": "software reviewer requests hold",
             }
 
-        held = CooperativeLoop(
-            client, proposal_provider=_proposal, reviewer=review
-        ).run_round()
+        held = CooperativeLoop(client, proposal_provider=_proposal, reviewer=review).run_round()
         assert held.status == "held"
         assert port.actions == []
 
@@ -235,9 +225,7 @@ def test_hold_and_unsupported_correction_do_not_send_actions() -> None:
                 "reason": "needs an explicit robot mapper",
             }
 
-        unsupported_result = CooperativeLoop(
-            client, proposal_provider=_proposal, reviewer=unsupported
-        ).run_round()
+        unsupported_result = CooperativeLoop(client, proposal_provider=_proposal, reviewer=unsupported).run_round()
         assert unsupported_result.status == "unsupported"
         assert port.actions == []
     finally:
@@ -266,9 +254,7 @@ def test_proposal_observation_mismatch_and_pending_execution_are_explicit() -> N
     try:
         observations = iter(
             [
-                Observation(
-                    "obs-pending", {"observation_id": "obs-pending", "robot": {}}
-                ),
+                Observation("obs-pending", {"observation_id": "obs-pending", "robot": {}}),
             ]
         )
         client.observe = lambda **_kwargs: next(observations)  # type: ignore[method-assign]
@@ -287,9 +273,7 @@ def test_proposal_observation_mismatch_and_pending_execution_are_explicit() -> N
                 "reason": "pending test",
             }
 
-        result = CooperativeLoop(
-            client, proposal_provider=_proposal, reviewer=review
-        ).run_round()
+        result = CooperativeLoop(client, proposal_provider=_proposal, reviewer=review).run_round()
         assert result.status == "pending"
         assert result.post_observation is None
         assert result.request_id is not None
@@ -301,9 +285,7 @@ def test_proposal_observation_mismatch_and_pending_execution_are_explicit() -> N
     ("execution_status", "expected_status"),
     [("unknown", "unknown"), ("cancelled", "cancelled"), ("stopped", "stopped")],
 )
-def test_terminal_execution_status_is_preserved_without_reobserve(
-    execution_status: str, expected_status: str
-) -> None:
+def test_terminal_execution_status_is_preserved_without_reobserve(execution_status: str, expected_status: str) -> None:
     client, server, _ = _client_server()
     try:
         client.observe = lambda **_kwargs: Observation(  # type: ignore[method-assign]
@@ -324,9 +306,7 @@ def test_terminal_execution_status_is_preserved_without_reobserve(
                 "reason": "terminal-status test",
             }
 
-        result = CooperativeLoop(
-            client, proposal_provider=_proposal, reviewer=review
-        ).run_round()
+        result = CooperativeLoop(client, proposal_provider=_proposal, reviewer=review).run_round()
         assert result.status == expected_status
         assert result.post_observation is None
         assert result.executed_steps == 0
@@ -337,9 +317,7 @@ def test_terminal_execution_status_is_preserved_without_reobserve(
 def test_completed_without_valid_step_evidence_does_not_claim_execution() -> None:
     client, server, _ = _client_server()
     try:
-        observations = repeat(
-            Observation("obs-evidence", {"observation_id": "obs-evidence", "robot": {}})
-        )
+        observations = repeat(Observation("obs-evidence", {"observation_id": "obs-evidence", "robot": {}}))
         client.observe = lambda **_kwargs: next(observations)  # type: ignore[method-assign]
         client.execute = lambda _actions, **kwargs: {  # type: ignore[method-assign]
             "status": "completed",
@@ -372,16 +350,10 @@ def test_completed_without_valid_step_evidence_does_not_claim_execution() -> Non
         _close(server)
 
 
-def test_correction_discards_entire_model_tail_even_when_mapped_segment_completes() -> (
-    None
-):
+def test_correction_discards_entire_model_tail_even_when_mapped_segment_completes() -> None:
     client, server, _ = _client_server()
     try:
-        observations = repeat(
-            Observation(
-                "obs-correction", {"observation_id": "obs-correction", "robot": {}}
-            )
-        )
+        observations = repeat(Observation("obs-correction", {"observation_id": "obs-correction", "robot": {}}))
         client.observe = lambda **_kwargs: next(observations)  # type: ignore[method-assign]
         client.execute = lambda _actions, **kwargs: {  # type: ignore[method-assign]
             "status": "completed",

@@ -108,8 +108,7 @@ class MobileBaseState:
                 finite(self.received_at_s, "received_at_s", minimum=0.0),
             )
         if self.active_velocity_lease_id is not None and (
-            not isinstance(self.active_velocity_lease_id, str)
-            or not self.active_velocity_lease_id.strip()
+            not isinstance(self.active_velocity_lease_id, str) or not self.active_velocity_lease_id.strip()
         ):
             raise ValueError("active_velocity_lease_id must be a non-empty string or None")
         object.__setattr__(self, "raw", metadata(self.raw, "raw"))

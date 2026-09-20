@@ -4,7 +4,6 @@ from .. import SimulatorDefinition
 from .adapter import VLABENCH_ACTION_DIM, VLABenchAdapter
 from .config import VLABenchConfig
 
-
 SIMULATOR_DEFINITION = SimulatorDefinition(
     kind="vlabench",
     embodiment_kind="franka.panda.eef",

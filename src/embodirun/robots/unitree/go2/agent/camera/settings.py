@@ -95,9 +95,7 @@ class CameraServiceConfig:
             raise ValueError("RGB-depth alignment claim requires depth calibration")
         if self.backend == "realsense" and not self.depth_calibrated:
             raise ValueError("realsense backend requires explicit depth calibration")
-        if self.backend == "realsense" and (
-            self.width != self.depth_width or self.height != self.depth_height
-        ):
+        if self.backend == "realsense" and (self.width != self.depth_width or self.height != self.depth_height):
             raise ValueError("realsense backend requires matching RGB/depth dimensions")
 
 

@@ -90,11 +90,7 @@ class NavigationSimulatorAdapter(SimulatorAdapter):
         self._engine_name = engine_name
         self._clock = clock
         self._environment: NavigationEnvironment | None = None
-        self._viewer = (
-            CameraViewer(f"{engine_name} — {config.simulator_id}")
-            if config.viewer
-            else None
-        )
+        self._viewer = CameraViewer(f"{engine_name} — {config.simulator_id}") if config.viewer else None
         self._step_index = 0
         self._closed = False
 
@@ -111,16 +107,11 @@ class NavigationSimulatorAdapter(SimulatorAdapter):
     ) -> SimulatorObservation:
         self._ensure_open()
         if task is not None and task.strip() != self.config.task:
-            raise ValueError(
-                f"adapter is bound to {self._engine_name} task "
-                f"{self.config.task!r}, not {task!r}"
-            )
+            raise ValueError(f"adapter is bound to {self._engine_name} task {self.config.task!r}, not {task!r}")
         if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
             raise TypeError(f"{self._engine_name} seed must be an integer or None")
         if options is not None and not isinstance(options, Mapping):
-            raise TypeError(
-                f"{self._engine_name} reset options must be a mapping or None"
-            )
+            raise TypeError(f"{self._engine_name} reset options must be a mapping or None")
         if options:
             raise ValueError(f"{self._engine_name} reset options are not supported")
 
@@ -136,19 +127,13 @@ class NavigationSimulatorAdapter(SimulatorAdapter):
     def step(self, action: RobotAction) -> SimulationStep:
         self._ensure_open()
         if self._environment is None:
-            raise RuntimeError(
-                f"{self._engine_name} adapter must be reset before step()"
-            )
+            raise RuntimeError(f"{self._engine_name} adapter must be reset before step()")
         command = NavigationCommand.from_robot_action(action)
         transition = self._environment.step(command)
         if not isinstance(transition, NavigationTransition):
-            raise TypeError(
-                f"{self._engine_name} environment returned an invalid transition"
-            )
+            raise TypeError(f"{self._engine_name} environment returned an invalid transition")
         self._step_index += 1
-        truncated = (
-            transition.truncated or self._step_index >= self.config.max_episode_steps
-        )
+        truncated = transition.truncated or self._step_index >= self.config.max_episode_steps
         return SimulationStep(
             observation=self._normalize(
                 transition.observation,
@@ -181,9 +166,7 @@ class NavigationSimulatorAdapter(SimulatorAdapter):
         step_index: int,
     ) -> SimulatorObservation:
         if not isinstance(value, NavigationObservation):
-            raise TypeError(
-                f"{self._engine_name} environment returned an invalid observation"
-            )
+            raise TypeError(f"{self._engine_name} environment returned an invalid observation")
         rgb = _rgb_array(value.rgb, engine_name=self._engine_name)
         if self._viewer is not None:
             self._viewer.show({"rgb": rgb})

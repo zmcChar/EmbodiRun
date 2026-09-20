@@ -64,12 +64,7 @@ class _SourceWorker:
         """Schedule one capture, or return ``None`` while one is pending."""
 
         with self._condition:
-            if (
-                self._stop
-                or self._running
-                or self._job is not None
-                or self._completed is not None
-            ):
+            if self._stop or self._running or self._job is not None or self._completed is not None:
                 return None
             self._next_token += 1
             token = self._next_token
@@ -173,17 +168,14 @@ class ObservationProducer:
         ):
             raise ValueError("source_timeout_s must be finite and non-negative")
         if isinstance(stale_after_ns, bool) or (
-            stale_after_ns is not None
-            and (not isinstance(stale_after_ns, int) or stale_after_ns < 0)
+            stale_after_ns is not None and (not isinstance(stale_after_ns, int) or stale_after_ns < 0)
         ):
             raise ValueError("stale_after_ns must be a non-negative integer or None")
         if not isinstance(clock_domain, str) or not clock_domain.strip():
             raise ValueError("clock_domain must not be empty")
         if not isinstance(own_sources, bool):
             raise TypeError("own_sources must be a boolean")
-        if isinstance(subscription_queue_size, bool) or not isinstance(
-            subscription_queue_size, int
-        ):
+        if isinstance(subscription_queue_size, bool) or not isinstance(subscription_queue_size, int):
             raise TypeError("subscription_queue_size must be an integer")
         if subscription_queue_size <= 0:
             raise ValueError("subscription_queue_size must be positive")
@@ -241,9 +233,7 @@ class ObservationProducer:
         values: list[tuple[str, Any]] = []
         if camera_sources is not None:
             if not isinstance(camera_sources, Mapping):
-                raise TypeError(
-                    "camera_sources must map source IDs to callables or camera sources"
-                )
+                raise TypeError("camera_sources must map source IDs to callables or camera sources")
             values.extend(camera_sources.items())
         bindings: list[_SourceBinding] = []
         seen: set[str] = set()
@@ -316,27 +306,20 @@ class ObservationProducer:
         with self._status_lock:
             return self._last_error
 
-    def source_status(
-        self, source_id: str | None = None
-    ) -> SourceStatus | Mapping[str, SourceStatus]:
+    def source_status(self, source_id: str | None = None) -> SourceStatus | Mapping[str, SourceStatus]:
         with self._status_lock:
             if source_id is not None:
                 try:
                     return self._statuses[source_id]
                 except KeyError as error:
-                    raise ObservationUnavailableError(
-                        source_id, "source ID is unknown"
-                    ) from error
+                    raise ObservationUnavailableError(source_id, "source ID is unknown") from error
             return MappingProxyType(dict(self._statuses))
 
     def status(self) -> Mapping[str, Any]:
         """Return detached producer diagnostics without touching a source."""
 
         with self._status_lock:
-            values = {
-                source_id: status.to_dict()
-                for source_id, status in self._statuses.items()
-            }
+            values = {source_id: status.to_dict() for source_id, status in self._statuses.items()}
             return MappingProxyType(
                 {
                     "running": self.running,
@@ -417,21 +400,11 @@ class ObservationProducer:
                         state_timestamp,
                         state_received,
                         state_domain,
-                        stale=(
-                            state_timestamp is None
-                            or state_domain is None
-                            or state_domain != self.clock_domain
-                        ),
+                        stale=(state_timestamp is None or state_domain is None or state_domain != self.clock_domain),
                     )
-                    if (
-                        state_timestamp is None
-                        or state_domain is None
-                        or state_domain != self.clock_domain
-                    ):
+                    if state_timestamp is None or state_domain is None or state_domain != self.clock_domain:
                         source_stale = True
-                        errors[_STATE_SOURCE_ID] = (
-                            "state capture timestamp is unknown or uses a foreign clock domain"
-                        )
+                        errors[_STATE_SOURCE_ID] = "state capture timestamp is unknown or uses a foreign clock domain"
 
             source_results, source_timeouts = self._collect_source_results()
             for binding in self._sources:
@@ -454,16 +427,9 @@ class ObservationProducer:
                         raise ObservationError("camera source returned no frames")
                     names = [frame.name for frame in source_frames]
                     if len(names) != len(set(names)):
-                        raise ObservationError(
-                            "camera source returned duplicate frame names"
-                        )
-                    if any(
-                        frame.name in {existing.name for existing in frames}
-                        for frame in source_frames
-                    ):
-                        raise ObservationError(
-                            "camera frame name was returned by two sources"
-                        )
+                        raise ObservationError("camera source returned duplicate frame names")
+                    if any(frame.name in {existing.name for existing in frames} for frame in source_frames):
+                        raise ObservationError("camera frame name was returned by two sources")
                 except Exception as error:
                     message = str(error)
                     errors[binding.source_id] = message
@@ -485,9 +451,7 @@ class ObservationProducer:
                     source_timestamps[frame.name] = frame.captured_timestamp_ns
                     source_received_timestamps[frame.name] = frame.received_timestamp_ns
                     clock_domains[frame.name] = frame.clock_domain
-                freshness_now = (
-                    self._now_ns() if self.stale_after_ns is not None else None
-                )
+                freshness_now = self._now_ns() if self.stale_after_ns is not None else None
                 stale = any(
                     timestamp is None
                     or frame.clock_domain is None
@@ -497,10 +461,7 @@ class ObservationProducer:
                         and timestamp is not None
                         and (
                             freshness_now is not None
-                            and (
-                                freshness_now < timestamp
-                                or freshness_now - timestamp > self.stale_after_ns
-                            )
+                            and (freshness_now < timestamp or freshness_now - timestamp > self.stale_after_ns)
                         )
                     )
                     for timestamp, frame in zip(timestamps, source_frames)
@@ -527,15 +488,8 @@ class ObservationProducer:
                     "capture crossed a source reconnect generation",
                 )
             received_timestamp_ns = self._now_ns()
-            known_timestamps = [
-                timestamp
-                for timestamp in source_timestamps.values()
-                if timestamp is not None
-            ]
-            known_domains = {
-                clock_domains.get(source_id)
-                for source_id, timestamp in source_timestamps.items()
-            }
+            known_timestamps = [timestamp for timestamp in source_timestamps.values() if timestamp is not None]
+            known_domains = {clock_domains.get(source_id) for source_id, timestamp in source_timestamps.items()}
             skew_ns = (
                 max(known_timestamps) - min(known_timestamps)
                 if known_timestamps
@@ -549,20 +503,16 @@ class ObservationProducer:
             metadata: dict[str, Any] = {
                 "clock_domain": self.clock_domain,
                 "capture_semantics": "host_read_before_encode",
-                "source_count": len(self._sources)
-                + (1 if self._state_reader is not None else 0),
+                "source_count": len(self._sources) + (1 if self._state_reader is not None else 0),
                 "successful_source_count": successful_sources,
                 "source_frames": source_frame_names,
                 "source_status": {
-                    source_id: status.to_dict()
-                    for source_id, status in self._statuses_snapshot().items()
+                    source_id: status.to_dict() for source_id, status in self._statuses_snapshot().items()
                 },
             }
             if state_metadata:
                 metadata["state_metadata"] = state_metadata
-            observation_id, snapshot_generation, sequence = (
-                self.store.next_observation_id()
-            )
+            observation_id, snapshot_generation, sequence = self.store.next_observation_id()
             snapshot = ObservationSnapshot(
                 observation_id=observation_id,
                 service_instance_id=self.store.service_instance_id,
@@ -585,11 +535,7 @@ class ObservationProducer:
             published = self.store.publish(snapshot)
             with self._status_lock:
                 self._last_error = (
-                    None
-                    if not errors
-                    else "; ".join(
-                        f"{source}: {message}" for source, message in errors.items()
-                    )
+                    None if not errors else "; ".join(f"{source}: {message}" for source, message in errors.items())
                 )
             return published
 
@@ -636,9 +582,7 @@ class ObservationProducer:
                     pending[binding.source_id] = (worker, token)
                     continue
             active_token = worker.active_token or 0
-            timeouts[binding.source_id] = (
-                "camera capture remains in flight; previous source call is bounded to one"
-            )
+            timeouts[binding.source_id] = "camera capture remains in flight; previous source call is bounded to one"
             self._report_source_timeout(binding.source_id, active_token)
 
         deadline = time.monotonic() + self.source_timeout_s
@@ -665,9 +609,7 @@ class ObservationProducer:
             time.sleep(min(0.001, remaining))
 
         for source_id, (_worker, token) in pending.items():
-            timeouts[source_id] = (
-                "camera capture exceeded source_timeout_s; source remains unavailable"
-            )
+            timeouts[source_id] = "camera capture exceeded source_timeout_s; source remains unavailable"
             self._report_source_timeout(source_id, token)
         return results, timeouts
 
@@ -676,9 +618,7 @@ class ObservationProducer:
         if key in self._reported_timeouts:
             return
         self._reported_timeouts.add(key)
-        self._update_status_error(
-            source_id, "camera capture timed out or remains in flight"
-        )
+        self._update_status_error(source_id, "camera capture timed out or remains in flight")
 
     def _read_state(
         self,
@@ -702,9 +642,7 @@ class ObservationProducer:
     def _now_ns(self) -> int:
         value = self._clock_ns()
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-            raise ObservationError(
-                "observation clock must return a non-negative integer nanosecond value"
-            )
+            raise ObservationError("observation clock must return a non-negative integer nanosecond value")
         return value
 
     def _statuses_snapshot(self) -> dict[str, SourceStatus]:
@@ -786,9 +724,7 @@ class ObservationProducer:
                     available=False,
                     stale=True,
                     last_error=(
-                        "source reconnect in progress"
-                        if source_id is None or key == source_id
-                        else status.last_error
+                        "source reconnect in progress" if source_id is None or key == source_id else status.last_error
                     ),
                     capture_count=status.capture_count,
                     error_count=status.error_count,
@@ -889,9 +825,7 @@ def _normalise_frames(value: Any) -> tuple[CameraFrame, ...]:
     try:
         frames = tuple(value)
     except TypeError as error:
-        raise TypeError(
-            "camera source must return an iterable of CameraFrame values"
-        ) from error
+        raise TypeError("camera source must return an iterable of CameraFrame values") from error
     if any(not isinstance(frame, CameraFrame) for frame in frames):
         raise TypeError("camera source returned a non-CameraFrame value")
     return frames
@@ -904,8 +838,8 @@ def _normalise_state(
 
     metadata: Mapping[str, Any] = {}
     if hasattr(value, "values") and hasattr(value, "timestamp_s"):
-        state = getattr(value, "values")
-        raw_timestamp = getattr(value, "timestamp_s")
+        state = value.values
+        raw_timestamp = value.timestamp_s
         raw_metadata = getattr(value, "metadata", {})
         metadata = dict(raw_metadata) if isinstance(raw_metadata, Mapping) else {}
         # Keep the legacy wall-clock field available for bindings and
@@ -926,9 +860,7 @@ def _normalise_state(
         return state, None, valid_domain, metadata
     if isinstance(value, tuple) and len(value) in (2, 3):
         candidate_timestamp = value[1]
-        if isinstance(candidate_timestamp, (int, float)) and not isinstance(
-            candidate_timestamp, bool
-        ):
+        if isinstance(candidate_timestamp, (int, float)) and not isinstance(candidate_timestamp, bool):
             domain = value[2] if len(value) == 3 else None
             return (
                 value[0],
@@ -968,9 +900,7 @@ def _aggregate_timestamp(values: Iterable[int | None]) -> int | None:
     return max(known) if known else None
 
 
-def _bounded_close(
-    close: Callable[[], None], timeout_s: float
-) -> tuple[bool, BaseException | None]:
+def _bounded_close(close: Callable[[], None], timeout_s: float) -> tuple[bool, BaseException | None]:
     result: list[BaseException | None] = [None]
 
     def run() -> None:

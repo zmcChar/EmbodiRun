@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 SRC = ROOT / "src"
@@ -50,9 +50,7 @@ print('ok')
 """
 
 
-def _run_python(
-    script: str, *, cwd: Path | None = None
-) -> subprocess.CompletedProcess[str]:
+def _run_python(script: str, *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     environment = dict(os.environ)
     environment["PYTHONPATH"] = str(SRC)
     return subprocess.run(
@@ -89,9 +87,7 @@ def test_supervisor_help_works_as_bare_script_from_unrelated_cwd(
         result = subprocess.run(
             [sys.executable, str(ROOT / relative), "--help"],
             cwd=tmp_path,
-            env={
-                key: value for key, value in os.environ.items() if key != "PYTHONPATH"
-            },
+            env={key: value for key, value in os.environ.items() if key != "PYTHONPATH"},
             capture_output=True,
             text=True,
             check=False,

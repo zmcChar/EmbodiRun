@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import posixpath
 import shlex
@@ -105,8 +106,7 @@ class ParamikoTransport:
                 import paramiko
             except ImportError as exc:  # pragma: no cover - environment dependent
                 raise RuntimeError(
-                    "Paramiko is required for remote deployment; run "
-                    "`uv sync --frozen --no-dev --group host`"
+                    "Paramiko is required for remote deployment; run `uv sync --frozen --no-dev --group host`"
                 ) from exc
             client = paramiko.SSHClient()
             client.load_system_host_keys()
@@ -151,8 +151,7 @@ class ParamikoTransport:
         invocation = shlex.join(command.argv)
         if command.environment:
             assignments = " ".join(
-                f"{name}={shlex.quote(value)}"
-                for name, value in sorted(command.environment.items())
+                f"{name}={shlex.quote(value)}" for name, value in sorted(command.environment.items())
             )
             invocation = f"env {assignments} {invocation}"
         if command.cwd is not None:
@@ -258,10 +257,8 @@ def _temporary_remote_path(path: str) -> str:
 
 
 def _best_effort_remove(sftp: Any, path: str) -> None:
-    try:
+    with contextlib.suppress(OSError):
         sftp.remove(path)
-    except OSError:
-        pass
 
 
 def _redact(text: str, secret: str | None) -> str:

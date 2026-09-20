@@ -9,8 +9,8 @@ create a second SSH session for individual action steps.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 import math
+from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import quote, urlencode, urlsplit
 
@@ -38,9 +38,7 @@ class ControlClient:
             or parsed.query
             or parsed.fragment
         ):
-            raise ValueError(
-                "control endpoint must be a credential-free loopback HTTP URL"
-            )
+            raise ValueError("control endpoint must be a credential-free loopback HTTP URL")
         try:
             if parsed.port is None:
                 raise ValueError("control endpoint must include a port")
@@ -60,15 +58,11 @@ class ControlClient:
         )
         if response.status != 200:
             detail = error_message(response.payload) or "invalid error response"
-            raise ControlClientError(
-                f"control service returned HTTP {response.status}: {detail}"
-            )
+            raise ControlClientError(f"control service returned HTTP {response.status}: {detail}")
         try:
             result = TaskResult.from_payload(response.payload)
         except ValueError as error:
-            raise ControlClientError(
-                f"control service response is invalid: {error}"
-            ) from error
+            raise ControlClientError(f"control service response is invalid: {error}") from error
         if result.request_id != request.request_id:
             raise ControlClientError("control response request_id does not match")
         if result.runtime_id != request.runtime_id:
@@ -228,11 +222,7 @@ class HostControlClient(ControlClient):
             or recording_timeout_s < 0
         ):
             raise ValueError("recording_timeout_s must be finite and non-negative")
-        payload = (
-            {"timeout_s": recording_timeout_s}
-            if recording_timeout_s is not None
-            else {}
-        )
+        payload = {"timeout_s": recording_timeout_s} if recording_timeout_s is not None else {}
         return self._request(
             "POST",
             "/v1/recordings/stop",

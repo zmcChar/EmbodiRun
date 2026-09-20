@@ -57,9 +57,7 @@ def parse_connection(value: dict[str, Any]) -> ConnectionConfig:
     reject_unknown(value, allowed, "SSH connection")
     password_env = optional_string(value, "password_env", context)
     if password_env is not None and not _ENVIRONMENT_NAME.fullmatch(password_env):
-        raise ConfigError(
-            "node connection.password_env must be an environment variable name"
-        )
+        raise ConfigError("node connection.password_env must be an environment variable name")
     port = integer(value.get("port", 22), f"{context}.port")
     if not 1 <= port <= 65535:
         raise ConfigError(f"{context}.port must be between 1 and 65535")

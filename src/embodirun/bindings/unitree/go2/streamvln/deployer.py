@@ -112,9 +112,7 @@ def _validate_package_root(path: Path) -> None:
 
 def _module_exists(package_root: Path, module: str) -> bool:
     relative = Path(*module.split(".")[1:])
-    return (package_root / relative).is_dir() or (package_root / relative).with_suffix(
-        ".py"
-    ).is_file()
+    return (package_root / relative).is_dir() or (package_root / relative).with_suffix(".py").is_file()
 
 
 def _iter_deployment_files(root: Path):

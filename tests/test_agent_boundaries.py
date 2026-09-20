@@ -11,7 +11,7 @@ ROOT = Path(__file__).parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agents.astra_pi05.decision import validate_decision, validate_proposal
+from agents.astra_pi05.decision import validate_decision, validate_proposal  # noqa: E402
 
 
 def _proposal() -> tuple[list[list[float]], dict[str, object]]:
@@ -77,9 +77,7 @@ def test_proposal_rejects_implicit_or_unknown_units() -> None:
 def test_execute_prefix_accepts_only_bounded_prefix_lengths(steps: int) -> None:
     decision = _base_decision()
     decision["execute_steps"] = steps
-    result = validate_decision(
-        decision, proposal_id="proposal-1", observation_id="observation-1"
-    )
+    result = validate_decision(decision, proposal_id="proposal-1", observation_id="observation-1")
     assert result["decision"] == "execute_prefix"
 
 
@@ -88,9 +86,7 @@ def test_execute_prefix_rejects_out_of_range_prefix_lengths(steps: int) -> None:
     decision = _base_decision()
     decision["execute_steps"] = steps
     with pytest.raises(ValueError, match="execute_prefix"):
-        validate_decision(
-            decision, proposal_id="proposal-1", observation_id="observation-1"
-        )
+        validate_decision(decision, proposal_id="proposal-1", observation_id="observation-1")
 
 
 @pytest.mark.parametrize("count", [1, 5])
@@ -101,9 +97,7 @@ def test_correction_branch_accepts_one_to_five_declared_waypoints(count: int) ->
         execute_steps=0,
         corrections=[_correction()] * count,
     )
-    result = validate_decision(
-        decision, proposal_id="proposal-1", observation_id="observation-1"
-    )
+    result = validate_decision(decision, proposal_id="proposal-1", observation_id="observation-1")
     assert result["decision"] == "correct"
     assert len(result["corrections"]) == count
 
@@ -117,9 +111,7 @@ def test_correction_branch_rejects_out_of_range_waypoint_count(count: int) -> No
         corrections=[_correction()] * count,
     )
     with pytest.raises(ValueError, match="1-5"):
-        validate_decision(
-            decision, proposal_id="proposal-1", observation_id="observation-1"
-        )
+        validate_decision(decision, proposal_id="proposal-1", observation_id="observation-1")
 
 
 def test_correction_contract_is_not_generic_six_d() -> None:
@@ -128,18 +120,14 @@ def test_correction_contract_is_not_generic_six_d() -> None:
     decision = _base_decision()
     decision.update(decision="correct", execute_steps=0, corrections=[correction])
     with pytest.raises(ValueError, match="so101_shoulder_plane"):
-        validate_decision(
-            decision, proposal_id="proposal-1", observation_id="observation-1"
-        )
+        validate_decision(decision, proposal_id="proposal-1", observation_id="observation-1")
 
 
 def test_decision_result_does_not_share_nested_corrections() -> None:
     decision = _base_decision()
     decision.update(decision="correct", execute_steps=0, corrections=[_correction()])
     original = copy.deepcopy(decision)
-    result = validate_decision(
-        decision, proposal_id="proposal-1", observation_id="observation-1"
-    )
+    result = validate_decision(decision, proposal_id="proposal-1", observation_id="observation-1")
     result["corrections"][0]["left"]["reach_m"] = 99.0
     assert decision == original
 

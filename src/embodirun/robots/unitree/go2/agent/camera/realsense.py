@@ -183,9 +183,7 @@ class RealSenseWorker:
                     color_frame = aligned_frames.get_color_frame()
                     depth_frame = aligned_frames.get_depth_frame()
                 except Exception as error:
-                    raise CameraStreamError(
-                        f"RealSense frame watchdog/alignment failed: {error}"
-                    ) from error
+                    raise CameraStreamError(f"RealSense frame watchdog/alignment failed: {error}") from error
 
                 now = self.clock()
                 if now < next_publish_at:

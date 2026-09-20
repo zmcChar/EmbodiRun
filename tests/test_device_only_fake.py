@@ -19,11 +19,10 @@ from embodirun.services.control.devices import (
     ResourceIdentity,
 )
 from embodirun.services.control.server import ControlService
+from embodirun.services.host.cli.command.run import RunError, run
 from embodirun.services.host.config import ConfigError, load_config
 from embodirun.services.host.environment import environment_profiles
-from embodirun.services.host.cli.command.run import RunError, run
 from embodirun.services.host.plan import build_plan
-
 
 ROOT = Path(__file__).parents[1]
 FAKE_CONFIG = ROOT / "examples" / "shared-device-fake.yaml"
@@ -82,9 +81,7 @@ runtimes:
 
 def test_model_and_binding_are_optional_only_as_a_pair(tmp_path: Path) -> None:
     source = FAKE_CONFIG.read_text(encoding="utf-8")
-    source = source.replace(
-        "    inputs:\n", "    model: fake\n    inputs:\n"
-    )
+    source = source.replace("    inputs:\n", "    model: fake\n    inputs:\n")
     path = tmp_path / "invalid.yaml"
     path.write_text(source, encoding="utf-8")
     with pytest.raises(ConfigError, match="model and .*binding.*provided together"):
@@ -200,19 +197,13 @@ def test_device_manager_serializes_close_callback_and_lease_release(tmp_path: Pa
         lock_dir=tmp_path / "locks",
         state_path=tmp_path / "state.json",
     )
-    lease = manager.acquire(
-        DeviceResource(identity, opener=lambda: object(), closer=closer)
-    )
+    lease = manager.acquire(DeviceResource(identity, opener=lambda: object(), closer=closer))
     lease_errors: list[BaseException] = []
     close_errors: list[BaseException] = []
-    release_thread = threading.Thread(
-        target=lambda: _capture(lease.close, lease_errors), daemon=True
-    )
+    release_thread = threading.Thread(target=lambda: _capture(lease.close, lease_errors), daemon=True)
     release_thread.start()
     assert entered.wait(2.0)
-    manager_thread = threading.Thread(
-        target=lambda: _capture(manager.close, close_errors), daemon=True
-    )
+    manager_thread = threading.Thread(target=lambda: _capture(manager.close, close_errors), daemon=True)
     manager_thread.start()
     release.set()
     release_thread.join(2.0)

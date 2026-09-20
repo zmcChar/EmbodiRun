@@ -7,10 +7,10 @@ freshness or a physical stop result.
 
 from __future__ import annotations
 
+import http.client
 import json
 import math
 import secrets
-import http.client
 import urllib.error
 import urllib.request
 from collections.abc import Mapping
@@ -24,8 +24,12 @@ _ARM_KEYS = {
     f"{side}_arm_{joint}.pos"
     for side in ("left", "right")
     for joint in (
-        "shoulder_pan", "shoulder_lift", "elbow_flex",
-        "wrist_flex", "wrist_roll", "gripper",
+        "shoulder_pan",
+        "shoulder_lift",
+        "elbow_flex",
+        "wrist_flex",
+        "wrist_roll",
+        "gripper",
     )
 }
 _BASE_KEYS = {"x.vel", "theta.vel"}
@@ -82,12 +86,17 @@ class XLeRobotAdapter(RobotAdapter):
         payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         body = None if payload is None else json.dumps(payload, allow_nan=False).encode()
-        req = urllib.request.Request(self.url + "/robot/" + endpoint, data=body, method=method, headers={
-            "Authorization": "Bearer " + self.config.token,
-            "Content-Type": "application/json",
-            "X-Teleop-Owner": self.owner,
-            "X-Teleop-Scope": self.config.scope,
-        })
+        req = urllib.request.Request(
+            self.url + "/robot/" + endpoint,
+            data=body,
+            method=method,
+            headers={
+                "Authorization": "Bearer " + self.config.token,
+                "Content-Type": "application/json",
+                "X-Teleop-Owner": self.owner,
+                "X-Teleop-Scope": self.config.scope,
+            },
+        )
         try:
             with self._opener.open(req, timeout=self.config.timeout_s) as response:
                 result = json.load(response)
@@ -136,15 +145,9 @@ class XLeRobotAdapter(RobotAdapter):
             self.prepared = False
             raise
         if result.get("armed") is not True:
-            if (
-                result.get("armed") is False
-                and result.get("status") == "refused"
-                and result.get("writes") == []
-            ):
+            if result.get("armed") is False and result.get("status") == "refused" and result.get("writes") == []:
                 self._cleanup_pending = False
-                raise RobotPreparationRefused(
-                    "owner refused preparation before any write", result
-                )
+                raise RobotPreparationRefused("owner refused preparation before any write", result)
             self.stop_unconfirmed = True
             raise XLeRobotProtocolError("owner did not confirm control preparation")
         self.prepared = True
@@ -166,31 +169,33 @@ class XLeRobotAdapter(RobotAdapter):
             raise XLeRobotProtocolError("XLeRobot state_timestamp_ns is invalid")
         source_timestamp_ns = observation.get("source_timestamp_ns")
         if source_timestamp_ns is not None and (
-            isinstance(source_timestamp_ns, bool)
-            or not isinstance(source_timestamp_ns, int)
-            or source_timestamp_ns < 0
+            isinstance(source_timestamp_ns, bool) or not isinstance(source_timestamp_ns, int) or source_timestamp_ns < 0
         ):
             raise XLeRobotProtocolError("XLeRobot source_timestamp_ns is invalid")
         timestamp_s = float(timestamp_ns) / 1e9 if timestamp_ns is not None else 0.0
         if self.prepared and observation.get("control_owned") is not True:
             self.prepared = False
             self._cleanup_pending = True
-        return RobotObservation(timestamp_s=timestamp_s, values=values, metadata={
-            **_json_value(self.metadata),
-            "clock_domain": "remote_robot_wall",
-            "captured_timestamp_ns": timestamp_ns,
-            "source_timestamp_ns": source_timestamp_ns,
-            "state_timestamp_ns": timestamp_ns,
-            "camera_timestamps_ns": _json_value(observation.get("camera_timestamps_ns")),
-            "remote_control_owned": _json_value(observation.get("control_owned")),
-            "remote_armed": _json_value(observation.get("armed")),
-            "remote_control_state": _json_value(observation.get("control_state")),
-            "remote_errors": _json_value(observation.get("errors")),
-            "raw": _json_value(observation.get("raw")),
-            "raw_fields": _json_value(observation.get("raw_fields")),
-            "wheel_present_blocks": _json_value(observation.get("wheel_present_blocks")),
-            "state_cached": _json_value(observation.get("state_cached")),
-        })
+        return RobotObservation(
+            timestamp_s=timestamp_s,
+            values=values,
+            metadata={
+                **_json_value(self.metadata),
+                "clock_domain": "remote_robot_wall",
+                "captured_timestamp_ns": timestamp_ns,
+                "source_timestamp_ns": source_timestamp_ns,
+                "state_timestamp_ns": timestamp_ns,
+                "camera_timestamps_ns": _json_value(observation.get("camera_timestamps_ns")),
+                "remote_control_owned": _json_value(observation.get("control_owned")),
+                "remote_armed": _json_value(observation.get("armed")),
+                "remote_control_state": _json_value(observation.get("control_state")),
+                "remote_errors": _json_value(observation.get("errors")),
+                "raw": _json_value(observation.get("raw")),
+                "raw_fields": _json_value(observation.get("raw_fields")),
+                "wheel_present_blocks": _json_value(observation.get("wheel_present_blocks")),
+                "state_cached": _json_value(observation.get("state_cached")),
+            },
+        )
 
     def execute(self, action: RobotAction) -> dict[str, Any]:
         if not self.prepared or self._cleanup_pending or self.stop_unconfirmed:
@@ -216,9 +221,7 @@ class XLeRobotAdapter(RobotAdapter):
             elif key == "x.vel":
                 expected, aliases = "metres-per-sec", {"metres-per-sec", "m/s"}
             else:
-                expected, aliases = "angular-degrees-per-sec", {
-                    "angular-degrees-per-sec", "deg/s"
-                }
+                expected, aliases = "angular-degrees-per-sec", {"angular-degrees-per-sec", "deg/s"}
             if not isinstance(units, Mapping) or units.get(key) not in aliases:
                 raise ValueError(f"unsupported unit for {key}: expected {expected}")
         try:
@@ -239,8 +242,10 @@ class XLeRobotAdapter(RobotAdapter):
     def stop(self) -> dict[str, Any]:
         if not self.prepared and not self._cleanup_pending:
             return self._last_release or {
-                "released": False, "control_owned": False,
-                "stop_confirmed": None, "physical_outcome": "unknown",
+                "released": False,
+                "control_owned": False,
+                "stop_confirmed": None,
+                "physical_outcome": "unknown",
             }
         self._cleanup_pending = True
         try:

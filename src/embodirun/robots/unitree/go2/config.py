@@ -30,9 +30,7 @@ class Go2Config:
     timeout_s: float = 1.0
     expected_transport: str | None = "unitree-sdk2"
     velocity_lease_duration_s: float = 10.0
-    velocity_limits: PlanarVelocityLimits = field(
-        default_factory=_default_velocity_limits
-    )
+    velocity_limits: PlanarVelocityLimits = field(default_factory=_default_velocity_limits)
 
     @classmethod
     def from_mapping(
@@ -78,20 +76,12 @@ class Go2Config:
             raise ValueError("robot_id must not be empty")
         for name in ("timeout_s", "velocity_lease_duration_s"):
             value = getattr(self, name)
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not math.isfinite(value)
-                or value <= 0
-            ):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be positive")
-        if self.api_token is not None and (
-            not isinstance(self.api_token, str) or not self.api_token.strip()
-        ):
+        if self.api_token is not None and (not isinstance(self.api_token, str) or not self.api_token.strip()):
             raise ValueError("api_token must not be empty when provided")
         if self.expected_transport is not None and (
-            not isinstance(self.expected_transport, str)
-            or not self.expected_transport.strip()
+            not isinstance(self.expected_transport, str) or not self.expected_transport.strip()
         ):
             raise ValueError("expected_transport must not be empty when provided")
         if not isinstance(self.velocity_limits, PlanarVelocityLimits):
@@ -101,9 +91,7 @@ class Go2Config:
 def _velocity_limits(value: object) -> PlanarVelocityLimits:
     if value is None:
         return _default_velocity_limits()
-    if not isinstance(value, Mapping) or any(
-        not isinstance(key, str) for key in value
-    ):
+    if not isinstance(value, Mapping) or any(not isinstance(key, str) for key in value):
         raise TypeError("velocity_limits must be a mapping")
     options = dict(value)
     allowed = {
@@ -113,9 +101,7 @@ def _velocity_limits(value: object) -> PlanarVelocityLimits:
     }
     unknown = sorted(set(options) - allowed)
     if unknown:
-        raise ValueError(
-            f"unknown velocity limit fields: {', '.join(unknown)}"
-        )
+        raise ValueError(f"unknown velocity limit fields: {', '.join(unknown)}")
     defaults = _default_velocity_limits()
     return PlanarVelocityLimits(
         max_abs_vx_mps=options.get(

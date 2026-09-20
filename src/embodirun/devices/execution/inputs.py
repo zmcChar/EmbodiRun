@@ -81,9 +81,7 @@ class KeyboardInput:
         fd: int | None = None,
         *,
         configure_terminal: bool = True,
-        select_fn: Callable[
-            ..., tuple[list[int], list[int], list[int]]
-        ] = select.select,
+        select_fn: Callable[..., tuple[list[int], list[int], list[int]]] = select.select,
         read_fn: Callable[[int, int], bytes] = os.read,
     ) -> None:
         self.fd = sys.stdin.fileno() if fd is None else fd
@@ -157,9 +155,7 @@ class JoystickInput:
         *,
         fd: int | None = None,
         deadzone: float = 0.1,
-        select_fn: Callable[
-            ..., tuple[list[int], list[int], list[int]]
-        ] = select.select,
+        select_fn: Callable[..., tuple[list[int], list[int], list[int]]] = select.select,
         read_fn: Callable[[int, int], bytes] = os.read,
     ) -> None:
         if fd is None and path is None:
@@ -189,9 +185,7 @@ class JoystickInput:
 
         events: list[InputEvent] = []
         while len(self._buffer) >= 8:
-            _time_ms, value, event_type, number = struct.unpack(
-                "<IhBB", self._buffer[:8]
-            )
+            _time_ms, value, event_type, number = struct.unpack("<IhBB", self._buffer[:8])
             del self._buffer[:8]
             base_type = event_type & ~self.JS_EVENT_INIT
             if event_type & self.JS_EVENT_INIT and base_type == self.JS_EVENT_BUTTON:
@@ -213,12 +207,8 @@ class JoystickInput:
                 control = self._AXES.get(number)
                 if control is not None:
                     axis = normalize_axis(value / 32767.0, self._deadzone)
-                    events.append(
-                        InputEvent(InputEventKind.AXIS, control, axis, "joystick")
-                    )
-        if self._has_deadman and not any(
-            event.kind is InputEventKind.DEADMAN for event in events
-        ):
+                    events.append(InputEvent(InputEventKind.AXIS, control, axis, "joystick"))
+        if self._has_deadman and not any(event.kind is InputEventKind.DEADMAN for event in events):
             events.append(self._event(InputEventKind.DEADMAN, self._deadman))
         return InputPollResult(events=tuple(events))
 
@@ -280,9 +270,7 @@ class ControlInputBridge:
         with self._lock:
             return {
                 "running": self._running,
-                "last_error": str(self._failure.source_error)
-                if self._failure
-                else None,
+                "last_error": str(self._failure.source_error) if self._failure else None,
             }
 
     def close(self) -> None:
@@ -378,10 +366,7 @@ class ControlInputBridge:
 
     def _ready_for_manual(self) -> bool:
         snapshot = self.arbiter.snapshot()
-        return (
-            snapshot.get("authority") == "manual"
-            and snapshot.get("deadman_active") is True
-        )
+        return snapshot.get("authority") == "manual" and snapshot.get("deadman_active") is True
 
     def _remote_error(self) -> str | None:
         try:

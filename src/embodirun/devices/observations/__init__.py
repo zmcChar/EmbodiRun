@@ -7,6 +7,7 @@ publishes immutable snapshots through :class:`ObservationStore`.
 
 from typing import TYPE_CHECKING, Any
 
+from .hub import SharedSensorError, SharedSensorHub
 from .producer import ObservationProducer
 from .store import ObservationStore, ObservationSubscription
 from .values import (
@@ -17,7 +18,6 @@ from .values import (
     ObservationUnavailableError,
     SourceStatus,
 )
-from .hub import SharedSensorError, SharedSensorHub
 
 if TYPE_CHECKING:  # pragma: no cover - only needed by type checkers
     from ..recording import (
@@ -27,9 +27,7 @@ if TYPE_CHECKING:  # pragma: no cover - only needed by type checkers
         RecordingStatus,
     )
 
-_RECORDING_REEXPORTS = frozenset(
-    {"ActionEvent", "ObservationRecorder", "RecordingError", "RecordingStatus"}
-)
+_RECORDING_REEXPORTS = frozenset({"ActionEvent", "ObservationRecorder", "RecordingError", "RecordingStatus"})
 
 
 def __getattr__(name: str) -> Any:
@@ -42,6 +40,7 @@ def __getattr__(name: str) -> Any:
 
         return getattr(recording, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "ObservationError",

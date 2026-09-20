@@ -208,7 +208,8 @@ def test_xr_focus_visibility_and_stale_session_safety():
 def test_hand_or_gaze_sources_do_not_overwrite_touch_controllers():
     source = WEB_APP.read_text(encoding="utf-8")
     bundle = _required_bundle(source, ("readControllers",), {"makeController", "readController"})
-    _run_node(dedent("""
+    _run_node(
+        dedent("""
         const assert = require('node:assert/strict');
         function makeController() { return {tracked: false}; }
         function readController(source) { return {tracked: source.tracked, id: source.id}; }
@@ -217,22 +218,27 @@ def test_hand_or_gaze_sources_do_not_overwrite_touch_controllers():
         const hand = {id: 'hand', handedness: 'left', hand: {}, gamepad: {}, tracked: true};
         const gaze = {id: 'gaze', handedness: 'left', targetRayMode: 'gaze', gamepad: {}, tracked: true};
         const partial = {id: 'partial', handedness: 'left', gamepad: {}, tracked: false};
-    """) + bundle + dedent("""
+    """)
+        + bundle
+        + dedent("""
         for (const inputSources of [[touch, hand, gaze, partial], [partial, hand, gaze, touch]]) {
           const result = readControllers({}, {}, {inputSources});
           assert.deepEqual(result.left, {tracked: true, id: 'touch'});
           assert.equal(result.right.tracked, false);
         }
-    """))
+    """)
+    )
 
 
 def test_idle_video_pause_can_recover_but_active_video_loss_still_stops():
     source = WEB_APP.read_text(encoding="utf-8")
     bundle = _required_bundle(
-        source, ("checkVideoHealth", "cameraFramesFresh", "handleVideoPeerFailure"),
+        source,
+        ("checkVideoHealth", "cameraFramesFresh", "handleVideoPeerFailure"),
         {"updateCameraVisual", "failSafeStop", "stopVideoStats", "updateVideoPeerUi", "logEvent", "retryVideoPeer"},
     )
-    _run_node(dedent("""
+    _run_node(
+        dedent("""
         const assert = require('node:assert/strict');
         global.performance = {now: () => 10000};
         const CAMERA_NAMES = ['front', 'left_wrist', 'right_wrist'];
@@ -253,7 +259,9 @@ def test_idle_video_pause_can_recover_but_active_video_loss_still_stops():
         function failSafeStop(reason, options) {
           stops.push({reason, options}); app.xr.safetyTripped = true;
         }
-    """) + bundle + dedent("""
+    """)
+        + bundle
+        + dedent("""
         checkVideoHealth();
         assert.equal(cameraFramesFresh(),false);
         assert.equal(stops.length,0,'idle telemetry is not control ownership');
@@ -292,7 +300,8 @@ def test_idle_video_pause_can_recover_but_active_video_loss_still_stops():
           assert.equal(stops.length,1,'active WebRTC interruption must stop immediately');
           assert.equal(stops[0].reason,'WebRTC 视频中断');
         }
-    """))
+    """)
+    )
 
 
 def test_on_xr_frame_keeps_startup_telemetry_renders_and_orders_input_before_arm():

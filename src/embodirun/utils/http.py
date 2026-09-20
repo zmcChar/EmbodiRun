@@ -79,9 +79,7 @@ class JsonHttpClient:
                 detail = error.read(min(maximum_bytes, 16 * 1024)).decode("utf-8", errors="replace")
             finally:
                 error.close()
-            raise HttpClientError(
-                f"{method.upper()} {path} returned HTTP {error.code}: {detail}"
-            ) from error
+            raise HttpClientError(f"{method.upper()} {path} returned HTTP {error.code}: {detail}") from error
         except (urllib.error.URLError, TimeoutError, OSError) as error:
             raise HttpClientError(f"{method.upper()} {path} failed: {error}") from error
         if len(body) > maximum_bytes:

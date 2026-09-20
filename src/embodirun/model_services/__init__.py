@@ -16,14 +16,6 @@ from .contracts import (
     Session,
 )
 from .factory import build_inference_client
-from .providers import (
-    InferenceProvider,
-    ManagedCommandOptions,
-    ProviderOptionsContext,
-    provider,
-    providers,
-    register_provider,
-)
 from .protocols.http import (
     HttpResponse,
     HttpTransport,
@@ -34,6 +26,14 @@ from .protocols.wireless import (
     WirelessProtocolError,
     WirelessRpcTransport,
     WirelessTransport,
+)
+from .providers import (
+    InferenceProvider,
+    ManagedCommandOptions,
+    ProviderOptionsContext,
+    provider,
+    providers,
+    register_provider,
 )
 
 __all__ = [

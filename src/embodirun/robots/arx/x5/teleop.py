@@ -18,12 +18,17 @@ class ARX5TeleopScale:
     gripper_step_m: float = 0.01
 
 
+# Default scales are immutable module-level singletons, so the default argument
+# does not build a new object per call.
+ARX5_DEFAULT_SCALE = ARX5TeleopScale()
+
+
 def resolve_axes_action(
     observation: RobotObservation,
     axes: Mapping[object, object],
     *,
     timestamp_s: float,
-    scale: ARX5TeleopScale = ARX5TeleopScale(),
+    scale: ARX5TeleopScale = ARX5_DEFAULT_SCALE,
 ) -> RobotAction:
     action_space = observation.metadata.get("action_space")
     if action_space != ARX5_ACTION_SPACE:

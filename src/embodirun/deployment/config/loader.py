@@ -51,9 +51,7 @@ def load_config(path: str | Path) -> DeploymentConfig:
     metadata = parse_metadata(mapping(root.get("metadata"), "metadata"))
     nodes = named_section(root.get("nodes"), "nodes", parse_node)
     robots = named_section(root.get("robots", {}), "robots", parse_robot)
-    simulators = named_section(
-        root.get("simulators", {}), "simulators", parse_simulator
-    )
+    simulators = named_section(root.get("simulators", {}), "simulators", parse_simulator)
     sensors = named_section(root.get("sensors", {}), "sensors", parse_sensor)
     models = named_section(root.get("models", {}), "models", parse_model)
     runtimes = named_section(root.get("runtimes", {}), "runtimes", parse_runtime)
@@ -90,8 +88,7 @@ def _load_yaml(path: Path) -> Any:
         import yaml
     except ImportError as error:  # pragma: no cover - depends on installed group
         raise RuntimeError(
-            "YAML configuration requires the host environment; run "
-            "`uv sync --frozen --no-dev --group host`"
+            "YAML configuration requires the host environment; run `uv sync --frozen --no-dev --group host`"
         ) from error
 
     class UniqueKeyLoader(yaml.SafeLoader):
@@ -137,71 +134,43 @@ def _validate_references(
 ) -> None:
     for robot in robots.values():
         if robot.node not in nodes:
-            raise ConfigError(
-                f"robot {robot.robot_id!r} references unknown node {robot.node!r}"
-            )
+            raise ConfigError(f"robot {robot.robot_id!r} references unknown node {robot.node!r}")
     for simulator in simulators.values():
         if simulator.node not in nodes:
-            raise ConfigError(
-                f"simulator {simulator.simulator_id!r} references unknown node "
-                f"{simulator.node!r}"
-            )
+            raise ConfigError(f"simulator {simulator.simulator_id!r} references unknown node {simulator.node!r}")
     for model in models.values():
         if model.lifecycle == "external":
             continue
         assert model.node is not None
         if model.node not in nodes:
-            raise ConfigError(
-                f"model {model.model_id!r} references unknown node {model.node!r}"
-            )
+            raise ConfigError(f"model {model.model_id!r} references unknown node {model.node!r}")
     for sensor in sensors.values():
         if sensor.node not in nodes:
-            raise ConfigError(
-                f"sensor {sensor.sensor_id!r} references unknown node {sensor.node!r}"
-            )
+            raise ConfigError(f"sensor {sensor.sensor_id!r} references unknown node {sensor.node!r}")
     for runtime in runtimes.values():
         if runtime.robot is not None and runtime.robot not in robots:
-            raise ConfigError(
-                f"runtime {runtime.runtime_id!r} references unknown robot "
-                f"{runtime.robot!r}"
-            )
+            raise ConfigError(f"runtime {runtime.runtime_id!r} references unknown robot {runtime.robot!r}")
         if runtime.simulator is not None and runtime.simulator not in simulators:
-            raise ConfigError(
-                f"runtime {runtime.runtime_id!r} references unknown simulator "
-                f"{runtime.simulator!r}"
-            )
+            raise ConfigError(f"runtime {runtime.runtime_id!r} references unknown simulator {runtime.simulator!r}")
         if runtime.model is None:
             # ``parse_runtime`` already rejects this combination for
             # simulators.  Keeping the check here makes the relationship
             # explicit for callers constructing DeploymentConfig directly.
             if runtime.simulator is not None:
-                raise ConfigError(
-                    f"runtime {runtime.runtime_id!r} simulator runtimes require "
-                    "a model and binding"
-                )
+                raise ConfigError(f"runtime {runtime.runtime_id!r} simulator runtimes require a model and binding")
             wireless = False
         else:
             if runtime.model not in models:
-                raise ConfigError(
-                    f"runtime {runtime.runtime_id!r} references unknown model "
-                    f"{runtime.model!r}"
-                )
+                raise ConfigError(f"runtime {runtime.runtime_id!r} references unknown model {runtime.model!r}")
             wireless = models[runtime.model].transport == "wireless"
         if wireless and runtime.inference_client is None:
-            raise ConfigError(
-                f"runtimes.{runtime.runtime_id}.inference_client is required "
-                "for wireless transport"
-            )
+            raise ConfigError(f"runtimes.{runtime.runtime_id}.inference_client is required for wireless transport")
         if not wireless and runtime.inference_client is not None:
-            raise ConfigError(
-                f"runtimes.{runtime.runtime_id}.inference_client requires "
-                "wireless transport"
-            )
+            raise ConfigError(f"runtimes.{runtime.runtime_id}.inference_client requires wireless transport")
         for input_name, sensor_id in runtime.inputs.items():
             if sensor_id not in sensors:
                 raise ConfigError(
-                    f"runtime {runtime.runtime_id!r} input {input_name!r} "
-                    f"references unknown sensor {sensor_id!r}"
+                    f"runtime {runtime.runtime_id!r} input {input_name!r} references unknown sensor {sensor_id!r}"
                 )
 
 
@@ -226,8 +195,7 @@ def _validate_unique_robot_ports(robots: dict[str, RobotConfig]) -> None:
                 )
                 if not same_adapter:
                     raise ConfigError(
-                        f"robots {owner.robot_id!r} and {robot.robot_id!r} share "
-                        f"port {port!r} on node {robot.node!r}"
+                        f"robots {owner.robot_id!r} and {robot.robot_id!r} share port {port!r} on node {robot.node!r}"
                     )
             previous.append(robot)
 
@@ -246,22 +214,16 @@ def _validate_unique_service_ports(
         owner = owners.get(key)
         if owner is not None:
             raise ConfigError(
-                f"models {owner!r} and {model.model_id!r} share port "
-                f"{model.server.port} on node {model.node!r}"
+                f"models {owner!r} and {model.model_id!r} share port {model.server.port} on node {model.node!r}"
             )
         owners[key] = model.model_id
     for runtime in runtimes.values():
-        node = (
-            robots[runtime.robot].node
-            if runtime.robot is not None
-            else simulators[runtime.simulator].node
-        )
+        node = robots[runtime.robot].node if runtime.robot is not None else simulators[runtime.simulator].node
         key = (node, runtime.server.port)
         owner = owners.get(key)
         if owner is not None:
             raise ConfigError(
-                f"services {owner!r} and {runtime.runtime_id!r} share port "
-                f"{runtime.server.port} on node {node!r}"
+                f"services {owner!r} and {runtime.runtime_id!r} share port {runtime.server.port} on node {node!r}"
             )
         owners[key] = runtime.runtime_id
         if runtime.inference_client is not None:
@@ -270,8 +232,7 @@ def _validate_unique_service_ports(
             owner = owners.get(key)
             if owner is not None:
                 raise ConfigError(
-                    f"services {owner!r} and {runtime.runtime_id!r}.inference_client "
-                    f"share port {port} on node {node!r}"
+                    f"services {owner!r} and {runtime.runtime_id!r}.inference_client share port {port} on node {node!r}"
                 )
             owners[key] = f"{runtime.runtime_id}.inference_client"
 

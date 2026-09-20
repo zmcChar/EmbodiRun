@@ -21,9 +21,7 @@ from embodirun.bindings.xlerobot.lightnav0 import (
 )
 
 
-def _trajectory(
-    *, stop=False, pose=(1.0, 2.0, math.pi / 2.0), timestamp=0.0, rows=None
-):
+def _trajectory(*, stop=False, pose=(1.0, 2.0, math.pi / 2.0), timestamp=0.0, rows=None):
     return LightNav0Trajectory.from_output(
         {"waypoints": rows or [[1.0, 0.0, 0.0]], "stop": stop},
         capture_pose=pose,
@@ -36,9 +34,7 @@ def _feedback(*, pose=(1.0, 2.0, math.pi / 2.0), timestamp=0.0, collision=False)
 
 
 def test_capture_pose_transform_uses_forward_and_left_convention():
-    world = project_body_to_world(
-        [[1.0, 0.5, math.pi / 2.0]], Pose2D(1.0, 2.0, math.pi / 2.0)
-    )[0]
+    world = project_body_to_world([[1.0, 0.5, math.pi / 2.0]], Pose2D(1.0, 2.0, math.pi / 2.0))[0]
     assert world.x == pytest.approx(0.5)
     assert world.y == pytest.approx(3.0)
     assert world.yaw == pytest.approx(math.pi)
@@ -101,15 +97,11 @@ def test_differential_tracker_uses_forward_component_and_caps_it():
 )
 def test_nonfinite_and_malformed_chunks_fail_closed(output):
     with pytest.raises(LightNav0OutputError):
-        LightNav0Trajectory.from_output(
-            output, capture_pose=(0.0, 0.0, 0.0), captured_at_s=0.0
-        )
+        LightNav0Trajectory.from_output(output, capture_pose=(0.0, 0.0, 0.0), captured_at_s=0.0)
 
 
 def test_stale_trajectory_becomes_zero_and_is_cleared():
-    tracker = LightNav0Tracker(
-        TrackerConfig(trajectory_timeout_s=0.2), clock=lambda: 1.0
-    )
+    tracker = LightNav0Tracker(TrackerConfig(trajectory_timeout_s=0.2), clock=lambda: 1.0)
     tracker.set_trajectory(_trajectory(timestamp=0.0))
     decision = tracker.decide(_feedback(timestamp=1.0), now_s=1.0)
     assert decision.command == BodyVelocity.zero()
@@ -171,9 +163,7 @@ class _FakeBackend:
 
 class _FakeTeleopRobot:
     def __init__(self, *, state=None):
-        self.state = (
-            {"x.vel": 0.12, "theta.vel": 180.0} if state is None else dict(state)
-        )
+        self.state = {"x.vel": 0.12, "theta.vel": 180.0} if state is None else dict(state)
         self.commands = []
         self.stops = 0
         self.closed = False
@@ -273,9 +263,7 @@ def test_teleop_backend_missing_or_stale_localization_fails_and_controller_stops
     assert robot.stops == 0
     stale = XLeRobotTeleopBackend(
         robot,
-        lambda _observation: TeleopLocalization(
-            Pose2D(0.0, 0.0, 0.0), observed_at_s=-1.0
-        ),
+        lambda _observation: TeleopLocalization(Pose2D(0.0, 0.0, 0.0), observed_at_s=-1.0),
         clock=lambda: 0.0,
     )
     controller = LightNav0Controller(stale, clock=lambda: 0.0)

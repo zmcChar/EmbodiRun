@@ -1,6 +1,5 @@
 """Robot and simulator clients for supported inference services."""
 
-from .robots import RobotAction, RobotAdapter, RobotObservation, RobotProfile
 from .model_services import (
     ImagePayload,
     PolicyAction,
@@ -12,6 +11,7 @@ from .model_services import (
     VvlaHttpClient,
     VvlaWirelessClient,
 )
+from .robots import RobotAction, RobotAdapter, RobotObservation, RobotProfile
 
 __all__ = [
     "ImagePayload",

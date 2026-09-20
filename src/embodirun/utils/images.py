@@ -12,9 +12,7 @@ class DataUrlError(ValueError):
     """An encoded image does not satisfy the declared media contract."""
 
 
-def encode_data_url(
-    data: bytes, media_type: str, *, maximum_bytes: int = DEFAULT_MAX_IMAGE_BYTES
-) -> str:
+def encode_data_url(data: bytes, media_type: str, *, maximum_bytes: int = DEFAULT_MAX_IMAGE_BYTES) -> str:
     if not isinstance(data, bytes) or not data:
         raise DataUrlError("data must be non-empty bytes")
     if len(data) > maximum_bytes:

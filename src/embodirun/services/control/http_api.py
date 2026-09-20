@@ -13,11 +13,11 @@ observation and media reads; a request body cannot select its own role.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-import json
-from urllib.parse import parse_qs, urlsplit
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 from embodirun.application.api import (
     ApplicationError,
@@ -51,9 +51,7 @@ class HTTPResponse:
     def json_bytes(self) -> bytes:
         """Encode the detached payload for a conventional JSON response."""
 
-        return json.dumps(self.payload, separators=(",", ":"), sort_keys=True).encode(
-            "utf-8"
-        )
+        return json.dumps(self.payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
 
 class HTTPDispatchError(ValueError):
@@ -94,13 +92,13 @@ class ControlHTTPAPI:
 
         try:
             return self._dispatch(method, path, body=body, headers=headers)
-        except (AuthenticationError,) as error:
+        except AuthenticationError as error:
             return self._error(401, error)
         except AuthorizationError as error:
             return self._error(403, error)
-        except (JobOwnershipError,) as error:
+        except JobOwnershipError as error:
             return self._error(403, error)
-        except (JobNotFound,) as error:
+        except JobNotFound as error:
             return self._error(404, error)
         except JobConflict as error:
             return self._error(409, error)
@@ -117,11 +115,7 @@ class ControlHTTPAPI:
             return HTTPResponse(
                 409,
                 {
-                    "code": (
-                        "job_unknown"
-                        if isinstance(error, JobUnknownError)
-                        else "job_cancelled"
-                    ),
+                    "code": ("job_unknown" if isinstance(error, JobUnknownError) else "job_cancelled"),
                     "status": "uncertain",
                     "job": _record(error.record),
                 },
@@ -244,22 +238,14 @@ class ControlHTTPAPI:
             )
 
         if verb == "POST" and route == "/v1/execute":
-            execute_args = self._execute_args(
-                request_body, caller_id, session_id, token
-            )
+            execute_args = self._execute_args(request_body, caller_id, session_id, token)
             result = self.application.execute(**execute_args)
             return HTTPResponse(200 if execute_args["wait"] else 202, result)
         if verb == "POST" and route == "/v1/propose":
-            propose_args = self._propose_args(
-                request_body, caller_id, session_id, token
-            )
+            propose_args = self._propose_args(request_body, caller_id, session_id, token)
             return HTTPResponse(200, self.application.propose(**propose_args))
         if verb == "POST" and route == "/v1/tasks":
-            task_payload = {
-                key: value
-                for key, value in request_body.items()
-                if key not in {"wait", "timeout_s"}
-            }
+            task_payload = {key: value for key, value in request_body.items() if key not in {"wait", "timeout_s"}}
             request = TaskRequest.from_payload(task_payload)
             result = self.application.legacy_task(
                 request,
@@ -293,15 +279,9 @@ class ControlHTTPAPI:
         if verb == "POST" and route.startswith("/v1/jobs/"):
             suffix = route.removeprefix("/v1/jobs/").split("/")
             if len(suffix) != 2 or not suffix[0] or suffix[1] not in {"cancel", "stop"}:
-                raise HTTPDispatchError(
-                    "job mutation route must end in /cancel or /stop"
-                )
+                raise HTTPDispatchError("job mutation route must end in /cancel or /stop")
             request_id, operation = suffix
-            method = (
-                self.application.stop
-                if operation == "stop"
-                else self.application.cancel
-            )
+            method = self.application.stop if operation == "stop" else self.application.cancel
             return HTTPResponse(
                 202,
                 method(
@@ -315,11 +295,7 @@ class ControlHTTPAPI:
             request_id = request_body.get("request_id")
             if not isinstance(request_id, str) or not request_id.strip():
                 raise HTTPDispatchError("request_id is required")
-            method = (
-                self.application.stop
-                if route.endswith("/stop")
-                else self.application.cancel
-            )
+            method = self.application.stop if route.endswith("/stop") else self.application.cancel
             return HTTPResponse(
                 202,
                 method(
@@ -391,9 +367,7 @@ class ControlHTTPAPI:
             "max_skew_ns": _optional_int(payload, "max_skew_ns"),
         }
 
-    def _identity(
-        self, headers: Mapping[str, str], token: str | None
-    ) -> tuple[str, str]:
+    def _identity(self, headers: Mapping[str, str], token: str | None) -> tuple[str, str]:
         caller = _first_header(headers, "x-rlinf-caller-id", "x-caller-id")
         session = _first_header(headers, "x-rlinf-session-id", "x-session-id")
         if self.application.auth.token_authentication_enabled:
@@ -405,9 +379,7 @@ class ControlHTTPAPI:
                     session or self.trusted_session_id,
                 )
             if not caller or not session:
-                raise ApplicationInvalidRequest(
-                    "token-authenticated routes require caller and session headers"
-                )
+                raise ApplicationInvalidRequest("token-authenticated routes require caller and session headers")
             return caller, session
         return caller or self.trusted_caller_id, session or self.trusted_session_id
 

@@ -7,6 +7,7 @@ from embodirun.bindings.franka.fr3.pi05 import (
     Pi05FR3MapperConfig,
     Pi05FR3MapperError,
 )
+from embodirun.robots.sensors.cameras import CameraFrame
 from embodirun.services.control.runtime import ControlRuntime
 from embodirun.services.inference import (
     PolicyAction,
@@ -14,7 +15,6 @@ from embodirun.services.inference import (
     PolicyResult,
     Session,
 )
-from embodirun.robots.sensors.cameras import CameraFrame
 
 
 class FakeRobot:
@@ -96,9 +96,7 @@ class FakeVvlaClient:
 
 
 def test_pi05_mapper_extracts_joint_position_chunk() -> None:
-    mapper = Pi05FR3Mapper(
-        config=Pi05FR3MapperConfig(joint_indices=(0, 1, 2, 3, 4, 5, 6))
-    )
+    mapper = Pi05FR3Mapper(config=Pi05FR3MapperConfig(joint_indices=(0, 1, 2, 3, 4, 5, 6)))
     actions = mapper.map_result(
         PolicyResult(
             request_id="r1",

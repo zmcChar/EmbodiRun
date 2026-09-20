@@ -92,9 +92,7 @@ class WirelessEndpoint:
         self._thread.start()
         self._closed = False
         try:
-            self._submit(self._start(local, peers, bind_host, register)).result(
-                timeout_s
-            )
+            self._submit(self._start(local, peers, bind_host, register)).result(timeout_s)
         except BaseException:
             self.close()
             raise
@@ -157,9 +155,7 @@ class WirelessEndpoint:
     async def _shutdown(self):
         if hasattr(self, "_comm"):
             await self._comm.close()
-        pending = [
-            task for task in asyncio.all_tasks() if task is not asyncio.current_task()
-        ]
+        pending = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
         for task in pending:
             task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)

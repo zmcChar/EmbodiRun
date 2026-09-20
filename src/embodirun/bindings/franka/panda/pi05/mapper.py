@@ -6,13 +6,13 @@ import math
 import time
 from collections.abc import Sequence
 
-from embodirun.robots import RobotAction, RobotObservation
-from embodirun.robots.sensors.cameras import CameraFrame
 from embodirun.model_services import (
     ImagePayload,
     PolicyObservation,
     PolicyResult,
 )
+from embodirun.robots import RobotAction, RobotObservation
+from embodirun.robots.sensors.cameras import CameraFrame
 
 POLICY_ACTION_SPACE = "pi05.action_chunk.v1"
 ACTION_DIMENSION = 7
@@ -37,18 +37,14 @@ class Pi05FrankaPandaMapper:
             step_id=step_id,
             instruction=instruction,
             state=dict(observation.values),
-            images=tuple(
-                ImagePayload(frame.name, frame.mime_type, frame.data)
-                for frame in frames
-            ),
+            images=tuple(ImagePayload(frame.name, frame.mime_type, frame.data) for frame in frames),
             metadata={"simulator_timestamp_s": observation.timestamp_s},
         )
 
     def map_result(self, result: PolicyResult) -> tuple[RobotAction, ...]:
         if result.action_space != self.policy_action_space:
             raise ValueError(
-                f"policy action_space mismatch: got {result.action_space!r}, "
-                f"expected {self.policy_action_space!r}"
+                f"policy action_space mismatch: got {result.action_space!r}, expected {self.policy_action_space!r}"
             )
         if len(result.actions) != 1 or result.actions[0].kind != "action_chunk":
             raise ValueError("Franka Panda expects one action_chunk")
@@ -60,10 +56,7 @@ class Pi05FrankaPandaMapper:
             if isinstance(raw_row, (str, bytes)) or not isinstance(raw_row, Sequence):
                 raise ValueError(f"action_chunk row {row_index} must be a sequence")
             if len(raw_row) != ACTION_DIMENSION:
-                raise ValueError(
-                    f"action_chunk row {row_index} must contain "
-                    f"{ACTION_DIMENSION} values"
-                )
+                raise ValueError(f"action_chunk row {row_index} must contain {ACTION_DIMENSION} values")
             row = tuple(_number(value) for value in raw_row)
             actions.append(
                 RobotAction(

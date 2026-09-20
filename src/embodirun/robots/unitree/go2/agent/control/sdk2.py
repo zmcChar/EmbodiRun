@@ -35,11 +35,7 @@ class UnitreeTransport(RobotTransport):
     ) -> None:
         # SDK imports stay inside live construction so importing the package
         # and running dry-run tests works on macOS and CI.
-        components = (
-            load_sdk_components(required_dds_lib_dir)
-            if _sdk_components is None
-            else _sdk_components
-        )
+        components = load_sdk_components(required_dds_lib_dir) if _sdk_components is None else _sdk_components
         self._state_store = SportModeStateStore()
         self._owner = SdkOwner(
             interface,

@@ -80,10 +80,7 @@ def start_services(context: DeploymentContext, wait_timeout_s: float) -> int:
     progress.message(f"{running}/{len(state.services)} services running")
     for service in sorted(state.services.values(), key=lambda item: item.service_id):
         if service.status == "running":
-            progress.message(
-                f"{service.service_id}: {service.endpoint} "
-                f"on {service.node} (PID {service.pid})"
-            )
+            progress.message(f"{service.service_id}: {service.endpoint} on {service.node} (PID {service.pid})")
     return 0
 
 
@@ -101,16 +98,12 @@ def _up(
         raise UpError("configuration changed since init; run init again")
     missing_nodes = set(context.config.nodes) - state.nodes.keys()
     if missing_nodes:
-        raise UpError(
-            "initialized state is missing nodes: " + ", ".join(sorted(missing_nodes))
-        )
+        raise UpError("initialized state is missing nodes: " + ", ".join(sorted(missing_nodes)))
 
     for service in context.deployment.services:
         environment = state.environments.get(service.environment_id)
         if environment is None or environment.status != "ready":
-            raise UpError(
-                f"environment {service.environment_id!r} is not ready; run init again"
-            )
+            raise UpError(f"environment {service.environment_id!r} is not ready; run init again")
 
     def start_node(node_id: str) -> NodeUpResult:
         try:
@@ -174,9 +167,7 @@ def _up_node(
                     check=False,
                 )
                 if available.exit_code != 0:
-                    raise UpError(
-                        f"service executable is missing or not executable: {executable}"
-                    )
+                    raise UpError(f"service executable is missing or not executable: {executable}")
                 progress.advance(node_id)
 
                 _write_generated_configs(
@@ -242,11 +233,7 @@ def services_by_node(
     context: DeploymentContext,
 ) -> dict[str, tuple[ServiceSpec, ...]]:
     return {
-        node_id: tuple(
-            service
-            for service in context.deployment.services
-            if service.node == node_id
-        )
+        node_id: tuple(service for service in context.deployment.services if service.node == node_id)
         for node_id in context.config.nodes
     }
 
@@ -266,10 +253,7 @@ def _wait_until_ready(
     while True:
         process = supervisor.status(service.service_id)
         if process.state != "running" or process.pid != pid:
-            raise UpError(
-                f"service {service.service_id!r} exited before becoming ready; "
-                f"log: {log}"
-            )
+            raise UpError(f"service {service.service_id!r} exited before becoming ready; log: {log}")
         remaining_s = deadline - time.monotonic()
         request_timeout_s = min(
             _HEALTH_REQUEST_TIMEOUT_S,
@@ -282,11 +266,7 @@ def _wait_until_ready(
                 service.health_endpoint,
                 timeout_s=request_timeout_s,
             )
-            ready = (
-                health.status == 200
-                and isinstance(health.payload, dict)
-                and health.payload.get("status") == "ok"
-            )
+            ready = health.status == 200 and isinstance(health.payload, dict) and health.payload.get("status") == "ok"
         except (OSError, RuntimeError, ValueError):
             ready = False
         if ready:
@@ -351,13 +331,9 @@ def _materialize_service(
     # The provider descriptor chooses the owning source project.  A managed
     # model may therefore run from Deploy (for a local optional integration)
     # or from the separate Inference checkout (for the VVLA service).
-    project = (
-        deploy_project if environment.project == "deploy" else node.inference_project
-    )
+    project = deploy_project if environment.project == "deploy" else node.inference_project
     if service.wireless_config_json is not None:
-        wireless_path = posixpath.join(
-            node.root, "generated", f"{service.service_id}.wireless.json"
-        )
+        wireless_path = posixpath.join(node.root, "generated", f"{service.service_id}.wireless.json")
         if service.kind == "model":
             argv[argv.index("--comm-config") + 1] = wireless_path
         for field_name, config_type in (
@@ -403,9 +379,7 @@ def _write_generated_configs(
 ) -> None:
     if service.wireless_config_json is not None:
         executor.write_text(
-            posixpath.join(
-                node.root, "generated", f"{service.service_id}.wireless.json"
-            ),
+            posixpath.join(node.root, "generated", f"{service.service_id}.wireless.json"),
             f"{service.wireless_config_json}\n",
             mode=0o600,
         )
@@ -439,9 +413,7 @@ def _configured_path(path: str, project_dir: str) -> str:
 
 
 def _node_error_summary(command: str, errors: dict[str, Exception]) -> str:
-    details = "; ".join(
-        f"{node_id}: {error}" for node_id, error in sorted(errors.items())
-    )
+    details = "; ".join(f"{node_id}: {error}" for node_id, error in sorted(errors.items()))
     return f"{command} failed on {len(errors)} node(s): {details}"
 
 

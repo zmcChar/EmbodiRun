@@ -8,7 +8,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
-
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
 
@@ -58,24 +57,19 @@ class UrllibHttpTransport:
                 payload = response.read(maximum_bytes + 1)
                 result = HttpResponse(
                     status=int(response.status),
-                    headers={
-                        key.lower(): value for key, value in response.headers.items()
-                    },
+                    headers={key.lower(): value for key, value in response.headers.items()},
                     body=payload,
                 )
         except urllib.error.HTTPError as error:
             detail = error.read(min(maximum_bytes, 16 * 1024))
             error.close()
             raise HttpTransportError(
-                f"{method} {url} returned HTTP {error.code}: "
-                f"{detail.decode('utf-8', errors='replace')}"
+                f"{method} {url} returned HTTP {error.code}: {detail.decode('utf-8', errors='replace')}"
             ) from error
         except (urllib.error.URLError, TimeoutError, OSError) as error:
             raise HttpTransportError(f"{method} {url} failed: {error}") from error
         if len(result.body) > maximum_bytes:
-            raise HttpTransportError(
-                f"{method} {url} response exceeded {maximum_bytes} bytes"
-            )
+            raise HttpTransportError(f"{method} {url} response exceeded {maximum_bytes} bytes")
         if not 200 <= result.status < 300:
             raise HttpTransportError(f"{method} {url} returned HTTP {result.status}")
         return result

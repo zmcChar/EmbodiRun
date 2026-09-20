@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
-from pathlib import Path
 import threading
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -108,9 +108,7 @@ def test_host_control_client_routes_and_identity_headers() -> None:
 
 def test_host_control_client_marks_lost_execute_reply_unknown_without_retry() -> None:
     executor = RecordingExecutor(
-        responder=lambda _method, _url, _payload, _headers: (_ for _ in ()).throw(
-            TimeoutError("socket timed out")
-        )
+        responder=lambda _method, _url, _payload, _headers: (_ for _ in ()).throw(TimeoutError("socket timed out"))
     )
     api = client(executor)
 
@@ -216,9 +214,7 @@ def test_host_control_client_uses_real_local_fake_http_boundary() -> None:
             received_headers.append(headers)
             length = int(self.headers["Content-Length"])
             body = json.loads(self.rfile.read(length))
-            response = api.dispatch(
-                "POST", self.path, body=body, headers=headers
-            )
+            response = api.dispatch("POST", self.path, body=body, headers=headers)
             _send_http_json(self, response.status, response.payload)
 
         def log_message(self, _format, *_args):
@@ -237,16 +233,22 @@ def test_host_control_client_uses_real_local_fake_http_boundary() -> None:
             session_id="session-http",
         )
         assert api_client.describe()["status"] == "ok"
-        assert api_client.execute(
-            request_id="job-http",
-            action={"timestamp_s": 0, "values": {"type": "stop"}},
-        )["request_id"] == "job-http"
+        assert (
+            api_client.execute(
+                request_id="job-http",
+                action={"timestamp_s": 0, "values": {"type": "stop"}},
+            )["request_id"]
+            == "job-http"
+        )
         assert api_client.inspect("job-http")["status"] == "completed"
-        assert api_client.media(
-            "host:123:obs-1",
-            runtime_id="fake-device",
-            include_data=True,
-        )["observation_id"] == "host:123:obs-1"
+        assert (
+            api_client.media(
+                "host:123:obs-1",
+                runtime_id="fake-device",
+                include_data=True,
+            )["observation_id"]
+            == "host:123:obs-1"
+        )
         assert api_client.recording_get("host:123:obs-1")["recorded"] is True
     finally:
         server.shutdown()
@@ -255,14 +257,8 @@ def test_host_control_client_uses_real_local_fake_http_boundary() -> None:
         application.close()
 
     assert received_headers
-    assert all(
-        headers.get("X-Rlinf-Caller-Id") == "caller-http"
-        for headers in received_headers
-    )
-    assert all(
-        headers.get("X-Rlinf-Session-Id") == "session-http"
-        for headers in received_headers
-    )
+    assert all(headers.get("X-Rlinf-Caller-Id") == "caller-http" for headers in received_headers)
+    assert all(headers.get("X-Rlinf-Session-Id") == "session-http" for headers in received_headers)
 
 
 def test_json_execute_command_emits_only_result_and_keeps_original_id(
@@ -313,9 +309,7 @@ def test_json_execute_command_emits_only_result_and_keeps_original_id(
     assert executor.calls[0][2]["request_id"] == "job-cli"
 
 
-def test_json_execute_timeout_has_distinct_exit_and_no_retry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_json_execute_timeout_has_distinct_exit_and_no_retry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     context, executor = _fake_context(tmp_path, timeout=True)
     action_path = tmp_path / "action.json"
     action_path.write_text('{"timestamp_s": 0, "values": {"type": "stop"}}')
@@ -422,9 +416,7 @@ def _fake_context(tmp_path: Path, *, timeout: bool = False):
     )
     if timeout:
         executor = RecordingExecutor(
-            responder=lambda _method, _url, _payload, _headers: (_ for _ in ()).throw(
-                TimeoutError("socket timed out")
-            )
+            responder=lambda _method, _url, _payload, _headers: (_ for _ in ()).throw(TimeoutError("socket timed out"))
         )
     else:
         executor = RecordingExecutor()

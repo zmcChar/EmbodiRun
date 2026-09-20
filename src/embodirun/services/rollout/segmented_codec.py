@@ -32,9 +32,7 @@ class SegmentedCodec:
         size = len(header) + len(table) + len(encoded.manifest) + sum(lengths)
         if size > self.config.max_message_bytes:
             raise ValueError("segmented message exceeds configured byte limit")
-        return b"".join(
-            [header, table, encoded.manifest, *(part.view for part in encoded.segments)]
-        )
+        return b"".join([header, table, encoded.manifest, *(part.view for part in encoded.segments)])
 
     def decode(self, raw):
         from wireless_comm.codec import BufferSegment, EncodedPayload

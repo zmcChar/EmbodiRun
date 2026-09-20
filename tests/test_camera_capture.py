@@ -12,6 +12,7 @@ from urllib.request import ProxyHandler, Request, build_opener
 
 import pytest
 
+from embodirun.robots.sensors.cameras import RawCameraFrame
 from embodirun.services.rollout.camera_capture import (
     ObservationStore,
     make_handler,
@@ -19,7 +20,6 @@ from embodirun.services.rollout.camera_capture import (
     video_device,
 )
 from embodirun.services.rollout.camera_source import CameraObservationSource
-from embodirun.robots.sensors.cameras import RawCameraFrame
 
 
 def test_capture_rejects_non_video_device_before_opening():
@@ -113,11 +113,7 @@ def test_recorded_source_detects_changed_inputs_and_live_source_checks_freshness
                 capture_finished_monotonic_s=time.monotonic(),
                 acquisition={
                     "backend": "gstreamer-cpu",
-                    "frames": {
-                        "front": {
-                            "sample_time_monotonic_estimate_s": time.monotonic() - 5
-                        }
-                    },
+                    "frames": {"front": {"sample_time_monotonic_estimate_s": time.monotonic() - 5}},
                 },
             )
         with pytest.raises(ValueError, match="stale pipeline timestamp"):
@@ -156,9 +152,7 @@ def test_raw_and_png_decode_to_identical_pixels_and_reject_bad_metadata():
     source = object.__new__(CameraObservationSource)
     source.state_dim, source.image_size = 6, 11
     assert source._decode(packet) == source._decode(png)
-    assert (
-        source._decode(packet)["images"]["front"] == pixels.resize((11, 11)).tobytes()
-    )
+    assert source._decode(packet)["images"]["front"] == pixels.resize((11, 11)).tobytes()
     for change in (
         {"width": 8},
         {"height": True},
@@ -170,21 +164,17 @@ def test_raw_and_png_decode_to_identical_pixels_and_reject_bad_metadata():
         with pytest.raises(ValueError, match="raw camera image layout"):
             source._decode(damaged)
     damaged = copy.deepcopy(packet)
-    damaged["images"]["front"].update(
-        data=b"short", sha256=hashlib.sha256(b"short").hexdigest()
-    )
+    damaged["images"]["front"].update(data=b"short", sha256=hashlib.sha256(b"short").hexdigest())
     with pytest.raises(ValueError, match="raw camera image layout"):
         source._decode(damaged)
 
 
 @pytest.mark.parametrize("backend", ["opencv-v4l2", "gstreamer-cpu"])
-def test_raw_capture_cli_records_raw_files_and_cleans_up_without_robot(
-    tmp_path, monkeypatch, backend
-):
+def test_raw_capture_cli_records_raw_files_and_cleans_up_without_robot(tmp_path, monkeypatch, backend):
+    from embodirun.robots.sensors.cameras import gstreamer
+    from embodirun.robots.sensors.cameras.v4l2 import camera
     from embodirun.services.rollout import camera_capture
     from embodirun.services.rollout.camera_shm import SharedCameraStore
-    from embodirun.robots.sensors.cameras.v4l2 import camera
-    from embodirun.robots.sensors.cameras import gstreamer
 
     raw = RawCameraFrame("front", 4, 4, bytes(range(48)))
     closed = []
@@ -233,10 +223,7 @@ def test_raw_capture_cli_records_raw_files_and_cleans_up_without_robot(
     assert metadata["motor_access"] is False
     assert metadata["frame_format"] == "raw-bgr8"
     assert metadata["acquisition_backend"] == backend
-    stages = [
-        json.loads(row)
-        for row in (args.output / "capture-stages.jsonl").read_text().splitlines()
-    ]
+    stages = [json.loads(row) for row in (args.output / "capture-stages.jsonl").read_text().splitlines()]
     assert stages and stages[0]["image_payload_bytes"] == 48
     assert stages[0]["backend"] == backend
     assert stages[0]["capture_s"] >= 0 and stages[0]["shm_publish_s"] >= 0

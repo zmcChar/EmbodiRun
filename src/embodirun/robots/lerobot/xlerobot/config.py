@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -20,13 +20,18 @@ class XLeRobotConfig:
     robot_id: str = "xlerobot"
 
     @classmethod
-    def from_mapping(cls, robot_id: str, value: Mapping[str, Any]) -> "XLeRobotConfig":
+    def from_mapping(cls, robot_id: str, value: Mapping[str, Any]) -> XLeRobotConfig:
         options = dict(value)
         unknown = sorted(set(options) - {"url", "token", "scope", "timeout_s"})
         if unknown:
             raise ValueError("unknown XLeRobot configuration fields: " + ", ".join(unknown))
-        return cls(robot_id=robot_id, url=options.get("url"), token=options.get("token"),
-                   scope=options.get("scope", "arms"), timeout_s=options.get("timeout_s", 2.0))
+        return cls(
+            robot_id=robot_id,
+            url=options.get("url"),
+            token=options.get("token"),
+            scope=options.get("scope", "arms"),
+            timeout_s=options.get("timeout_s", 2.0),
+        )
 
     def __post_init__(self) -> None:
         parsed = urlparse(self.url) if isinstance(self.url, str) else None
@@ -38,5 +43,10 @@ class XLeRobotConfig:
             raise ValueError("XLeRobot scope must be 'arms' or 'base'")
         if not isinstance(self.robot_id, str) or not self.robot_id.strip():
             raise ValueError("robot_id must not be empty")
-        if isinstance(self.timeout_s, bool) or not isinstance(self.timeout_s, (int, float)) or not math.isfinite(self.timeout_s) or self.timeout_s <= 0:
+        if (
+            isinstance(self.timeout_s, bool)
+            or not isinstance(self.timeout_s, (int, float))
+            or not math.isfinite(self.timeout_s)
+            or self.timeout_s <= 0
+        ):
             raise ValueError("timeout_s must be positive")

@@ -4,7 +4,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from embodirun_xlerobot_owner import dualsense_drive
 from embodirun_xlerobot_owner.dualsense_drive import (
     TETHERED_MAX_HOLD_S,
@@ -32,8 +31,8 @@ def full_report(bluetooth=True):
     report = bytearray(78 if bluetooth else 64)
     report[0] = 0x31 if bluetooth else 1
     offset = 2 if bluetooth else 1
-    report[offset:offset + 10] = bytes([128, 0, 255, 127, 0, 255, 42, 8, 2, 0])
-    report[offset + 27:offset + 31] = (123456).to_bytes(4, "little")
+    report[offset : offset + 10] = bytes([128, 0, 255, 127, 0, 255, 42, 8, 2, 0])
+    report[offset + 27 : offset + 31] = (123456).to_bytes(4, "little")
     if bluetooth:
         report[-4:] = zlib.crc32(b"\xa1" + report[:-4]).to_bytes(4, "little")
     return bytes(report)
@@ -118,8 +117,9 @@ def test_input_flood_rejected(monkeypatch):
 
 
 def test_linux_enumeration_only_selects_exact_dualsense_vid_pid(tmp_path):
-    for i, hid_id in enumerate(("0005:0000054C:00000CE6", "0003:0000054C:00000CE6",
-                                "0005:0000054C:00000DF2", "invalid")):
+    for i, hid_id in enumerate(
+        ("0005:0000054C:00000CE6", "0003:0000054C:00000CE6", "0005:0000054C:00000DF2", "invalid")
+    ):
         node = tmp_path / f"hidraw{i}" / "device"
         node.mkdir(parents=True)
         (node / "uevent").write_text(f"HID_ID={hid_id}\nHID_NAME=DualSense\n")
@@ -141,8 +141,13 @@ def sample(buttons=(), sticks=(0, 0, 0, 0)):
 
 
 def metadata(**changes):
-    return {"allow_motion": True, "enable_base": True, "control_scopes": ["arms", "base"],
-            "base_velocity_limits": {"linear_m_s": 0.15, "angular_deg_s": 30}, **changes}
+    return {
+        "allow_motion": True,
+        "enable_base": True,
+        "control_scopes": ["arms", "base"],
+        "base_velocity_limits": {"linear_m_s": 0.15, "angular_deg_s": 30},
+        **changes,
+    }
 
 
 def test_startup_requires_release_then_neutral_r1_edge():
@@ -177,13 +182,16 @@ def test_moving_stick_cannot_enable():
     assert mapper.update(sample(["r1"]))[0]
 
 
-@pytest.mark.parametrize("sticks,expected", [
-    ((0, -1, 0, 0), {"x.vel": 0.05, "theta.vel": 0}),
-    ((0, 1, 0, 0), {"x.vel": -0.05, "theta.vel": 0}),
-    ((0, 0, -1, 0), {"x.vel": 0, "theta.vel": 10}),
-    ((0, 0, 1, 0), {"x.vel": 0, "theta.vel": -10}),
-    ((0, -0.5, 0.25, 0), {"x.vel": 0.025, "theta.vel": -2.5}),
-])
+@pytest.mark.parametrize(
+    "sticks,expected",
+    [
+        ((0, -1, 0, 0), {"x.vel": 0.05, "theta.vel": 0}),
+        ((0, 1, 0, 0), {"x.vel": -0.05, "theta.vel": 0}),
+        ((0, 0, -1, 0), {"x.vel": 0, "theta.vel": 10}),
+        ((0, 0, 1, 0), {"x.vel": 0, "theta.vel": -10}),
+        ((0, -0.5, 0.25, 0), {"x.vel": 0.025, "theta.vel": -2.5}),
+    ],
+)
 def test_axes_signs_analog_speed_and_release(sticks, expected):
     mapper = DriveMapping(metadata())
     assert mapper.update(sample(["r1"], sticks))[1] == expected
@@ -209,12 +217,17 @@ def test_speed_changes_only_on_stopped_dpad_edges_and_respects_hardware_limits()
     assert mapper.level == 3
 
 
-@pytest.mark.parametrize("changes", [
-    {"allow_motion": False}, {"enable_base": False}, {"control_scopes": ["arms"]},
-    {"base_velocity_limits": {}},
-    {"base_velocity_limits": {"linear_m_s": float("nan"), "angular_deg_s": 30}},
-    {"base_velocity_limits": {"linear_m_s": True, "angular_deg_s": 30}},
-])
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"allow_motion": False},
+        {"enable_base": False},
+        {"control_scopes": ["arms"]},
+        {"base_velocity_limits": {}},
+        {"base_velocity_limits": {"linear_m_s": float("nan"), "angular_deg_s": 30}},
+        {"base_velocity_limits": {"linear_m_s": True, "angular_deg_s": 30}},
+    ],
+)
 def test_invalid_or_disabled_service_cannot_control(changes):
     with pytest.raises((TypeError, ValueError, RuntimeError)):
         DriveMapping(metadata(**changes))
@@ -243,8 +256,7 @@ class FakeRobot:
 
     def stop(self):
         self.takeovers += 1
-        return {"scope": "base", "stop_confirmed": self.stop_confirmed,
-                "errors": list(self.stop_errors)}
+        return {"scope": "base", "stop_confirmed": self.stop_confirmed, "errors": list(self.stop_errors)}
 
 
 def test_explicit_takeover_preempts_base_only_and_requires_confirmation():
@@ -345,8 +357,9 @@ def test_run_takeover_preempts_once_and_tethered_hold_requires_repress(monkeypat
     assert robot.arm_calls == 2
     assert robot.stops == 2
     assert robot.actions
-    assert all(abs(action["x.vel"]) <= TETHERED_MAX_LINEAR_M_S
-               and action["theta.vel"] == 0.0 for action in robot.actions)
+    assert all(
+        abs(action["x.vel"]) <= TETHERED_MAX_LINEAR_M_S and action["theta.vel"] == 0.0 for action in robot.actions
+    )
 
 
 def test_session_stop_without_ownership_does_not_stop_keyboard_or_arm():
@@ -383,20 +396,28 @@ def test_session_commands_require_enable_and_confirmed_stop():
         session.stop()
 
 
-@pytest.mark.parametrize("feedback", [
-    {}, {"accepted": False}, {"accepted": True, "applied_action": {"x.vel": 0}},
-    {"accepted": True, "applied_action": {"x.vel": float("nan"), "theta.vel": 0}},
-    {"accepted": True, "applied_action": {**ZERO, "left_arm_shoulder_pan.pos": 0}},
-])
+@pytest.mark.parametrize(
+    "feedback",
+    [
+        {},
+        {"accepted": False},
+        {"accepted": True, "applied_action": {"x.vel": 0}},
+        {"accepted": True, "applied_action": {"x.vel": float("nan"), "theta.vel": 0}},
+        {"accepted": True, "applied_action": {**ZERO, "left_arm_shoulder_pan.pos": 0}},
+    ],
+)
 def test_command_rejection_missing_ack_and_arm_targets_rejected(feedback):
     with pytest.raises(RuntimeError):
         check_feedback(feedback)
 
 
 def test_camera_tilt_is_right_y_and_does_not_change_turn_axis():
-    head = HeadTiltMapping(metadata(
-        head_tilt={"joint": "head_motor_2.pos", "scope": "base", "max_speed_deg_s": 15,
-                   "up_sign": 1}, joint_limits={"head_motor_2.pos": [-40, 40]}))
+    head = HeadTiltMapping(
+        metadata(
+            head_tilt={"joint": "head_motor_2.pos", "scope": "base", "max_speed_deg_s": 15, "up_sign": 1},
+            joint_limits={"head_motor_2.pos": [-40, 40]},
+        )
+    )
     head.reset({"held_positions": {"head_motor_2.pos": 20}})
     moving = sample(["r1"], (0, 0, 0.5, -1))
     assert head.action(moving, 0.05) == {"head_motor_2.pos": 20.75}

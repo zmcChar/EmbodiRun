@@ -104,10 +104,7 @@ def test_invalid_pytorch_index_fails_before_writing(tmp_path: Path) -> None:
         home=tmp_path,
     )
     assert result.returncode == 2
-    assert (
-        "--pytorch-index must be auto, default, or an HTTP(S) URL"
-        in result.stderr
-    )
+    assert "--pytorch-index must be auto, default, or an HTTP(S) URL" in result.stderr
 
 
 def test_recreate_rejects_environment_root(tmp_path: Path) -> None:

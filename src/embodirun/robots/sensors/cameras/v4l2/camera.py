@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import math
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from ..camera import CameraFrame
 
@@ -58,9 +58,7 @@ class V4L2CameraSource:
             try:
                 import cv2 as cv2_module
             except ImportError as error:
-                raise CameraError(
-                    "V4L2 capture requires OpenCV in the robot environment"
-                ) from error
+                raise CameraError("V4L2 capture requires OpenCV in the robot environment") from error
         self._cv2 = cv2_module
         # Age/freshness uses the owner-local monotonic domain.  This value is
         # not comparable with another node's monotonic clock and is labelled
@@ -76,18 +74,14 @@ class V4L2CameraSource:
                 capture = cv2_module.VideoCapture(camera.device, cv2_module.CAP_V4L2)
                 self._captures.append(capture)
                 if not capture.isOpened():
-                    raise CameraError(
-                        f"camera {camera.name!r} cannot open {camera.device!r}"
-                    )
+                    raise CameraError(f"camera {camera.name!r} cannot open {camera.device!r}")
                 if camera.input_format is not None:
                     fourcc = "MJPG" if camera.input_format == "mjpeg" else "YUYV"
                     if not capture.set(
                         cv2_module.CAP_PROP_FOURCC,
                         cv2_module.VideoWriter_fourcc(*fourcc),
                     ):
-                        raise CameraError(
-                            f"camera {camera.name!r} rejected input format {fourcc}"
-                        )
+                        raise CameraError(f"camera {camera.name!r} rejected input format {fourcc}")
                 capture.set(cv2_module.CAP_PROP_FRAME_WIDTH, camera.width)
                 capture.set(cv2_module.CAP_PROP_FRAME_HEIGHT, camera.height)
                 capture.set(cv2_module.CAP_PROP_FPS, camera.fps)
@@ -135,9 +129,7 @@ class V4L2CameraSource:
                 [int(self._cv2.IMWRITE_JPEG_QUALITY), 90],
             )
             if not encoded:
-                raise CameraError(
-                    f"camera {camera.name!r} frame could not be JPEG encoded"
-                )
+                raise CameraError(f"camera {camera.name!r} frame could not be JPEG encoded")
             images.append(
                 CameraFrame(
                     name=camera.name,
@@ -155,9 +147,7 @@ class V4L2CameraSource:
         return tuple(images)
 
     def _capture_frames(self) -> tuple[Any, ...]:
-        return tuple(
-            frame for frame, _timestamp in self._capture_frames_with_timestamps()
-        )
+        return tuple(frame for frame, _timestamp in self._capture_frames_with_timestamps())
 
     def _capture_frames_with_timestamps(self) -> tuple[tuple[Any, int], ...]:
         for camera, capture in zip(self._cameras, self._captures):
@@ -171,8 +161,7 @@ class V4L2CameraSource:
             height, width = frame.shape[:2]
             if (width, height) != (camera.width, camera.height):
                 raise CameraError(
-                    f"camera {camera.name!r} returned {width}x{height}; "
-                    f"expected {camera.width}x{camera.height}"
+                    f"camera {camera.name!r} returned {width}x{height}; expected {camera.width}x{camera.height}"
                 )
             # OpenCV exposes no portable exposure timestamp.  Record the
             # host read boundary before any JPEG encoding or subscriber work.
@@ -182,9 +171,7 @@ class V4L2CameraSource:
     def _now_ns(self) -> int:
         value = self._clock_ns()
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-            raise CameraError(
-                "camera clock must return a non-negative integer nanosecond value"
-            )
+            raise CameraError("camera clock must return a non-negative integer nanosecond value")
         return value
 
     def _actual_profile(

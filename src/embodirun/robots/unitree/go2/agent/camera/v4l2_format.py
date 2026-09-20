@@ -62,9 +62,7 @@ def validated_v4l2_format(
         "size_image",
     ):
         if getattr(actual, field) != getattr(expected, field):
-            mismatches.append(
-                f"{field}={getattr(actual, field)} (expected {getattr(expected, field)})"
-            )
+            mismatches.append(f"{field}={getattr(actual, field)} (expected {getattr(expected, field)})")
     if mismatches:
         raise CameraStreamError("unsafe V4L2 format negotiation: {}".format("; ".join(mismatches)))
     return actual

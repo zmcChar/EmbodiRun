@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import posixpath
@@ -81,9 +82,7 @@ class ServiceSupervisor:
         environment = dict(service.command.environment)
         existing = environment.get(_IDENTITY_ENVIRONMENT)
         if existing is not None and existing != service.service_id:
-            raise SupervisorError(
-                f"service command overrides reserved variable {_IDENTITY_ENVIRONMENT}"
-            )
+            raise SupervisorError(f"service command overrides reserved variable {_IDENTITY_ENVIRONMENT}")
         environment[_IDENTITY_ENVIRONMENT] = service.service_id
         request = json.dumps(
             {
@@ -94,9 +93,7 @@ class ServiceSupervisor:
             allow_nan=False,
             separators=(",", ":"),
         )
-        result = self.executor.run(
-            self._command("start", service.service_id, stdin=f"{request}\n")
-        )
+        result = self.executor.run(self._command("start", service.service_id, stdin=f"{request}\n"))
         return _parse_status(result.stdout, log=self._log_path(service.service_id))
 
     def status(self, service_id: str) -> ProcessStatus:
@@ -251,9 +248,7 @@ def _agent_start(
         _terminate_process_group(process.pid)
         pid_file.unlink(missing_ok=True)
         identity_file.unlink(missing_ok=True)
-        raise SupervisorError(
-            "service exited immediately or its process identity could not be verified"
-        )
+        raise SupervisorError("service exited immediately or its process identity could not be verified")
     return status
 
 
@@ -272,17 +267,12 @@ def _read_start_request(
     argv = request.get("argv")
     cwd = request.get("cwd")
     environment = request.get("environment")
-    if (
-        not isinstance(argv, list)
-        or not argv
-        or any(not isinstance(value, str) or not value for value in argv)
-    ):
+    if not isinstance(argv, list) or not argv or any(not isinstance(value, str) or not value for value in argv):
         raise SupervisorError("service argv must be a non-empty string array")
     if cwd is not None and (not isinstance(cwd, str) or not cwd):
         raise SupervisorError("service cwd must be null or a non-empty string")
     if not isinstance(environment, dict) or any(
-        not isinstance(name, str) or not isinstance(value, str)
-        for name, value in environment.items()
+        not isinstance(name, str) or not isinstance(value, str) for name, value in environment.items()
     ):
         raise SupervisorError("service environment must contain string pairs")
     if environment.get(_IDENTITY_ENVIRONMENT) != service_id:
@@ -315,9 +305,7 @@ def _agent_status(service_id: str, *, pid_file: Path) -> ProcessStatus:
     current_identity = _process_identity(pid)
     if recorded_identity is not None and recorded_identity != current_identity:
         return ProcessStatus("pid-reused", pid)
-    if recorded_identity is None and not _process_has_environment_identity(
-        pid, service_id
-    ):
+    if recorded_identity is None and not _process_has_environment_identity(pid, service_id):
         return ProcessStatus("pid-reused", pid)
     return ProcessStatus("running", pid)
 
@@ -395,10 +383,8 @@ def _terminate_process_group(pid: int) -> None:
     while _process_exists(pid) and time.monotonic() < deadline:
         time.sleep(0.1)
     if _process_exists(pid):
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
 
 
 def _write_private_text(path: Path, content: str) -> None:
@@ -411,10 +397,8 @@ def _write_private_text(path: Path, content: str) -> None:
         os.chmod(temporary, 0o600)
         os.replace(temporary, path)
     finally:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(temporary)
-        except FileNotFoundError:
-            pass
 
 
 __all__ = ["ProcessStatus", "ServiceSupervisor", "SupervisorError"]
