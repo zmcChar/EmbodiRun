@@ -36,7 +36,7 @@ to "Tested — real robot".
 | External inference service | `lifecycle: external` model entries | Tested — software | `configs/examples/external.yaml` |
 | Multi-node shared inference | Config, control arbitration, benchmark | Tested — software benchmark | `configs/http-wireless-inference/` |
 | WirelessComm transport | Client, server config generation | Experimental, needs a separately installed transport | `configs/http-wireless-inference/wireless.yaml` |
-| RPent agent adapter | Public-client session | Experimental, software only | `agents/rpent/README.md` |
+| RPent agent adapter | Public-client session in `agents/rpent` | Experimental, software only; RPent-side robot registration is owned by the RPent project | `agents/rpent/README.md` |
 | Astra + π0.5 review loop | Cooperative loop with an injectable reviewer | Experimental, mock reviewer | `agents/astra_pi05/README.md` |
 | XLeRobot external owner | Optional integration package | Experimental, separately installed | `integrations/xlerobot_owner/README.md` |
 | LightNav-0 + XLeRobot (remote HTTP) | Binding, remote robot client, local segment, teleop | Experimental, software | `docs/lightnav0_xlerobot.md` |

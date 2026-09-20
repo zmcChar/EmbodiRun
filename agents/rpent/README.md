@@ -4,6 +4,15 @@ RPent remains the owner of task planning, skill selection, and business success.
 This package provides a small public-client session adapter for that caller; it
 does not port the old robot runtime or become a second device owner.
 
+**Ownership boundary.** EmbodiRun does not modify the RPent repository. RPent
+resolves robots from its own top-level `robots/<name>/` packages (each exporting
+`get_robot_spec` and `get_toolkit`), so the RPent-side `RobotSpec`/`Toolkit`
+registration belongs to the RPent project or to the deployment owner. This
+package is the integration contract and reference implementation that
+RPent-side code consumes; it never imports RPent modules and never owns a
+device. The `PublicCooperativeSession` ordering, the Astra decision seam, and
+the SO-101 correction mapper can be reused directly by the RPent-side adapter.
+
 The prototype lives in the separate RPent-deploy-integration repository.  Use
 the repository's configured remote and checkout instructions to inspect its
 current files; this package deliberately does not depend on a workstation
