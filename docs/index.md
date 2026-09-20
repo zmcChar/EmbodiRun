@@ -68,25 +68,21 @@ an independent engine and can also be used on its own.
 
 ## How it fits together
 
-```text
-              model / agent
-                    │
-                    ▼
-   ┌────────────────────────────────┐
-   │           EmbodiRun            │
-   │  configuration · coordination  │
-   │  control authority · safety    │
-   └───────┬────────────────┬───────┘
-           │                │
-           ▼                ▼
-   ┌───────────────┐  ┌──────────────┐
-   │  EmbodiInfer  │  │  transport   │
-   │  HTTP /       │  │  HTTP or     │
-   │  WirelessComm │  │  WirelessComm│
-   └───────────────┘  └──────┬───────┘
-                             │
-                             ▼
-                    robot or simulator
+```mermaid
+flowchart TB
+  agent["Agent / application"]
+  subgraph embodirun["EmbodiRun"]
+    runtime["Deployment · Application · Devices<br/>configuration, coordination, arbitration, recording, safety"]
+    services["Model services<br/>versioned inference contracts"]
+  end
+  engine["EmbodiInfer, or an external backend such as SGLang"]
+  robot["robot or simulator"]
+
+  agent -- "observe · propose · execute · inspect · cancel · stop" --> runtime
+  runtime --> services
+  services -- "HTTP or WirelessComm" --> engine
+  runtime -- "validated actions" --> robot
+  robot -- "observations" --> runtime
 ```
 
 ## Status

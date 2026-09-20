@@ -80,7 +80,14 @@ markdown_extensions:
   - toc:
       permalink: true
   - pymdownx.highlight
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      # Material bundles the Mermaid runtime and initialises it for any page
+      # that contains a `mermaid` block, so no extra_javascript is needed.
+      # Diagrams then follow the palette and the light/dark toggle.
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.details
