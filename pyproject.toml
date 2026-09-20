@@ -50,7 +50,7 @@ sglang = [
 # require private access; install the transport separately (see
 # docs/installation.md). Once public, replace the empty list with the pinned
 # HTTPS requirement and re-lock.
-wireless = []
+wireless = ["wireless-comm @ git+https://github.com/BUAA-CI-LAB/WirelessComm@v0.1.0"]
 
 [dependency-groups]
 dev = [

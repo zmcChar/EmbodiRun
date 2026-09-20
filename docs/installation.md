@@ -77,15 +77,15 @@ Two helpers cover the common cases:
 | Extra | Contents |
 |---|---|
 | `sglang` | SGLang diffusion serving (Linux, Python 3.12+, glibc >= 2.34) |
-| `wireless` | Marker for the optional WirelessComm data plane (empty) |
+| `wireless` | WirelessComm data plane, pinned to its released tag |
 
-`wireless` installs nothing today. WirelessComm is published separately at
-[`BUAA-CI-LAB/WirelessComm`](https://github.com/BUAA-CI-LAB/WirelessComm) and
-is not on a package index yet, so the extra stays a marker and you install the
-released tag into the node environment yourself:
+The extra pins
+[`BUAA-CI-LAB/WirelessComm`](https://github.com/BUAA-CI-LAB/WirelessComm)
+to `v0.1.0`. It is not on a package index yet, so the requirement is a Git
+URL:
 
 ```bash
-uv pip install "wireless-comm @ git+https://github.com/BUAA-CI-LAB/WirelessComm@v0.1.0"
+uv sync --frozen --extra wireless
 ```
 
 Then select the transport in the deployment YAML
