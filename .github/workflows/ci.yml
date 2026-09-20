@@ -30,11 +30,6 @@ jobs:
       - name: Sync the locked environment
         run: uv sync --frozen
 
-      - name: Lint
-        run: |
-          uv run --frozen ruff check src tests
-          uv run --frozen ruff format --check src tests
-
       - name: Run the CPU test suite
         run: uv run --frozen pytest -q
 
@@ -42,6 +37,28 @@ jobs:
         run: |
           uv run --frozen embodirun --help
           uv run --frozen python -c "import embodirun, embodirun.client, embodirun.application, embodirun.deployment, embodirun.devices, embodirun.model_services"
+
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.12.x"
+          enable-cache: true
+
+      # The dev group alone: ruff and pytest, without the accelerator stack.
+      - name: Install the lint tooling
+        run: uv sync --frozen --only-group dev --no-install-project
+
+      - name: Check
+        run: |
+          .venv/bin/ruff check src tests
+          .venv/bin/ruff format --check src tests
 
   docs:
     name: Docs (strict)
