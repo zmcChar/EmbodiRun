@@ -19,3 +19,7 @@ checkpoints/
 site/
 .tools/
 .os-review/
+
+# Logo working files: only the main logo is tracked, variants stay local.
+assets/*
+!assets/embodirun-logo.png

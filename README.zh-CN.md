@@ -1,4 +1,6 @@
-# EmbodiRun
+<p align="center">
+  <img src="assets/embodirun-logo.png" alt="EmbodiRun" width="440">
+</p>
 
 [English](README.md) | **简体中文**
 
