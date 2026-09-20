@@ -51,12 +51,14 @@ nav:
       - Support matrix: support-matrix.md
   - Integrating:
       - Inference API v1: http_api.md
+      - Agent execution workflow: agent-workflow.md
       - RPent integration: rpent-integration.md
       - π0.5 with two SO-101: pi05-bi-so101.md
   - Concepts:
       - Architecture: architecture.md
   - Experiments:
       - Overview: experiments.md
+      - Inference transport: inference-transport.md
       - Camera-only capture: camera-only-experiments.md
       - Transport candidates: transport-experiments.md
       - LightNav-0 with XLeRobot: lightnav0_xlerobot.md

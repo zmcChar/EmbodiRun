@@ -12,7 +12,7 @@ build/
 dist/
 artifacts/
 benchmarks/snapshots/
-benchmarks/http-wireless-inference-benchmark/reports/
+benchmarks/inference-transport/reports/
 checkpoints/
 
 # Local scratch and documentation build output

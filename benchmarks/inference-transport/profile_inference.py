@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from dataclasses import replace
 import functools
 import importlib.util
 import json
-from pathlib import Path
 import sys
 import threading
 import time
+from dataclasses import replace
+from pathlib import Path
 
 
 class AdapterProfile:
@@ -55,9 +55,17 @@ class AdapterProfile:
             try:
                 result = original_infer(request)
                 elapsed = (time.perf_counter_ns() - start) / 1e6
-                exclusive = sum(record[key] for key in (
-                    "profile_lock_wait_ms", "profile_state_ms", "profile_images_ms",
-                    "profile_prepare_ms", "profile_engine_wall_ms", "profile_restore_ms"))
+                exclusive = sum(
+                    record[key]
+                    for key in (
+                        "profile_lock_wait_ms",
+                        "profile_state_ms",
+                        "profile_images_ms",
+                        "profile_prepare_ms",
+                        "profile_engine_wall_ms",
+                        "profile_restore_ms",
+                    )
+                )
                 record["profile_adapter_other_ms"] = elapsed - exclusive
                 record["profile_adapter_wall_ms"] = elapsed
                 return replace(result, timing={**result.timing, **record})
@@ -97,11 +105,12 @@ def event(kind, **values):
 
 
 def serve(args):
+    import os
+
     from vvla.engine.serve.factory import build_serving_adapter
     from vvla.engine.serve.http_server import PolicyHttpService, create_http_server
     from vvla.engine.serve.service import PolicyService
     from vvla.engine.serve.wireless_server import _run
-    import os
 
     adapter = build_serving_adapter(args)
     profiler = AdapterProfile(adapter)
@@ -119,6 +128,7 @@ def serve(args):
             server.server_close()
             thread.join(timeout=10)
         else:
+
             async def finish():
                 if not server.done():
                     server.cancel()
@@ -149,9 +159,11 @@ def serve(args):
                     raise ValueError("stop the previous transport before starting another")
                 protocol = command["transport"]
                 if protocol == "http":
-                    server = create_http_server(PolicyHttpService(
-                        adapter, token=None, max_body_bytes=64 * 1024 * 1024),
-                        host=args.host, port=args.port)
+                    server = create_http_server(
+                        PolicyHttpService(adapter, token=None, max_body_bytes=64 * 1024 * 1024),
+                        host=args.host,
+                        port=args.port,
+                    )
                     thread = threading.Thread(target=server.serve_forever, daemon=True)
                     thread.start()
                     active = (protocol, server, thread, None)
@@ -187,8 +199,12 @@ def report_summary(report):
     rows = [row for client in report["clients"] for row in client["samples"]]
     if not rows or any(row["status"] != "ok" for row in rows):
         raise ValueError("report contains missing or failed requests")
-    result = {"transport": report["transport"], "requests": len(rows),
-              "clients": len(report["clients"]), "aggregate_calls_per_s": report["aggregate_calls_per_s"]}
+    result = {
+        "transport": report["transport"],
+        "requests": len(rows),
+        "clients": len(report["clients"]),
+        "aggregate_calls_per_s": report["aggregate_calls_per_s"],
+    }
     measures = {"e2e_ms": [], "client_mapping_ms": [], "rpc_outside_policy_ms": []}
     keys = set(rows[0]["server_timing_ms"])
     measures.update({key: [] for key in keys})
@@ -217,7 +233,7 @@ def analyze(args):
         summaries.append(summary)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x") as handle:
-        json.dump({"schema": "rlinf.so101.profile.v1", "reports": summaries}, handle, indent=2, allow_nan=False)
+        json.dump({"schema": "embodirun.so101.profile.v1", "reports": summaries}, handle, indent=2, allow_nan=False)
         handle.write("\n")
     for summary in summaries:
         print(summary["report"], json.dumps({key: value["mean"] for key, value in summary["timing_ms"].items()}))
@@ -238,8 +254,16 @@ def main():
     server.add_argument("--num-steps", type=int, default=10)
     server.add_argument("--host", default="0.0.0.0")
     server.add_argument("--port", type=int, default=8000)
-    server.set_defaults(policy="pi05", max_batch=1, no_cuda_graph=False, capture_full_loop=True,
-                        token=None, max_images=8, max_image_bytes=16 * 1024 * 1024, max_in_flight=64)
+    server.set_defaults(
+        policy="pi05",
+        max_batch=1,
+        no_cuda_graph=False,
+        capture_full_loop=True,
+        token=None,
+        max_images=8,
+        max_image_bytes=16 * 1024 * 1024,
+        max_in_flight=64,
+    )
     args = parser.parse_args()
     if args.command == "serve":
         serve(args)
