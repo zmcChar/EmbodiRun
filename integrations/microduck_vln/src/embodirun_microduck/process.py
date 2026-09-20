@@ -8,7 +8,7 @@ import sys
 import time
 from contextlib import contextmanager
 
-from embodirun.model_services.backends.vvla.http import VvlaHttpClient
+from embodirun.model_services.backends.vvla.http import VvlaHttpClient, VvlaHttpError
 
 from .protocol import ACTION_SPACE, IMAGE_FIELD
 
@@ -41,21 +41,46 @@ def managed_service(args, output):
         process = subprocess.Popen(command, env=env, stdout=log, stderr=subprocess.STDOUT)
         try:
             deadline = time.monotonic() + args.startup_timeout
-            while not ready.exists():
+            client = None
+            last_error = None
+
+            def remaining():
                 if process.poll() is not None:
-                    raise RuntimeError(f"Inference exited ({process.returncode}); see {output / 'inference.log'}")
-                if time.monotonic() >= deadline:
-                    raise TimeoutError(f"Inference startup timed out; see {output / 'inference.log'}")
-                time.sleep(0.2)
-            address = json.loads(ready.read_text(encoding="utf-8"))
-            if address["pid"] != process.pid:
-                raise RuntimeError("Readiness file belongs to a different process")
-            client = VvlaHttpClient(f"http://127.0.0.1:{address['port']}", token=token, timeout_s=args.request_timeout)
-            if client.health().get("status") != "ok":
-                raise RuntimeError("Inference health check failed")
-            capabilities = client.capabilities().get("adapter", {})
-            if capabilities.get("action_space") != ACTION_SPACE or capabilities.get("image_fields") != [IMAGE_FIELD]:
-                raise RuntimeError("Inference capabilities do not match the MicroDuck binding")
+                    raise RuntimeError(
+                        f"Inference exited ({process.returncode}); see {output / 'inference.log'}"
+                    ) from last_error
+                seconds = deadline - time.monotonic()
+                if seconds <= 0:
+                    raise TimeoutError(f"Inference startup timed out; see {output / 'inference.log'}") from last_error
+                return seconds
+
+            while True:
+                remaining()
+                if client is None and ready.exists():
+                    # The atomic file announces the bound port, not a responsive server.
+                    address = json.loads(ready.read_text(encoding="utf-8"))
+                    if address["pid"] != process.pid:
+                        raise RuntimeError("Readiness file belongs to a different process")
+                    client = VvlaHttpClient(
+                        f"http://127.0.0.1:{address['port']}", token=token, timeout_s=args.request_timeout
+                    )
+                if client is not None:
+                    try:
+                        client.timeout_s = min(1.0, args.request_timeout, remaining())
+                        if client.health().get("status") == "ok":
+                            client.timeout_s = min(1.0, args.request_timeout, remaining())
+                            capabilities = client.capabilities().get("adapter", {})
+                            if capabilities.get("action_space") != ACTION_SPACE or capabilities.get("image_fields") != [
+                                IMAGE_FIELD
+                            ]:
+                                raise RuntimeError("Inference capabilities do not match the MicroDuck binding")
+                            remaining()
+                            client.timeout_s = args.request_timeout
+                            break
+                        last_error = RuntimeError("Inference health check failed")
+                    except VvlaHttpError as error:
+                        last_error = error
+                time.sleep(min(0.2, remaining()))
             yield client
         finally:
             if process.poll() is None:

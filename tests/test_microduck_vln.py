@@ -7,11 +7,13 @@ import os
 import subprocess
 import sys
 import tempfile
+import textwrap
 import threading
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 from PIL import Image
@@ -239,6 +241,18 @@ class ExecutionTests(unittest.TestCase):
 
 
 class ProcessLifecycleTests(unittest.TestCase):
+    def service_args(self, timeout=5.0, request_timeout=1.0):
+        return SimpleNamespace(
+            inference_root=Path("."),
+            checkpoint=Path("."),
+            seed=7,
+            max_new_tokens=8,
+            max_context=1024,
+            sample=False,
+            startup_timeout=timeout,
+            request_timeout=request_timeout,
+        )
+
     def launch_failure(self, code, timeout):
         children = []
         original = subprocess.Popen
@@ -248,16 +262,7 @@ class ProcessLifecycleTests(unittest.TestCase):
             children.append(child)
             return child
 
-        args = SimpleNamespace(
-            inference_root=Path("."),
-            checkpoint=Path("."),
-            seed=7,
-            max_new_tokens=8,
-            max_context=1024,
-            sample=False,
-            startup_timeout=timeout,
-            request_timeout=1.0,
-        )
+        args = self.service_args(timeout)
         with (
             tempfile.TemporaryDirectory() as folder,
             patch("embodirun_microduck.process.subprocess.Popen", side_effect=launch),
@@ -273,6 +278,169 @@ class ProcessLifecycleTests(unittest.TestCase):
 
     def test_startup_timeout_terminates_child(self):
         self.launch_failure("import time; time.sleep(30)", 0.05)
+
+    def test_bound_server_waits_for_failed_probe_before_serving(self):
+        # A real listening socket deterministically reproduces publication before
+        # serve_forever: the child cannot answer until the first probe times out.
+        code = textwrap.dedent("""
+            import json, os, sys, time
+            from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+            from pathlib import Path
+
+            ready = Path(sys.argv[1])
+            allow_serving = ready.with_suffix('.allow')
+
+            class Handler(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    if self.headers.get('Authorization') != 'Bearer ' + os.environ['MICRODUCK_SERVICE_TOKEN']:
+                        self.send_error(401)
+                        return
+                    payload = ({'status': 'ok'} if self.path == '/healthz' else
+                               {'adapter': {'action_space': sys.argv[2], 'image_fields': [sys.argv[3]]}})
+                    body = json.dumps(payload).encode()
+                    self.send_response(200)
+                    self.send_header('Content-Length', str(len(body)))
+                    self.end_headers()
+                    try:
+                        self.wfile.write(body)
+                    except OSError:
+                        pass  # The first probe has already timed out.
+
+            server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+            temporary = ready.with_suffix('.tmp')
+            temporary.write_text(json.dumps({'pid': os.getpid(), 'port': server.server_port}))
+            temporary.replace(ready)
+            while not allow_serving.exists():
+                time.sleep(0.01)
+            server.serve_forever()
+        """)
+        children = []
+        failed_probes = []
+        original = subprocess.Popen
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder)
+
+            def launch(command, **kwargs):
+                ready = command[command.index("--ready-file") + 1]
+                # Windows venv launchers delegate to another PID; this stdlib-only
+                # fixture uses the underlying interpreter to match production Linux.
+                python = getattr(sys, "_base_executable", sys.executable)
+                child = original([python, "-c", code, ready, ACTION_SPACE, IMAGE_FIELD], **kwargs)
+                children.append(child)
+                return child
+
+            class ProbeClient(VvlaHttpClient):
+                def health(self):
+                    try:
+                        return super().health()
+                    except VvlaHttpError as error:
+                        failed_probes.append(error)
+                        (output / "service.ready.allow").touch()
+                        raise
+
+            with (
+                patch("embodirun_microduck.process.subprocess.Popen", side_effect=launch),
+                patch("embodirun_microduck.process.VvlaHttpClient", ProbeClient),
+                managed_service(self.service_args(timeout=10.0, request_timeout=0.1), output) as client,
+            ):
+                self.assertTrue(failed_probes)
+                self.assertEqual(client.health()["status"], "ok")
+                self.assertEqual(client.capabilities()["adapter"]["action_space"], ACTION_SPACE)
+            self.assertFalse((output / "service.ready.json").exists())
+        self.assertEqual(len(children), 1)
+        self.assertIsNotNone(children[0].poll())
+
+    @contextmanager
+    def startup_probes(self):
+        # Virtual time keeps deadline and process-exit checks deterministic.
+        clock = SimpleNamespace(now=0.0)
+        process = Mock(pid=1234, returncode=None)
+        process.poll.side_effect = lambda: process.returncode
+        process.terminate.side_effect = lambda: setattr(process, "returncode", -15)
+        client = Mock(timeout_s=120.0)
+        client.health.return_value = {"status": "ok"}
+        client.capabilities.return_value = {"adapter": {"action_space": ACTION_SPACE, "image_fields": [IMAGE_FIELD]}}
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder)
+            ready = output / "service.ready.json"
+            ready.write_text(json.dumps({"pid": process.pid, "port": 8000}))
+            with (
+                patch("embodirun_microduck.process.subprocess.Popen", return_value=process),
+                patch("embodirun_microduck.process.VvlaHttpClient", return_value=client),
+                patch("embodirun_microduck.process.time.monotonic", side_effect=lambda: clock.now),
+                patch(
+                    "embodirun_microduck.process.time.sleep",
+                    side_effect=lambda seconds: setattr(clock, "now", clock.now + seconds),
+                ),
+            ):
+                yield output, client, process, clock
+            self.assertFalse(ready.exists())
+            self.assertIsNotNone(process.poll())
+
+    def test_retries_unhealthy_status_and_capabilities_transport_failure(self):
+        with self.startup_probes() as (output, client, process, clock):
+            client.health.side_effect = [{"status": "starting"}, {"status": "ok"}, {"status": "ok"}]
+            client.capabilities.side_effect = [
+                VvlaHttpError("temporarily unavailable"),
+                client.capabilities.return_value,
+            ]
+            with managed_service(self.service_args(request_timeout=120.0), output) as result:
+                self.assertIs(result, client)
+                self.assertEqual(client.timeout_s, 120.0)
+                self.assertEqual(client.health.call_count, 3)
+                self.assertEqual(client.capabilities.call_count, 2)
+                self.assertAlmostEqual(clock.now, 0.4)
+            process.terminate.assert_called_once()
+
+    def test_startup_deadline_bounds_health_and_capabilities(self):
+        for endpoint in ("health", "capabilities"):
+            with self.subTest(endpoint=endpoint), self.startup_probes() as (output, client, process, clock):
+                timeouts = []
+
+                def fail_probe(timeouts=timeouts, client=client, clock=clock):
+                    timeouts.append(client.timeout_s)
+                    clock.now += client.timeout_s
+                    raise VvlaHttpError("probe timed out")
+
+                getattr(client, endpoint).side_effect = fail_probe
+                with (
+                    self.assertRaisesRegex(TimeoutError, "startup timed out") as caught,
+                    managed_service(self.service_args(timeout=1.5, request_timeout=120.0), output),
+                ):
+                    self.fail("A non-responsive server must not become ready")
+                self.assertEqual(timeouts[0], 1.0)
+                self.assertAlmostEqual(timeouts[1], 0.3)
+                self.assertAlmostEqual(clock.now, 1.5)
+                self.assertIsInstance(caught.exception.__cause__, VvlaHttpError)
+                process.terminate.assert_called_once()
+
+    def test_child_exit_during_health_probe_fails_without_waiting_for_deadline(self):
+        with self.startup_probes() as (output, client, process, clock):
+
+            def exit_during_probe():
+                process.returncode = 3
+                raise VvlaHttpError("connection reset")
+
+            client.health.side_effect = exit_during_probe
+            with (
+                self.assertRaisesRegex(RuntimeError, r"Inference exited \(3\)"),
+                managed_service(self.service_args(), output),
+            ):
+                self.fail("An exited service must not become ready")
+            self.assertEqual(clock.now, 0.0)
+            process.terminate.assert_not_called()
+
+    def test_capability_mismatch_is_not_retried(self):
+        with self.startup_probes() as (output, client, process, clock):
+            client.capabilities.return_value = {"adapter": {"action_space": "wrong-binding"}}
+            with (
+                self.assertRaisesRegex(RuntimeError, "capabilities do not match"),
+                managed_service(self.service_args(), output),
+            ):
+                self.fail("An incompatible service must not become ready")
+            client.capabilities.assert_called_once()
+            self.assertEqual(clock.now, 0.0)
+            process.terminate.assert_called_once()
 
 
 class PublicEntrypointTests(unittest.TestCase):
