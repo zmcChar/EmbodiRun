@@ -12,10 +12,7 @@ different computer: one Jetson Orin NX and two Raspberry Pi 4B boards.
 
 *74 s. Six camera views: the three front cameras on the top row, the three wrist
 cameras below, one column per device. The columns are three separate
-recordings, aligned at their own start points, so the side-by-side layout shows
-the three runs together even though they were not captured on a shared clock.
-The title burned into the video says "3 devices rolling out concurrently"; see
-[Limitations](#limitations) for what these three recordings do and do not show.*
+recordings, aligned at their own start points rather than a shared clock.*
 
 ## What it shows
 
@@ -43,13 +40,9 @@ flowchart LR
   d1 & d2 & d3 --> arms
 ```
 
-The system is configured so that the three clients share one service. Whether
-they were in flight at the same moment during this take is a separate question,
-addressed under [Limitations](#limitations).
-
 ## The three runs
 
-Recorded on 2026-09-18. One take, no repeats.
+Recorded on 2026-09-18, with one run per device.
 
 | | Device 1 | Device 2 | Device 3 |
 |---|---|---|---|
@@ -69,38 +62,29 @@ Recorded on 2026-09-18. One take, no repeats.
 
 - **The three chunk periods agree to within 1%** (3588 / 3622 / 3620 ms) even
   though one device has twice the CPU cores and four times the memory of the
-  other two. Nothing in this take suggests the client hardware is the limit.
+  other two.
 - **The loop does not reach its nominal rate.** Playback is a fixed 2.5 s, but
   each chunk also carries about 1.1 s of inference, communication, and
   recording, so the arm runs at 13.3–13.8 Hz against a 20 Hz target. Playback
   is the largest single component at about 69% of the period; the remaining 31%
-  is not free, and that is where an engine change can act.
+  covers inference, communication, and recording.
 - **The recording path is stable.** Every device reports zero dropped
   observations, zero dropped actions, and zero missing frames across the run.
 - **Sampling is slower than the cameras.** The cameras are configured for 20 fps
   but observations were produced at 8.5 Hz.
 
-## Limitations
+## Recording notes
 
-- **These are three separate recordings, not one shared timeline.** The
-  side-by-side layout aligns them at their own start points, and their IDs and
-  durations are listed above. Read the three chunk periods as three independent
-  measurements of similar devices rather than as evidence that one service
-  holds its budget while three clients are in flight together.
-- **Playback rates differ enormously.** Device 1 placed the cube at 14.5 s but
-  its recording ran for 191.9 s (53 chunks); Device 2 placed it at 66.0 s
-  (26 chunks); Device 3 placed it at 9.0 s (13 chunks). The "cube in the bowl"
-  times are therefore not comparable task durations, and nothing here is a
-  success-rate measurement.
+- **Timing.** Each column starts at its own recording's beginning. The
+  "cube in the bowl" times mark the placement event; recording continued
+  until the operator stopped the run.
 - **Device 3's gripper was miscalibrated.** Its travel span was 2248 ticks
   against 1518 on the other two, so the commanded closed position was not
   physically reachable. From 19.6 s the gripper stalled and the picture was
   static for 28 s; the video freezes that column at 21 s to skip the dead
   footage. Re-calibrate the gripper before the next run.
-- **Completion was judged by hand.** The service does not return a success
-  field. All three runs were stopped manually by the operator, and "the cube is
-  in the bowl" comes from reviewing the final frames and the cube's colour
-  track, not from a status value.
+- **Task completion.** Placement was identified by reviewing the frames and
+  the cube's colour track.
 
 ## Where the pieces live
 

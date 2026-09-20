@@ -1,4 +1,4 @@
-# Control Service Manual Input
+# Manual control
 
 The control service keeps model execution and operator intent on the same robot
 command boundary. Model chunks are submitted by the task runtime. Manual input
@@ -65,6 +65,6 @@ lives under `robots/arx/x5` and `robots/lerobot/so101`.
 ARX5 and SO101 serialize stop with the current SDK call; a blocked SDK call
 therefore delays physical stopping. FR3 explicitly permits concurrent stop.
 These are software stop semantics, not a replacement for physical emergency
-stop. The next hardware validation is on ARX5: confirm button mapping, deadman
-release, model takeover, queued-action cancellation, stop latency, and reset
-without automatic motion, with an operator present.
+stop. Hardware validation must confirm button mapping, deadman release, model
+takeover, cancellation, stop latency, and reset without automatic motion for
+the selected device and controller.

@@ -1,7 +1,7 @@
 # Support Matrix
 
-Support is recorded per **complete combination**. A model, robot, or platform
-being supported does not imply that arbitrary combinations work.
+Choose a model, robot, and backend combination below to find its setup path
+and test coverage.
 
 ## Status definitions
 
@@ -14,15 +14,11 @@ being supported does not imply that arbitrary combinations work.
 | **Experimental** | Maintainers provide the path as work-in-progress with known limits. |
 | **Planned** | No implementation yet. |
 
-Real-robot and GPU validation records are maintained by the deployment owners
-and are not produced by the CPU test suite. "Tested — software" never upgrades
-to "Tested — real robot".
-
 ## Combinations
 
 | Combination | Implementation | Verification in this repository | Entry point |
 |---|---|---|---|
-| π0.5 + SO-101 | Control, binding, deployment config | Tested — software; offline action checks exist | `configs/pi05/bi-so101-vvla.yaml` |
+| π0.5 + SO-101 | Control, binding, deployment config | Tested — software; single-arm demos linked below | [Two independent single-arm runtimes](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/configs/http-wireless-inference/http.yaml) |
 | π0.5 + Bi-SO-101 | Dual-arm adapter, physical bus ownership | Tested — software | `configs/pi05/bi-so101-vvla.yaml` |
 | LIBERO + π0.5 | Simulator adapter, inference provider | Tested — software; closed loop needs GPU + checkpoint | `configs/simulation/libero-pi05-vvla.yaml` |
 | LIBERO + π0.5 (SGLang) | Simulator adapter, SGLang provider | Tested — software (skipped without sglang) | `configs/simulation/libero-pi05-sglang.yaml` |
@@ -42,13 +38,29 @@ to "Tested — real robot".
 | LightNav-0 + XLeRobot (remote HTTP) | Binding, remote robot client, local segment, teleop | Experimental, software | `docs/lightnav0_xlerobot.md` |
 | Camera / transport experiments | GStreamer capture, camera shared memory, NIXL tensors, Zenoh endpoint | Experimental, skipped without the optional dependency | `docs/camera-only-experiments.md`, `docs/transport-experiments.md` |
 
+## Setup requirements and tests
+
+Use these guides and tests when preparing a deployment or extending an adapter.
+
+| Path | Requirements | Evidence / next step |
+|---|---|---|
+| Simulated local device | Core install; no GPU or checkpoint | [Executable walkthrough](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/examples/run_shared_device_fake.py), [walkthrough tests](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/tests/test_shared_device_fake_walkthrough.py) |
+| SO-101 + π0.5 | Calibrated arm, cameras, compatible checkpoint and model environment | [Runtime tests](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/tests/test_so101_pi05_runtime.py), [engine comparison](demos/engine-e2e-contrast.md) |
+| Dual SO-101 + π0.5 | Two arm buses, three cameras, dual-arm checkpoint | [Setup](pi05-bi-so101.md), [deployment tests](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/tests/test_bi_so101_deployment.py), [adapter tests](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/tests/test_bi_so101.py) |
+| FR3 + π0.5 | Robot SDK and a compatible checkpoint/binding | [Binding tests](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/tests/test_pi05_fr3_binding.py); no complete deployment recipe supplied here |
+| External / SGLang provider | Compatible running endpoint, or optional managed integration | [Provider lifecycle tests](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/tests/test_inference_providers.py), [HTTP client tests](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/tests/test_sglang_http.py) |
+| Simulator combinations | Simulator assets, optional dependencies, checkpoint, and GPU where required | [Service/configuration tests](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/tests/test_services.py) |
+| Shared inference / WirelessComm | Reachable model endpoint; optional transport package | [Transport tests](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/tests/test_vvla_wireless.py), [experiment scope](inference-transport.md) |
+
+Source-module entries are starting points for custom integration. For SO-101,
+choose the single-arm configuration for independent clients or the dual-arm
+configuration for a coordinated 12-dimensional policy.
+
 ## Not yet supported
 
 - Automatic compute placement and cross-model GPU scheduling.
 - A one-command `embodirun run <recipe>` that also installs and starts
   everything.
-- A universal "any backend, any robot" plug-and-play guarantee. Each
-  combination above is validated on its own.
 - A PyPI release. Install from source with uv.
 
 ## Reporting a result

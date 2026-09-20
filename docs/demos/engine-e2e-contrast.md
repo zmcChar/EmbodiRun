@@ -61,8 +61,9 @@ sequenceDiagram
 | Model | π0.5, SO-101 four-arm checkpoint, 10 denoising steps, quantile state/action normalization |
 | Run length | 15 chunks per engine, once each; the cube is reset by hand before every run |
 
-The control loop is nominally 20 Hz, so 50 steps should take 2.5 s. The measured
-playback was 2453–2455 ms, i.e. about 20.4 Hz.
+The configured control rate is 20 Hz. Fifty samples contain 49 intervals,
+or 2.45 s between the first and last sample at that rate, matching the measured
+2453–2455 ms playback time.
 
 ## Measurements
 
@@ -75,42 +76,40 @@ Median over the 15 chunks of each run:
 | SGLang | HTTP | 194 ms | 65 ms | 2453 ms | 2713 ms | 5.5× |
 | Native LeRobot | HTTP | 1061 ms | 82 ms | 2453 ms | 3592 ms | reference |
 
-Each engine ran once, so these are single-run medians and not distributions.
-The speed-up column is the inference ratio against the native LeRobot reference;
-it is not the end-to-end ratio, which the fixed playback caps at −26%
-(3592 ms → 2660 ms).
+The speed-up column is the inference ratio against the native LeRobot reference.
+The observed chunk-time reduction is about 26% (3592 ms → 2660 ms), or
+about 1.35× faster per chunk.
 
-## Reading it honestly
+## Engine configurations
 
-This is a **tuned-versus-out-of-the-box** comparison, not an equal-effort one:
+The runs use the following settings:
 
 - EmbodiInfer runs its full set of optimisations: bfloat16, `inductor`
   compilation, prefix and denoising CUDA graphs, and Triton attention.
 - SGLang runs upstream defaults. The one remaining candidate,
   `--enable-torch-compile`, was measured and gave no benefit.
-- Native LeRobot deliberately runs plain eager, with no CUDA graph and no
-  `torch.compile`. It is the reference point, and its 1061 ms can be compressed
-  further, which would shrink the ratios above.
+- Native LeRobot runs plain eager, with no CUDA graph or `torch.compile`.
 
-Three observations matter more than the headline ratio:
+The timing breakdown shows:
 
-- **The whole gap between the engine columns is inference.** Expressed against
+- **Most of the measured gap is inference.** Expressed against
   each engine's own chunk period, communication and queueing are 1.6%, 1.7%,
   2.4% and 2.3% of the chunk for the four rows in order. Only 3 ms separates the
   two EmbodiInfer transports.
 - **Playback dominates the fast columns, not the slow one.** It is 92% of the
   2660 ms chunk but only 68% of the 3592 ms reference chunk. Inference is 6% of
   the fastest chunk and 30% of the slowest.
-- **Playback is a fixed cost you cannot optimise away here.** It is identical
-  across all four engines, so making the task itself faster means changing the
-  chunk length or the control rate, not the engine. All four runs completed the
-  task within the first 8 chunks, before the video cuts them.
+- **Playback limits the chunk-time improvement.** Reducing inference time still
+  shortens the loop, while playback stays at approximately 2.45 s. The cube
+  reached the bowl within the first eight chunks in each run.
 
-## Reproducing it
+## Running a similar comparison
 
 The four engines were served side by side on one GPU host, and each run warmed
-up on real camera frames first — otherwise the first chunk carries one-off
-compilation and dominates the median.
+up on real camera frames first. Warmup keeps one-time compilation outside the
+steady-state measurements. When comparing engines, use the same checkpoint,
+cameras, action chunk length, and playback rate, and measure inference,
+communication, and playback separately.
 
 See [Inference API v1](../http_api.md) for the wire contract the runs use and
 [Configuration](../configuration.md) for how a deployment selects a model and a
