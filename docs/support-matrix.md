@@ -28,6 +28,7 @@ to "Tested — real robot".
 | LIBERO + π0.5 (SGLang) | Simulator adapter, SGLang provider | Tested — software (skipped without sglang) | `configs/simulation/libero-pi05-sglang.yaml` |
 | VLABench + π0.5 | Simulator adapter | Experimental | `configs/simulation/vlabench-pi05-vvla.yaml` |
 | Habitat + StreamVLN | Simulator adapter | Experimental | `configs/simulation/habitat-streamvln-vvla.yaml` |
+| MicroDuck MuJoCo + ActiveVLN SFT-v3 | Optional simulation and HTTP service integration | Experimental; CPU regression tests, public-source GPU profile not revalidated | [MicroDuck VLN](microduck-vln.md) |
 | Isaac Sim + StreamVLN | Simulator adapter | Experimental (NVIDIA Isaac Sim EULA) | `configs/simulation/isaac-streamvln-vvla.yaml` |
 | Franka FR3 + π0.5 | Robot adapter, binding | Tested — software | `src/embodirun/robots/franka/fr3` |
 | ARX5 + DM05 | Robot adapter, binding | Experimental (vendor motor driver required) | `src/embodirun/bindings/arx/x5/dm05` |

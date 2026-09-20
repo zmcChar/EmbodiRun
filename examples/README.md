@@ -1,5 +1,9 @@
 # Local simulated device example
 
+For **MicroDuck navigation in MuJoCo with ActiveVLN inference**, see the
+[MicroDuck VLN recipe](microduck_vln/README.md). It includes external asset
+preparation, GPU/Slurm launch, episode recording and evaluation commands.
+
 For **real VVLA inference with recorded images and simulated execution**, see
 [the shared-device inference walkthrough](shared-device-inference.md).
 

@@ -51,6 +51,8 @@ uv run embodirun --config examples/shared-device-fake.yaml down
 
 [`examples/README.md`](examples/README.md) 完整演示了观测、媒体、执行和录制。
 
+[MicroDuck VLN 示例](docs/microduck-vln.md) 在 MuJoCo 中调用真实策略推理，提供一键入口、可选 Slurm 申请、视频和逐集指标；运行前需另行准备仿真资产与检查点。
+
 ### 在机器人上运行
 
 从 [`configs/`](configs) 复制一份配置，替换设备路径、标定参数、检查点和节点地址，然后执行：
@@ -101,6 +103,7 @@ EmbodiInfer, or an external backend such as SGLang
 | π0.5 + SO-101 / Bi-SO-101 | 已测试——软件（CPU 测试套件、离线动作检查） |
 | LIBERO + π0.5 | 已测试——软件；闭环需要 GPU 和检查点 |
 | VLABench + π0.5、Habitat 或 Isaac Sim + StreamVLN | 实验性 |
+| MicroDuck MuJoCo + ActiveVLN | 实验性；含 CPU 回归测试，完整运行需 GPU 与外部资产 |
 | 多节点共享推理 | 已测试——软件基准 |
 | RPent 和 Astra 智能体适配器、XLeRobot owner、LightNav-0 | 实验性，仅限软件 |
 

@@ -48,6 +48,16 @@ See the vendor terms before use.
 Isaac Sim is distributed under NVIDIA's own license, not an open-source
 license. Review it before installing the `sim-isaac` group.
 
+The separately installed `integrations/microduck_vln` package declares NumPy,
+Pillow, MuJoCo, ONNX Runtime, CasADi and imageio-ffmpeg. Its optional service
+extra adds PyTorch/torchvision, Transformers, tokenizers, huggingface-hub,
+safetensors, einops and accelerate. These distributions are not vendored;
+their own license files and third-party notices apply, including those for any
+FFmpeg executable supplied by imageio-ffmpeg. The external `vln_mujoco` backend,
+scene/robot assets, walking ONNX policy and SFT-v3 weights must be supplied
+separately. See the [recipe](examples/microduck_vln/README.md) for the boundary
+and the integration's `pyproject.toml` for dependency versions.
+
 ## Inference backend dependencies
 
 | Package | License | Notes |

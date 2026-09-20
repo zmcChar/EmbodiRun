@@ -68,6 +68,10 @@ uv run embodirun --config examples/shared-device-fake.yaml down
 [`examples/README.md`](examples/README.md) walks through observation, media,
 execution, and recording.
 
+For real policy inference in MuJoCo, the [MicroDuck VLN example](docs/microduck-vln.md)
+provides a one-command launcher, optional Slurm allocation, videos and episode
+metrics. It requires separately provisioned simulation assets and a checkpoint.
+
 ### Run it on a robot
 
 Copy a configuration from [`configs/`](configs), replace the device paths,
@@ -130,6 +134,7 @@ platform does not imply that arbitrary combinations work.
 | π0.5 + SO-101 / Bi-SO-101 | Tested — software (CPU suite, offline action checks) |
 | LIBERO + π0.5 | Tested — software; closed loop needs a GPU and a checkpoint |
 | VLABench + π0.5, Habitat or Isaac Sim + StreamVLN | Experimental |
+| MicroDuck MuJoCo + ActiveVLN | Experimental; CPU regression tests, external GPU/assets required |
 | Multi-node shared inference | Tested — software benchmark |
 | RPent and Astra agent adapters, XLeRobot owner, LightNav-0 | Experimental, software only |
 

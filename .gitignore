@@ -14,6 +14,9 @@ artifacts/
 benchmarks/snapshots/
 benchmarks/http-wireless-inference-benchmark/reports/
 checkpoints/
+.venv-microduck/
+examples/microduck_vln/config.env
+examples/microduck_vln/*.local.json
 
 # Local scratch and documentation build output
 site/
