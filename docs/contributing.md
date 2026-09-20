@@ -29,7 +29,13 @@ install the matching group, for example
 
 ## Before opening a pull request
 
-1. Run `uv run pytest -q` and make sure it passes.
+1. Run the checks and make sure they pass:
+
+   ```bash
+   uv run ruff check src tests
+   uv run ruff format --check src tests
+   uv run pytest -q
+   ```
 2. Keep the process boundaries intact:
     - `client`, `deployment`, `application`, `devices`, `model_services` are the
       canonical domains; `services.*` stays a compatibility layer.
