@@ -64,6 +64,7 @@ nav:
       - Camera-only capture: camera-only-experiments.md
       - Transport candidates: transport-experiments.md
       - LightNav-0 with XLeRobot: lightnav0_xlerobot.md
+      - XLeRobot snack delivery recipe: xlerobot-snack-delivery.md
   - Reference:
       - Python API: api.md
   - Demos:

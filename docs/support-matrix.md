@@ -39,8 +39,32 @@ to "Tested — real robot".
 | RPent agent adapter | Public-client contract in `agents/rpent`; reference robot in the RPent fork | Experimental, software only; RPent-side registration is owned by the RPent project | `agents/rpent/README.md`, `BUAA-CI-LAB/RPent:embodirun-integration` |
 | Astra + π0.5 review loop | Cooperative loop with an injectable reviewer | Experimental, mock reviewer | `agents/astra_pi05/README.md` |
 | XLeRobot external owner | Optional integration package | Experimental, separately installed | `integrations/xlerobot_owner/README.md` |
+| XLeRobot snack delivery recipe | RPent/Astra review loop, π0.5 proposal, two scoped Control services, external owner | Experimental, software only; fixture and fake-owner HTTP paths are tested | `recipes/xlerobot/snack_delivery/README.md`, [recipe guide](xlerobot-snack-delivery.md) |
 | LightNav-0 + XLeRobot (remote HTTP) | Binding, remote robot client, local segment, teleop | Experimental, software | `docs/lightnav0_xlerobot.md` |
 | Camera / transport experiments | GStreamer capture, camera shared memory, NIXL tensors, Zenoh endpoint | Experimental, skipped without the optional dependency | `docs/camera-only-experiments.md`, `docs/transport-experiments.md` |
+
+### XLeRobot snack delivery recipe verification
+
+The recipe's repository-level verification uses Python 3.12, the checked-in
+recipe configuration, fixture routes, a fake external owner over local HTTP,
+and an injected policy result. It uses no robot hardware, model checkpoint,
+private route, or Astra credential. The exact commands are:
+
+```bash
+PYTHONPATH=src:$PWD python -m pytest -q \
+  tests/test_xlerobot_external_owner.py \
+  tests/test_control_live_observe.py \
+  tests/test_execute_runtime_scope.py \
+  tests/test_rpent_snack.py \
+  tests/test_snack_delivery_recipe.py \
+  tests/test_snack_http_integration.py
+scripts/recipes/xlerobot_snack.sh plan
+scripts/recipes/xlerobot_snack.sh dry-run
+```
+
+The observed result for this change is **77 passed** for the targeted tests;
+the plan and dry-run both complete. This is software-interface evidence only
+and does not establish a real-robot task result.
 
 ## Not yet supported
 

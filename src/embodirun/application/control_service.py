@@ -524,6 +524,11 @@ class ControlService:
             "runtime_ids": runtime_ids,
             "robot_id": self.config.robot_id,
             "robot_kind": self.config.robot_kind,
+            # External-owner recipes may bind separate Control services to
+            # one robot.  Expose the configured scope so a caller can verify
+            # that it is talking to the intended base or arm boundary before
+            # sending an action.
+            "control_scope": self.config.robot_options.get("scope"),
             "inference_enabled": self.config.inference_enabled,
             "binding": _binding_description(self.config),
             "devices": resources,

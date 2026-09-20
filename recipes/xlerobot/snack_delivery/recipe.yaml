@@ -1,0 +1,27 @@
+name: xlerobot.snack_delivery
+version: 0.1
+description: >-
+  Navigate from the handover station to the chips, ask the configured VLA
+  runtime for a grasp action, return to the handover point, extend the calibrated
+  right arm, loosen the gripper, and wait for a person to confirm receipt.
+entrypoint: run.py
+agent:
+  task_state: recipe state machine with explicit execution and sensor evidence
+  route_source: recorded demonstration or RPent-generated route diagram plan
+  grasp_policy: configured VLA runtime through POST /v1/propose
+  reviewer: RPent factory; default Astra scene decision before VLA observation
+hardware:
+  platform: xlerobot
+  base: mobile differential-drive base
+  arms: dual SO-101 arms
+  compute: AGX Orin or an equivalent Deploy host
+  cameras: front, left wrist, right wrist (owner-defined roles)
+control:
+  observation: embodirun.control.observation.v1
+  proposal: POST /v1/propose
+  execution: POST /v1/execute
+evidence:
+  - fresh observation for every action segment
+  - owner-reported base stop before manipulation
+  - sensor or explicitly labelled human grasp confirmation before return
+  - human confirmation after the handover

@@ -328,6 +328,7 @@ class ControlHTTPAPI:
             "action": payload["action"] if has_action else payload["actions"],
             "source": payload.get("source", "agent"),
             "observation_id": payload.get("observation_id"),
+            "runtime_id": payload.get("runtime_id"),
             "steps": payload.get("steps", 1),
             "control_hz": payload.get("control_hz"),
             "wait": _bool(payload.get("wait", "false")),

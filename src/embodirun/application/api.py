@@ -395,6 +395,7 @@ class ControlApplication:
         action: RobotAction | Mapping[str, Any] | Sequence[Any],
         source: CommandSource | str = CommandSource.AGENT,
         observation_id: str | None = None,
+        runtime_id: str | None = None,
         steps: int = 1,
         control_hz: float | None = None,
         wait: bool = False,
@@ -408,6 +409,8 @@ class ControlApplication:
         self._authorize(token, Role.CONTROLLER, caller_id=caller_id, session_id=session_id)
         if not isinstance(request_id, str) or not request_id.strip():
             raise ApplicationInvalidRequest("request_id must be a non-empty string")
+        if runtime_id is not None:
+            runtime_id = self._validate_runtime(runtime_id)
         action_values = _actions(action, steps=steps, max_steps=self.max_steps)
         frequency = self.default_control_hz if control_hz is None else control_hz
         _validate_hz(frequency)
@@ -425,6 +428,7 @@ class ControlApplication:
             source=source_value,
             control_hz=float(frequency),
             observation_id=observation_id,
+            runtime_id=runtime_id,
             selected_observation_id=None,
             parameters=parameters,
         )
@@ -453,6 +457,7 @@ class ControlApplication:
             source=source_value,
             control_hz=float(frequency),
             observation_id=observation_id,
+            runtime_id=runtime_id,
             selected_observation_id=selected_observation_id,
             parameters=parameters,
         )
@@ -496,6 +501,25 @@ class ControlApplication:
         if _canonical_identity(record.parameters) != _canonical_identity(requested_identity):
             raise JobConflict(f"request_id {request_id!r} already has different parameters")
         return record
+
+    def _validate_runtime(self, runtime_id: str) -> str:
+        """Refuse an execute request for a runtime this owner does not serve."""
+
+        if not isinstance(runtime_id, str) or not runtime_id.strip():
+            raise ApplicationInvalidRequest("runtime_id must be a non-empty string")
+        config = getattr(self.service, "config", None)
+        if config is None:
+            raise ApplicationUnsupported("control service does not expose its served runtime identities")
+        known: set[str] = set()
+        primary = getattr(config, "runtime_id", None)
+        if isinstance(primary, str) and primary:
+            known.add(primary)
+        profiles = getattr(config, "runtime_profiles", None)
+        if isinstance(profiles, Mapping):
+            known.update(str(name) for name in profiles)
+        if runtime_id not in known:
+            raise ApplicationInvalidRequest(f"runtime {runtime_id!r} is not served by this control service")
+        return runtime_id
 
     def inspect(
         self,
@@ -769,6 +793,42 @@ class ControlApplication:
         # ``observation_id`` while retaining the old field for compatibility.
         if "observation_id" not in payload and isinstance(payload.get("snapshot_id"), str):
             payload["observation_id"] = payload["snapshot_id"]
+        # The live service path returns the current immutable snapshot but
+        # historically omitted the application-level freshness fields that
+        # are present when an observation ID is supplied.  Resolve that same
+        # snapshot here so every Agent-facing observe response has one
+        # freshness contract; never infer freshness from HTTP receipt time.
+        payload.setdefault("observation_id", None)
+        observation_id = payload.get("observation_id")
+        if isinstance(observation_id, str) and "fresh" not in payload:
+            try:
+                snapshot = self._snapshot(observation_id)
+            except ApplicationStaleObservation:
+                snapshot = None
+            if snapshot is not None:
+                age_ns, fresh = self._freshness(
+                    snapshot,
+                    max_age_ns=None,
+                    max_skew_ns=None,
+                    required=False,
+                )
+                payload["age_ns"] = age_ns
+                payload["fresh"] = fresh
+                payload["freshness"] = "fresh" if fresh else "stale"
+                if not fresh:
+                    payload["freshness_reason"] = "snapshot is stale or timing is unknown"
+            else:
+                payload["age_ns"] = None
+                payload["fresh"] = False
+                payload["freshness"] = "unknown"
+                payload["freshness_reason"] = "live observation is not retained in the shared store"
+        elif "fresh" not in payload:
+            # A service that cannot publish a shared snapshot must never be
+            # treated as fresh merely because its HTTP request succeeded.
+            payload["age_ns"] = None
+            payload["fresh"] = False
+            payload["freshness"] = "unknown"
+            payload["freshness_reason"] = "service returned no shared observation identity"
         return payload
 
     def _authorize(
@@ -908,6 +968,7 @@ def _identity_parameters(
     source: CommandSource,
     control_hz: float,
     observation_id: str | None,
+    runtime_id: str | None,
     selected_observation_id: str | None,
     parameters: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
@@ -925,6 +986,7 @@ def _identity_parameters(
         "control_hz": control_hz,
         "observation_id": observation_id,
         "observation_id_explicit": observation_id is not None,
+        "runtime_id": runtime_id,
         "selected_observation_id": selected_observation_id,
     }
     if parameters is not None:
@@ -938,6 +1000,7 @@ def _canonical_identity(value: Mapping[str, Any]) -> dict[str, Any]:
     normalized = _json_value(value)
     if not isinstance(normalized, dict):
         return {"value": normalized}
+    normalized.setdefault("runtime_id", None)
     explicit = normalized.get("observation_id_explicit")
     if not isinstance(explicit, bool):
         explicit = normalized.get("observation_id") is not None

@@ -202,6 +202,7 @@ result = client.inspect(job.job_id)
 - [Public Agent client](agents/CLIENT.md) — the full request and response contract.
 - [Inference API v1](docs/http_api.md) — the versioned policy API, over HTTP or WirelessComm.
 - [RPent integration](docs/rpent-integration.md) — an agent framework wiring, with a reproducible software chain against a real π0.5 service.
+- [XLeRobot snack delivery recipe](docs/xlerobot-snack-delivery.md) — a public mobile-manipulation recipe with hardware setup, route choices, RPent/Astra review, and supervised launch scripts.
 - Reference adapters live in [`agents/`](agents/README.md); they are software examples, outside the installed package.
 
 ## Documentation

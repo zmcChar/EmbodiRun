@@ -273,6 +273,7 @@ class ControlClient:
         *,
         request_id: str,
         observation_id: str | None = None,
+        runtime_id: str | None = None,
         steps: int | None = None,
         control_hz: float | None = None,
         wait: bool = True,
@@ -294,6 +295,9 @@ class ControlClient:
         outcome remain non-terminal evidence.  The client never retries an
         execution and never turns this response into proof of a physical
         stop.
+
+        ``runtime_id`` optionally names the configured runtime that should
+        serve this segment, matching ``observe`` and ``propose``.
         """
 
         if not isinstance(actions, Mapping) and (
@@ -305,6 +309,7 @@ class ControlClient:
             "actions": actions,
             "source": source,
             "observation_id": observation_id,
+            "runtime_id": runtime_id,
             "steps": steps if steps is not None else (1 if isinstance(actions, Mapping) else len(actions)),
             "control_hz": control_hz,
             "wait": bool(wait),

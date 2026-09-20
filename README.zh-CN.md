@@ -151,6 +151,7 @@ result = client.inspect(job.job_id)
 - [公共 Agent 客户端](agents/CLIENT.md)——完整的请求与响应契约。
 - [Inference API v1](docs/http_api.md)——带版本号的策略 API，可通过 HTTP 或 WirelessComm 使用。
 - [RPent 集成](docs/rpent-integration.md)——一个智能体框架接入示例，包含针对真实 π0.5 服务的可复现软件链路。
+- [XLeRobot 薯片递送 Recipe](docs/xlerobot-snack-delivery.md)——公开的移动操作场景配方，包含硬件清单、路线来源、RPent/Astra 评审和受监督启动脚本。
 - 参考适配器位于 [`agents/`](agents/README.md)；它们是软件示例，不在已安装的包内。
 
 ## 文档
