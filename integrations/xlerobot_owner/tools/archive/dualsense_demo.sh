@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Run on AGX. Reuse its robot API; never restart it or automatically arm.
 set -euo pipefail
-demo_repo=/home/user/rlinf-orin-bench-20260914/quest-teleop-src
-demo_python=/home/user/rlinf-orin-bench-20260914/.sdk-venv/bin/python
+demo_repo=/home/operator/orin-bench/quest-teleop-src
+demo_python=/home/operator/orin-bench/.sdk-venv/bin/python
 demo_disk="${DEMO_DISK:-}"
 if [[ -z "$demo_disk" ]]; then
   demo_disk=$(findmnt -nro TARGET -S UUID=6610-B9F6 || true)

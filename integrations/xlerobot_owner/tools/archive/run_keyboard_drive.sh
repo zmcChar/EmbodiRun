@@ -7,7 +7,7 @@ drive_python="$drive_repo/.venv/bin/python"
 drive_ssh_host="${DRIVE_SSH_HOST:-agx-orin-123-4}"
 drive_forward_port="${DRIVE_FORWARD_PORT:-18767}"
 drive_page_port="${DRIVE_PAGE_PORT:-8844}"
-drive_leader_command="${DRIVE_LEADER_COMMAND:-/Users/user/Documents/Codex/2026-09-15/so101-leader-calibration/start-dual-so101-direct-follow.command}"
+drive_leader_command="${DRIVE_LEADER_COMMAND:-/path/to/so101-leader-calibration/start-dual-so101-direct-follow.command}"
 drive_ssh_pid=""
 if nc -z 127.0.0.1 "$drive_page_port" 2>/dev/null; then
   if curl --noproxy '*' --fail --silent --max-time 3 "http://127.0.0.1:${drive_page_port}/api/status" |

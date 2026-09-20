@@ -10,4 +10,4 @@ case "$dualsense_mode" in
   *) echo 'Usage: bash scripts/run_orin_dualsense.sh [list|monitor|control|takeover]' >&2; exit 2 ;;
 esac
 exec ssh -t -o BatchMode=yes -o ConnectTimeout=8 "${DUALSENSE_HOST:-agx-orin-wifi}" \
-  "cd /home/user/rlinf-orin-bench-20260914/quest-teleop-src && PYTHONNOUSERSITE=1 PYTHONPATH=. /home/user/rlinf-orin-bench-20260914/.sdk-venv/bin/python -m embodirun_xlerobot_owner.$dualsense_args"
+  "cd /home/operator/orin-bench/quest-teleop-src && PYTHONNOUSERSITE=1 PYTHONPATH=. /home/operator/orin-bench/.sdk-venv/bin/python -m embodirun_xlerobot_owner.$dualsense_args"

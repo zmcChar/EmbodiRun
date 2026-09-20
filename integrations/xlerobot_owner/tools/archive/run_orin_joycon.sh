@@ -7,5 +7,5 @@ case "$joycon_mode" in
   *) echo 'Usage: bash scripts/run_orin_joycon.sh [list|monitor|control]' >&2; exit 2 ;;
 esac
 exec ssh -t -o BatchMode=yes -o ConnectTimeout=8 -o IdentitiesOnly=yes \
-  -i /Users/user/.ssh/agx_orin_20260914_ed25519 root@192.168.123.4 \
-  "cd /home/user/rlinf-orin-bench-20260914/quest-teleop-src && PYTHONNOUSERSITE=1 PYTHONPATH=. /home/user/rlinf-orin-bench-20260914/.sdk-venv/bin/python -m embodirun_xlerobot_owner.joycon_teleop --mode $joycon_mode --token-file robot-token"
+  -i ~/.ssh/id_ed25519 operator@192.0.2.10 \
+  "cd /home/operator/orin-bench/quest-teleop-src && PYTHONNOUSERSITE=1 PYTHONPATH=. /home/operator/orin-bench/.sdk-venv/bin/python -m embodirun_xlerobot_owner.joycon_teleop --mode $joycon_mode --token-file robot-token"

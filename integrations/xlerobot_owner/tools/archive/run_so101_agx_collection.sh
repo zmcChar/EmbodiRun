@@ -2,8 +2,8 @@
 # Run on the AGX. The named tmux session survives SSH disconnects.
 set -euo pipefail
 
-collection_repo="${SO101_REPO:-/home/user/rlinf-orin-bench-20260914/quest-teleop-src}"
-collection_python="${SO101_PYTHON:-/home/user/rlinf-orin-bench-20260914/.sdk-venv/bin/python}"
+collection_repo="${SO101_REPO:-/home/operator/orin-bench/quest-teleop-src}"
+collection_python="${SO101_PYTHON:-/home/operator/orin-bench/.sdk-venv/bin/python}"
 hardware_config="${SO101_HARDWARE_CONFIG:-$collection_repo/robot.orin.parallel-speed-20260915.json}"
 collection_config="${SO101_COLLECTION_CONFIG:-$collection_repo/agx-leader-collection.json}"
 robot_token="${SO101_ROBOT_TOKEN:-$collection_repo/robot-token}"
