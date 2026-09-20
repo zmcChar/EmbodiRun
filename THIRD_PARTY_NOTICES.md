@@ -54,7 +54,7 @@ license. Review it before installing the `sim-isaac` group.
 |---|---|---|
 | [sglang](https://pypi.org/project/sglang/) | Apache-2.0 | Optional `sglang` extra |
 | [EmbodiInfer](https://github.com/BUAA-CI-LAB/EmbodiInfer) | Apache-2.0 | First-party inference engine, pinned under `third_party/embodiinfer` |
-| [WirelessComm](https://github.com/BUAA-CI-LAB/WirelessComm) | see upstream repository when published | Optional `wireless` transport, published separately |
+| [WirelessComm](https://github.com/BUAA-CI-LAB/WirelessComm) | **Not declared upstream** | Optional `wireless` transport, installed separately |
 
 `third_party/embodiinfer` is a Git submodule pinned to a specific EmbodiInfer
 commit. EmbodiInfer carries its own `LICENSE`, `NOTICE`, and

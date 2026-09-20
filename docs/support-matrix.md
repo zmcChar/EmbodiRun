@@ -35,7 +35,7 @@ to "Tested — real robot".
 | SGLang HTTP backend | Provider, client, adapter | Tested — software | `[sglang]` extra |
 | External inference service | `lifecycle: external` model entries | Tested — software | `configs/examples/external.yaml` |
 | Multi-node shared inference | Config, control arbitration, benchmark | Tested — software benchmark | `configs/http-wireless-inference/` |
-| WirelessComm transport | Client, server config generation | Experimental, needs a separately installed transport | `configs/http-wireless-inference/wireless.yaml` |
+| WirelessComm transport | Client, server config generation | Experimental, transport installed separately | `configs/http-wireless-inference/wireless.yaml` |
 | RPent agent adapter | Public-client contract in `agents/rpent`; reference robot in the RPent fork | Experimental, software only; RPent-side registration is owned by the RPent project | `agents/rpent/README.md`, `BUAA-CI-LAB/RPent:embodirun-integration` |
 | Astra + π0.5 review loop | Cooperative loop with an injectable reviewer | Experimental, mock reviewer | `agents/astra_pi05/README.md` |
 | XLeRobot external owner | Optional integration package | Experimental, separately installed | `integrations/xlerobot_owner/README.md` |

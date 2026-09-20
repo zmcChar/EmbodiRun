@@ -79,17 +79,13 @@ Two helpers cover the common cases:
 | `sglang` | SGLang diffusion serving (Linux, Python 3.12+, glibc >= 2.34) |
 | `wireless` | Marker for the optional WirelessComm data plane (empty) |
 
-`wireless` installs nothing by default. WirelessComm is a separate transport
-that will be published at
-[`BUAA-CI-LAB/WirelessComm`](https://github.com/BUAA-CI-LAB/WirelessComm);
-while that repository is not yet public, the extra stays empty so the default
-HTTP install and lock never require private access.
-
-Once WirelessComm is public, the extra will carry the pinned requirement, and
-until then you can install it into a node environment yourself:
+`wireless` installs nothing today. WirelessComm is published separately at
+[`BUAA-CI-LAB/WirelessComm`](https://github.com/BUAA-CI-LAB/WirelessComm) and
+is not on a package index yet, so the extra stays a marker and you install the
+released tag into the node environment yourself:
 
 ```bash
-uv pip install "wireless-comm @ git+https://github.com/BUAA-CI-LAB/WirelessComm.git@<revision>"
+uv pip install "wireless-comm @ git+https://github.com/BUAA-CI-LAB/WirelessComm@v0.1.0"
 ```
 
 Then select the transport in the deployment YAML
