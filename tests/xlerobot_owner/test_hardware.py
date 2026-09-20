@@ -1,6 +1,7 @@
 import time
 
 import pytest
+
 from embodirun_xlerobot_owner.hardware import JOINT_NAMES, WATCHDOG_TIMEOUT_S, HardwareRobot
 
 ARM_SUFFIXES = (

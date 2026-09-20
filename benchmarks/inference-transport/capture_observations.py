@@ -20,15 +20,17 @@ def capture(config, output, *, prompt, count, interval_s):
         raise ValueError("capture requires a prompt, positive count and non-negative interval")
     if any(item["type"] != "v4l2" for item in config["inputs"]):
         raise ValueError("this capture script requires V4L2 camera inputs")
-    robot = SO101Adapter(SO101Config.from_mapping(
-        config["robot"]["id"], config["robot"]["options"]), read_only=True)
+    robot = SO101Adapter(SO101Config.from_mapping(config["robot"]["id"], config["robot"]["options"]), read_only=True)
     cameras = None
     output.mkdir(parents=True, exist_ok=False)
     try:
         robot.connect()
-        cameras = create_source(tuple(SensorInput(
-            sensor_id=item["sensor_id"], name=item["name"], kind=item["type"], options=item["options"]
-        ) for item in config["inputs"]))
+        cameras = create_source(
+            tuple(
+                SensorInput(sensor_id=item["sensor_id"], name=item["name"], kind=item["type"], options=item["options"])
+                for item in config["inputs"]
+            )
+        )
         with (output / "observations.jsonl").open("x") as manifest:
             for index in range(count):
                 start = time.monotonic()
@@ -40,11 +42,15 @@ def capture(config, output, *, prompt, count, interval_s):
                     filename = f"{index:04d}-camera-{camera_index}.jpg"
                     (output / filename).write_bytes(frame.data)
                     image_paths[frame.name] = filename
-                row = {"instruction": prompt, "state": observation.values, "images": image_paths,
-                       "source": "recorded-so101:" + config["runtime_id"],
-                       "capture_started_unix_s": captured_at,
-                       "state_timestamp_unix_s": observation.timestamp_s,
-                       "capture_ms": (time.monotonic() - start) * 1000}
+                row = {
+                    "instruction": prompt,
+                    "state": observation.values,
+                    "images": image_paths,
+                    "source": "recorded-so101:" + config["runtime_id"],
+                    "capture_started_unix_s": captured_at,
+                    "state_timestamp_unix_s": observation.timestamp_s,
+                    "capture_ms": (time.monotonic() - start) * 1000,
+                }
                 manifest.write(json.dumps(row, allow_nan=False) + "\n")
                 manifest.flush()
                 if index + 1 < count:
@@ -66,8 +72,15 @@ def main():
     parser.add_argument("--count", type=int, default=24)
     parser.add_argument("--interval", type=float, default=0.5)
     args = parser.parse_args()
-    print(capture(json.loads(args.config.read_text()), args.output, prompt=args.prompt,
-                  count=args.count, interval_s=args.interval))
+    print(
+        capture(
+            json.loads(args.config.read_text()),
+            args.output,
+            prompt=args.prompt,
+            count=args.count,
+            interval_s=args.interval,
+        )
+    )
 
 
 if __name__ == "__main__":

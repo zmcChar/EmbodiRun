@@ -32,7 +32,7 @@ models:
     environment_packages:
       - sglang[diffusion]==0.5.18
     source: /models/pi05-placeholder
-    server_executable: rlinf-sglang-pi05-serve
+    server_executable: embodirun-sglang-pi05-serve
     pipeline: LeRobotPi05Pipeline
     server:
       bind: 127.0.0.1

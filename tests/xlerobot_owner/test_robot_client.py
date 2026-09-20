@@ -2,6 +2,7 @@ import io
 import json
 
 import pytest
+
 from embodirun_xlerobot_owner.robot import RemoteRobot
 
 

@@ -51,12 +51,14 @@ def relative_wrist_angles(q: tuple[float, ...], reference: tuple[float, ...]) ->
     """Pitch/roll in the gripped controller's frame, not differences of world Euler angles."""
     x, y, z, w = q
     rx, ry, rz, rw = reference
-    return wrist_angles((
-        rw * x - rx * w - ry * z + rz * y,
-        rw * y + rx * z - ry * w - rz * x,
-        rw * z - rx * y + ry * x - rz * w,
-        rw * w + rx * x + ry * y + rz * z,
-    ))
+    return wrist_angles(
+        (
+            rw * x - rx * w - ry * z + rz * y,
+            rw * y + rx * z - ry * w - rz * x,
+            rw * z - rx * y + ry * x - rz * w,
+            rw * w + rx * x + ry * y + rz * z,
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -88,18 +90,18 @@ class Controller:
         if not 0 <= trigger <= 1 or any(abs(v) > 1 for v in stick):
             raise ValueError("controller axes outside range")
         return cls(
-            position, tuple(v / norm for v in q), data["tracked"], data["grip"], trigger, stick,
+            position,
+            tuple(v / norm for v in q),
+            data["tracked"],
+            data["grip"],
+            trigger,
+            stick,
             direction,
         )
 
     @property
     def neutral(self) -> bool:
-        return (
-            self.tracked
-            and not self.grip
-            and self.trigger < 0.1
-            and max(map(abs, self.thumbstick)) < 0.15
-        )
+        return self.tracked and not self.grip and self.trigger < 0.1 and max(map(abs, self.thumbstick)) < 0.15
 
 
 @dataclass(frozen=True)
@@ -134,8 +136,7 @@ class InputFrame:
     @property
     def grip_activation_ready(self) -> bool:
         return any(c.grip for c in self.controllers.values()) and all(
-            c.tracked and c.trigger < 0.1 and max(map(abs, c.thumbstick)) < 0.15
-            for c in self.controllers.values()
+            c.tracked and c.trigger < 0.1 and max(map(abs, c.thumbstick)) < 0.15 for c in self.controllers.values()
         )
 
 
@@ -188,20 +189,14 @@ class SO101Kinematics:
             self.l1 * math.sin(t1) + self.l2 * math.sin(t1 - t2),
         )
 
-    def inverse(
-        self, x: float, y: float, *, reference: tuple[float, float] | None = None
-    ) -> tuple[float, float]:
+    def inverse(self, x: float, y: float, *, reference: tuple[float, float] | None = None) -> tuple[float, float]:
         radius = math.hypot(x, y)
         if not abs(self.l1 - self.l2) + 1e-5 < radius < self.l1 + self.l2 - 1e-5:
             raise ValueError("SO101 target outside reachable workspace")
-        t2 = math.acos(
-            clamp((radius**2 - self.l1**2 - self.l2**2) / (2 * self.l1 * self.l2), -1, 1)
-        )
+        t2 = math.acos(clamp((radius**2 - self.l1**2 - self.l2**2) / (2 * self.l1 * self.l2), -1, 1))
         candidates = []
         for bend in (t2, -t2):
-            t1 = math.atan2(y, x) + math.atan2(
-                self.l2 * math.sin(bend), self.l1 + self.l2 * math.cos(bend)
-            )
+            t1 = math.atan2(y, x) + math.atan2(self.l2 * math.sin(bend), self.l1 + self.l2 * math.cos(bend))
             angles = (90 - math.degrees(t1 + self.offset1), math.degrees(bend + self.offset2) - 90)
             if reference is None:
                 return angles
@@ -247,9 +242,7 @@ class MappingConfig:
             raise ValueError("enabled_arms must contain left and/or right")
         if type(self.enable_base) is not bool:
             raise ValueError("enable_base must be boolean")
-        if set(self.pan_signs) != {"left", "right"} or any(
-            v not in (-1, 1) for v in self.pan_signs.values()
-        ):
+        if set(self.pan_signs) != {"left", "right"} or any(v not in (-1, 1) for v in self.pan_signs.values()):
             raise ValueError("pan_signs must explicitly be +/-1 for each arm")
         for name in ("gripper_open_pct", "gripper_closed_pct"):
             if not 0 <= finite(getattr(self, name), name) <= 100:
@@ -362,24 +355,30 @@ class QuestMapper:
                 joint_limited.add(name)
             if abs(target - joints[name]) > speed_step + 1e-9:
                 speed_limited.add(name)
-            value = clamp(target, max(low, joints[name] - speed_step),
-                          min(high, joints[name] + speed_step))
+            value = clamp(target, max(low, joints[name] - speed_step), min(high, joints[name] + speed_step))
             if abs(target - joints[name]) > 1e-9:
                 fractions.append(abs((value - joints[name]) / (target - joints[name])))
             result[name] = value
 
-        independent_step(names[0], joints[names[0]] +
-                         delta[0] * cfg.pan_deg_per_m * cfg.pan_signs[side])
-        independent_step(names[3], joints[names[3]] + rotation[0] * cfg.wrist_scale
-                         - (result[names[1]] - joints[names[1]])
-                         - (result[names[2]] - joints[names[2]]))
+        independent_step(names[0], joints[names[0]] + delta[0] * cfg.pan_deg_per_m * cfg.pan_signs[side])
+        independent_step(
+            names[3],
+            joints[names[3]]
+            + rotation[0] * cfg.wrist_scale
+            - (result[names[1]] - joints[names[1]])
+            - (result[names[2]] - joints[names[2]]),
+        )
         independent_step(names[4], joints[names[4]] + rotation[1] * cfg.wrist_scale)
-        return result, min(fractions), {
-            "position_fraction": round(fraction, 4),
-            "joint_limit_joints": sorted(joint_limited),
-            "speed_limited_joints": sorted(speed_limited),
-            "workspace_limited": workspace_limited,
-        }
+        return (
+            result,
+            min(fractions),
+            {
+                "position_fraction": round(fraction, 4),
+                "joint_limit_joints": sorted(joint_limited),
+                "speed_limited_joints": sorted(speed_limited),
+                "workspace_limited": workspace_limited,
+            },
+        )
 
     def map(
         self,
@@ -404,14 +403,8 @@ class QuestMapper:
             result = dict(self.drive_hold)
             controller = frame.controllers["right"]
             stick = controller.thumbstick
-            result["x.vel"] = (
-                -stick[1] * cfg.max_linear_m_s if controller.grip and abs(stick[1]) > 0.15 else 0.0
-            )
-            result["theta.vel"] = (
-                -stick[0] * cfg.max_angular_deg_s
-                if controller.grip and abs(stick[0]) > 0.15
-                else 0.0
-            )
+            result["x.vel"] = -stick[1] * cfg.max_linear_m_s if controller.grip and abs(stick[1]) > 0.15 else 0.0
+            result["theta.vel"] = -stick[0] * cfg.max_angular_deg_s if controller.grip and abs(stick[0]) > 0.15 else 0.0
             self.last_targets = dict(result)
             return result
         # A hold is a fixed commanded pose, not the measured (possibly sagging)
@@ -434,14 +427,17 @@ class QuestMapper:
                 self.motion_reference[side] = controller
                 self.trigger_ready[side] = controller.trigger < 0.1
                 result.update({name: current[name] for name in names[:5]})
-                self.diagnostics[side] = {"active": True, "trigger_ready": self.trigger_ready[side],
-                                          "gripper_direction": controller.gripper_direction}
+                self.diagnostics[side] = {
+                    "active": True,
+                    "trigger_ready": self.trigger_ready[side],
+                    "gripper_direction": controller.gripper_direction,
+                }
                 continue
             previous = self.previous[side]
             displacement = math.dist(controller.position, previous.position)
-            rotation_step = 2 * math.degrees(math.acos(clamp(abs(sum(
-                a * b for a, b in zip(controller.orientation, previous.orientation)
-            )), 0, 1)))
+            rotation_step = 2 * math.degrees(
+                math.acos(clamp(abs(sum(a * b for a, b in zip(controller.orientation, previous.orientation))), 0, 1))
+            )
             if displacement > cfg.max_controller_jump_m or rotation_step > cfg.max_wrist_jump_deg:
                 self.reset()
                 raise ValueError("controller pose jumped; stop and re-arm")
@@ -455,8 +451,7 @@ class QuestMapper:
             stick = controller.thumbstick[0]
             stick = math.copysign((abs(stick) - 0.15) / 0.85, stick) if abs(stick) > 0.15 else 0.0
             if stick:
-                delta = (stick * cfg.thumbstick_pan_deg_s * dt / cfg.pan_deg_per_m,
-                         delta[1], delta[2])
+                delta = (stick * cfg.thumbstick_pan_deg_s * dt / cfg.pan_deg_per_m, delta[1], delta[2])
             raw_rotation = relative_wrist_angles(controller.orientation, reference.orientation)
             rotation = tuple(value if abs(value) >= 0.5 else 0.0 for value in raw_rotation)
             # Per-axis deadband: a large lateral move must not activate tiny
@@ -467,13 +462,18 @@ class QuestMapper:
             restrictions = {}
             if moving or rotating:
                 arm, fraction, restrictions = self._arm_step(
-                    names, result, delta, rotation, dt, limits or {}, side,
+                    names,
+                    result,
+                    delta,
+                    rotation,
+                    dt,
+                    limits or {},
+                    side,
                 )
                 result.update(arm)
                 self.motion_reference[side] = replace(
                     reference,
-                    position=tuple(controller.position[i] if delta[i] else reference.position[i]
-                                   for i in range(3)),
+                    position=tuple(controller.position[i] if delta[i] else reference.position[i] for i in range(3)),
                     orientation=controller.orientation if rotating else reference.orientation,
                 )
 
@@ -488,12 +488,16 @@ class QuestMapper:
                 self.trigger_ready[side] = True
             if self.trigger_ready[side] and controller.trigger >= 0.1:
                 low, high = (limits or {}).get(grip_name, (0, 100))
-                target = clamp(cfg.gripper_open_pct if controller.gripper_direction == "open"
-                               else cfg.gripper_closed_pct, low, high)
+                target = clamp(
+                    cfg.gripper_open_pct if controller.gripper_direction == "open" else cfg.gripper_closed_pct,
+                    low,
+                    high,
+                )
                 step = cfg.max_gripper_speed_pct_s * dt * controller.trigger
                 result[grip_name] = clamp(target, held - step, held + step)
             self.diagnostics[side] = {
-                "active": True, "limited": fraction < 0.999,
+                "active": True,
+                "limited": fraction < 0.999,
                 "motion_fraction": round(fraction, 4),
                 "trigger_ready": self.trigger_ready[side],
                 "gripper_direction": controller.gripper_direction,

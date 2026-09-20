@@ -18,22 +18,32 @@ from .robot import RemoteRobot
 
 
 def input_record(sample):
-    return {"raw_axes": list(sample.raw_axes), "sticks": list(sample.sticks),
-            "triggers": list(sample.triggers), "buttons": sorted(sample.buttons),
-            "received_monotonic_s": sample.received_at, "sequence": sample.sequence,
-            "report_format": sample.report_format}
+    return {
+        "raw_axes": list(sample.raw_axes),
+        "sticks": list(sample.sticks),
+        "triggers": list(sample.triggers),
+        "buttons": sorted(sample.buttons),
+        "received_monotonic_s": sample.received_at,
+        "sequence": sample.sequence,
+        "report_format": sample.report_format,
+    }
 
 
 class DemoRecording:
-    def __init__(self, output, task, robot_url, token, metadata, *, fps=10,
-                 max_seconds=600, observer=None):
+    def __init__(self, output, task, robot_url, token, metadata, *, fps=10, max_seconds=600, observer=None):
         self.observer = observer or RemoteRobot(robot_url, token, timeout=1, scope="base")
         self.recorder = EpisodeRecorder(Path(output), fps=fps)
-        self.path = self.recorder.start(task, {
-            **metadata, "operator_mode": "dualsense", "collection_mode": "navigation_reference",
-            "trainable": False, "control_events": "control.jsonl",
-            "alignment": "AGX timestamps; observations and commands are separate, not frame-aligned actions",
-        })
+        self.path = self.recorder.start(
+            task,
+            {
+                **metadata,
+                "operator_mode": "dualsense",
+                "collection_mode": "navigation_reference",
+                "trainable": False,
+                "control_events": "control.jsonl",
+                "alignment": "AGX timestamps; observations and commands are separate, not frame-aligned actions",
+            },
+        )
         self.fps, self.max_seconds = fps, max_seconds
         self.events = queue.Queue(maxsize=256)
         self.stop_requested = threading.Event()
@@ -55,9 +65,14 @@ class DemoRecording:
 
     def emit(self, kind, **values):
         self.check()
-        line = json.dumps({"kind": kind, "timestamp_ns": time.time_ns(),
-                           "monotonic_ns": time.monotonic_ns(), **values},
-                          ensure_ascii=False, allow_nan=False) + "\n"
+        line = (
+            json.dumps(
+                {"kind": kind, "timestamp_ns": time.time_ns(), "monotonic_ns": time.monotonic_ns(), **values},
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+            + "\n"
+        )
         try:
             self.events.put_nowait(line)
         except queue.Full as exc:
@@ -85,12 +100,14 @@ class DemoRecording:
                 if now - began >= self.max_seconds:
                     raise RuntimeError("本段录制达到时长上限")
                 if now < next_frame:
-                    self.stop_requested.wait(min(.02, next_frame - now))
+                    self.stop_requested.wait(min(0.02, next_frame - now))
                     continue
                 observation, images = self.observer.read()
-                if (observation.get("metadata", {}).get("source") != "physical"
-                        or set(images) != {"front", "left_wrist", "right_wrist"}
-                        or observation.get("errors")):
+                if (
+                    observation.get("metadata", {}).get("source") != "physical"
+                    or set(images) != {"front", "left_wrist", "right_wrist"}
+                    or observation.get("errors")
+                ):
                     raise RuntimeError("相机/机器人观测不完整: " + str(observation.get("errors")))
                 source = observation.get("source_timestamp_ns")
                 if type(source) is not int or (last_source is not None and source < last_source):
@@ -154,8 +171,9 @@ def export_videos(episode):
                         if output.exists():
                             raise FileExistsError(output)
                         height, width = picture.shape[:2]
-                        writer = cv2.VideoWriter(str(output), cv2.VideoWriter_fourcc(*"mp4v"),
-                                                 metadata["fps"], (width, height))
+                        writer = cv2.VideoWriter(
+                            str(output), cv2.VideoWriter_fourcc(*"mp4v"), metadata["fps"], (width, height)
+                        )
                         if not writer.isOpened():
                             raise RuntimeError("MP4 encoder unavailable; original JPEGs are retained")
                         writers[role], counts[role] = writer, 0
@@ -164,8 +182,11 @@ def export_videos(episode):
     finally:
         for writer in writers.values():
             writer.release()
-    return {"episode": str(episode), "preview_frames": counts,
-            "note": "constant-rate previews; use frames.jsonl for original timestamps"}
+    return {
+        "episode": str(episode),
+        "preview_frames": counts,
+        "note": "constant-rate previews; use frames.jsonl for original timestamps",
+    }
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run one standard LeRobot SO101 calibration from a Mac or robot host."""
+
 from __future__ import annotations
 
 import argparse
@@ -73,9 +74,12 @@ def validate(config: dict[str, Any], arm_name: str) -> dict[str, str]:
     if mode == "ssh":
         host = required(config.get("host"), "host")
         user = required(config.get("user"), "user")
-        if (host.startswith("-") or user.startswith("-")
-                or not SAFE_NAME.fullmatch(host)
-                or not SAFE_NAME.fullmatch(user)):
+        if (
+            host.startswith("-")
+            or user.startswith("-")
+            or not SAFE_NAME.fullmatch(host)
+            or not SAFE_NAME.fullmatch(user)
+        ):
             raise ValueError("host and user must be simple names without shell/options")
         try:
             ssh_port = int(config.get("ssh_port", 22))
@@ -90,7 +94,8 @@ def validate(config: dict[str, Any], arm_name: str) -> dict[str, str]:
 def calibration_args(item: dict[str, str]) -> list[str]:
     prefix = "robot" if item["type"] == "so101_follower" else "teleop"
     return [
-        "-m", "lerobot.scripts.lerobot_calibrate",
+        "-m",
+        "lerobot.scripts.lerobot_calibrate",
         f"--{prefix}.type={item['type']}",
         f"--{prefix}.port={item['port']}",
         f"--{prefix}.id={item['id']}",
@@ -124,7 +129,9 @@ def run(config: dict[str, Any], arm_name: str, dry_run: bool) -> int:
     print(f"Serial port: {item['port']}")
     print(f"Expected calibration file: {expected_file}")
     print("Command:", shlex.join(command))
-    print("Official LeRobot calibration writes calibration parameters and may operate the arm; this wrapper does not set motor IDs or configure torque.")
+    print(
+        "Official LeRobot calibration writes calibration parameters and may operate the arm; this wrapper does not set motor IDs or configure torque."
+    )
     if dry_run:
         print("Dry run: no SSH connection or subprocess was started.")
         return 0

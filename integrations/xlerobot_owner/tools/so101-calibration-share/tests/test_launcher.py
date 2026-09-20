@@ -9,15 +9,18 @@ SPEC.loader.exec_module(mod)
 
 
 def config(mode="ssh"):
-    arms = {
-        f"arm{i}": {"id": f"arm{i}", "port": f"/dev/ttyUSB{i}", "type": "so101_follower"}
-        for i in range(1, 5)
-    }
+    arms = {f"arm{i}": {"id": f"arm{i}", "port": f"/dev/ttyUSB{i}", "type": "so101_follower"} for i in range(1, 5)}
     arms["arm3"]["type"] = "so101_leader"
     return {
-        "mode": mode, "host": "192.168.1.100", "user": "robot", "ssh_port": 22,
-        "identity_file": "", "python": "/opt/my python/bin/python",
-        "sdk_src": "/opt/sdk src", "calibration_dir": "/opt/calibrations", "arms": arms,
+        "mode": mode,
+        "host": "192.168.1.100",
+        "user": "robot",
+        "ssh_port": 22,
+        "identity_file": "",
+        "python": "/opt/my python/bin/python",
+        "sdk_src": "/opt/sdk src",
+        "calibration_dir": "/opt/calibrations",
+        "arms": arms,
     }
 
 

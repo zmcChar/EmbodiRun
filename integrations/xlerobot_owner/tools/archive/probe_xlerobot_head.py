@@ -13,8 +13,7 @@ lock.acquire()
 bus = None
 try:
     Bus, Motor, _, Norm, _ = _load_sdk(config["sdk_src"])
-    bus = Bus(port=port, motors={f"head_motor_{i - 6}": Motor(i, "sts3215", Norm.DEGREES)
-                                for i in (7, 8)})
+    bus = Bus(port=port, motors={f"head_motor_{i - 6}": Motor(i, "sts3215", Norm.DEGREES) for i in (7, 8)})
     bus.connect(handshake=False)
     bus.set_baudrate(bus.default_baudrate)
     result = {"read_only": True, "port": port, "motors": {}}

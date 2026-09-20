@@ -1,8 +1,9 @@
 import time
 
 import pytest
-from embodirun_xlerobot_owner.hardware import WHEEL_NAMES
 from tests.xlerobot_owner.test_hardware import _held_snapshot, _robot
+
+from embodirun_xlerobot_owner.hardware import WHEEL_NAMES
 
 
 def station(tmp_path, monkeypatch):

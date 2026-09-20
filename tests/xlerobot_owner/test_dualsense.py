@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
 from embodirun_xlerobot_owner import dualsense_drive
 from embodirun_xlerobot_owner.dualsense_drive import (
     TETHERED_MAX_HOLD_S,

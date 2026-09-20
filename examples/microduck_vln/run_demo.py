@@ -125,6 +125,7 @@ def preflight(args, output, roots):
     import imageio_ffmpeg
     import torch
     import transformers
+
     from embodirun_microduck.runtime import DemoSimulation, EpisodeVideo
 
     if transformers.__version__ != "4.51.3":
@@ -215,11 +216,11 @@ def run_episode(args, sim, client, record, index, output, ffmpeg):
     import io
     import uuid
 
-    from embodirun_microduck.protocol import ACTION_SPACE, IMAGE_FIELD, action_text, decode_actions
-    from embodirun_microduck.runtime import EpisodeVideo
     from PIL import Image
 
     from embodirun.model_services.contracts import ImagePayload, PolicyObservation
+    from embodirun_microduck.protocol import ACTION_SPACE, IMAGE_FIELD, action_text, decode_actions
+    from embodirun_microduck.runtime import EpisodeVideo
 
     episode_id = str(record.get("id", f"ep{index:03d}"))
     # Numeric filenames avoid trusting dataset IDs as paths.
@@ -461,6 +462,7 @@ def main():
             report["status"] = "preflight_passed"
         else:
             import numpy as np
+
             from embodirun_microduck.process import managed_service
             from embodirun_microduck.runtime import DemoSimulation
 

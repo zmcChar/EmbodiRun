@@ -40,8 +40,15 @@ def _save_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
 
 
-def run_wizard(args: argparse.Namespace, inspector: Any, sampler: Any, *, input_stream=None,
-               output_stream=None, poll_input: Callable[[float], str | None] | None = None) -> dict[str, Any]:
+def run_wizard(
+    args: argparse.Namespace,
+    inspector: Any,
+    sampler: Any,
+    *,
+    input_stream=None,
+    output_stream=None,
+    poll_input: Callable[[float], str | None] | None = None,
+) -> dict[str, Any]:
     input_stream = input_stream or sys.stdin
     output_stream = output_stream or sys.stdout
     calibration = json.loads(args.calibration.read_text())
@@ -54,8 +61,13 @@ def run_wizard(args: argparse.Namespace, inspector: Any, sampler: Any, *, input_
         suffix += 1
         session = args.output_root / f"manual-calibration-review-{time.strftime('%Y%m%d-%H%M%S')}-{suffix}"
     session.mkdir(parents=True, exist_ok=False)
-    summary: dict[str, Any] = {"source": "physical_manual_calibration_review", "success": None,
-        "old_calibration_untouched": True, "joints": [], "session_dir": str(session)}
+    summary: dict[str, Any] = {
+        "source": "physical_manual_calibration_review",
+        "success": None,
+        "old_calibration_untouched": True,
+        "joints": [],
+        "session_dir": str(session),
+    }
     quit_requested = False
 
     def say(text: str) -> None:
@@ -72,13 +84,17 @@ def run_wizard(args: argparse.Namespace, inspector: Any, sampler: Any, *, input_
 
     poll = poll_input or default_poll
     try:
-        say("只读人工复核：不会自动移动、寻找硬限位或修改旧校准文件。先保持不动；机器人自身左右，请托住手臂，不强拧；READY 后才活动当前关节。")
+        say(
+            "只读人工复核：不会自动移动、寻找硬限位或修改旧校准文件。先保持不动；机器人自身左右，请托住手臂，不强拧；READY 后才活动当前关节。"
+        )
         for joint in joints:
             side = "左侧" if joint.startswith("left_") else "右侧"
             port_index = 0 if joint.startswith("left_") else 1
             port = args.port[port_index]
             cal = calibration[joint]
-            say(f"\n准备 {side} {joint}（{_description(joint)}），总线尾部 {Path(port).name[-20:]}，ID {cal.get('id')}，保存范围 [{cal.get('range_min')}, {cal.get('range_max')}]。")
+            say(
+                f"\n准备 {side} {joint}（{_description(joint)}），总线尾部 {Path(port).name[-20:]}，ID {cal.get('id')}，保存范围 [{cal.get('range_min')}, {cal.get('range_max')}]。"
+            )
             say("Enter 开始预检；s 跳过；q 保存并退出。")
             while True:
                 command = input_stream.readline()
@@ -99,26 +115,48 @@ def run_wizard(args: argparse.Namespace, inspector: Any, sampler: Any, *, input_
                 continue
             stop_event = Event()
             state = {"user_ended": False, "quit": False}
+
             def sleep_fn(interval: float, _state=state, _stop_event=stop_event) -> None:
                 command = poll(interval)
                 if command in {"enter", "q", "eof"}:
                     _state["user_ended"] = True
                     _state["quit"] = command in {"q", "eof"}
                     _stop_event.set()
+
             def ready_callback(report: dict[str, Any], _state=state) -> None:
                 _state["ready_monotonic"] = time.monotonic()
                 say("READY：预检通过，当前仍为只读。按 Enter 结束当前关节，按 q 退出并保存。")
+
             def sample_callback(sample: dict[str, Any], report: dict[str, Any], _state=state) -> None:
                 pos = sample.get("fields", {}).get("Present_Position")
-                elapsed = max(0.0, sample.get("monotonic", time.monotonic()) - _state.get("ready_monotonic", time.monotonic()))
-                say(f"raw_position={pos} observed=[{report.get('observed_min')}, {report.get('observed_max')}] elapsed={elapsed:.1f}s")
-            joint_args = argparse.Namespace(output_dir=session / joint, calibration=args.calibration,
-                port=port, joint=joint, duration=60.0, interval=0.2, sdk_src=args.sdk_src)
-            result, status = sampler.record_joint_range(joint_args, inspector, stop_event=stop_event,
-                sleep_fn=sleep_fn, ready_callback=ready_callback, sample_callback=sample_callback)
+                elapsed = max(
+                    0.0, sample.get("monotonic", time.monotonic()) - _state.get("ready_monotonic", time.monotonic())
+                )
+                say(
+                    f"raw_position={pos} observed=[{report.get('observed_min')}, {report.get('observed_max')}] elapsed={elapsed:.1f}s"
+                )
+
+            joint_args = argparse.Namespace(
+                output_dir=session / joint,
+                calibration=args.calibration,
+                port=port,
+                joint=joint,
+                duration=60.0,
+                interval=0.2,
+                sdk_src=args.sdk_src,
+            )
+            result, status = sampler.record_joint_range(
+                joint_args,
+                inspector,
+                stop_event=stop_event,
+                sleep_fn=sleep_fn,
+                ready_callback=ready_callback,
+                sample_callback=sample_callback,
+            )
             artifact = str((session / joint / "joint_range.json").relative_to(session))
-            summary["joints"].append({"joint": joint, "artifact": artifact, "status": status,
-                "user_ended": state["user_ended"]})
+            summary["joints"].append(
+                {"joint": joint, "artifact": artifact, "status": status, "user_ended": state["user_ended"]}
+            )
             if result.get("interrupted"):
                 state["quit"] = True
             if status != 0 or state["quit"]:
@@ -150,8 +188,11 @@ def run_wizard(args: argparse.Namespace, inspector: Any, sampler: Any, *, input_
         intended = len(joints)
         completed = sum(item.get("status") == 0 for item in summary["joints"])
         summary["status"] = (
-            "observations_complete" if intended and completed == intended and len(summary["joints"]) == intended
-            else "partial" if summary["joints"] else "empty"
+            "observations_complete"
+            if intended and completed == intended and len(summary["joints"]) == intended
+            else "partial"
+            if summary["joints"]
+            else "empty"
         )
         _save_json(session / "session_summary.json", summary)
         if summary["status"] == "observations_complete":
@@ -179,9 +220,12 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"校准文件不存在: {args.calibration}")
     import inspect_xlerobot_motors as inspector
     import record_xlerobot_joint_range as sampler
+
     inspector.FeetechMotorsBus, inspector.Motor, inspector.MotorNormMode = inspector.import_sdk(args.sdk_src)
+
     def interrupt(_signum, _frame):
         raise KeyboardInterrupt
+
     signal.signal(signal.SIGINT, interrupt)
     signal.signal(signal.SIGTERM, interrupt)
     if hasattr(signal, "SIGHUP"):

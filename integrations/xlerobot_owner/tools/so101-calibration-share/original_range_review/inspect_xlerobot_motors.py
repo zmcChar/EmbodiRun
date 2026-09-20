@@ -29,11 +29,26 @@ FIELDS = (
     "Max_Position_Limit",
 )
 CONTROL_PROFILE_FIELDS = (
-    "Firmware_Major_Version", "Firmware_Minor_Version", "CW_Dead_Zone", "CCW_Dead_Zone",
-    "Minimum_Startup_Force", "Goal_Time", "Goal_Velocity", "Acceleration",
-    "Moving_Velocity_Threshold", "Velocity_Unit_factor", "DTs", "Hts",
-    "Maximum_Velocity_Limit", "Maximum_Acceleration", "P_Coefficient", "I_Coefficient",
-    "D_Coefficient", "Present_Load", "Present_Current", "Present_Voltage",
+    "Firmware_Major_Version",
+    "Firmware_Minor_Version",
+    "CW_Dead_Zone",
+    "CCW_Dead_Zone",
+    "Minimum_Startup_Force",
+    "Goal_Time",
+    "Goal_Velocity",
+    "Acceleration",
+    "Moving_Velocity_Threshold",
+    "Velocity_Unit_factor",
+    "DTs",
+    "Hts",
+    "Maximum_Velocity_Limit",
+    "Maximum_Acceleration",
+    "P_Coefficient",
+    "I_Coefficient",
+    "D_Coefficient",
+    "Present_Load",
+    "Present_Current",
+    "Present_Voltage",
     "Present_Temperature",
 )
 ROLE_PATTERNS = {
@@ -51,12 +66,17 @@ def import_sdk(sdk_src: str):
     if source not in sys.path:
         sys.path.insert(0, source)
     loaded = sys.modules.get("lerobot")
-    if loaded is not None and getattr(loaded, "__file__", None) and source_path not in Path(loaded.__file__).resolve().parents:
+    if (
+        loaded is not None
+        and getattr(loaded, "__file__", None)
+        and source_path not in Path(loaded.__file__).resolve().parents
+    ):
         for name in list(sys.modules):
             if name == "lerobot" or name.startswith("lerobot."):
                 del sys.modules[name]
     from lerobot.motors import Motor, MotorNormMode
     from lerobot.motors.feetech import FeetechMotorsBus
+
     module_path = Path(sys.modules["lerobot"].__file__).resolve()
     if source_path not in module_path.parents:
         raise ImportError(f"lerobot resolved outside --sdk-src: {module_path}")
@@ -77,7 +97,9 @@ def _read(bus: Any, field: str, name: str) -> Any:
         return {"error": f"{type(exc).__name__}: {exc}"}
 
 
-def inspect_bus(bus: Any, saved_calibration: dict[str, Any] | None = None, include_control_profile: bool = False) -> dict[str, Any]:
+def inspect_bus(
+    bus: Any, saved_calibration: dict[str, Any] | None = None, include_control_profile: bool = False
+) -> dict[str, Any]:
     """Inventory one already-connected bus; no method here writes to a motor."""
     records: list[dict[str, Any]] = []
     responding: list[int] = []
@@ -91,9 +113,7 @@ def inspect_bus(bus: Any, saved_calibration: dict[str, Any] | None = None, inclu
                 responding.append(motor_id)
                 fields = {field: _read(bus, field, name) for field in FIELDS}
                 if include_control_profile:
-                    fields["control_profile"] = {
-                        field: _read(bus, field, name) for field in CONTROL_PROFILE_FIELDS
-                    }
+                    fields["control_profile"] = {field: _read(bus, field, name) for field in CONTROL_PROFILE_FIELDS}
                 item["fields"] = fields
         except Exception as exc:  # noqa: BLE001  # retain per-motor ping failures
             item["ping_error"] = f"{type(exc).__name__}: {exc}"
@@ -145,7 +165,9 @@ def timed_snapshot(bus: Any, calibration: dict[str, Any], include_control_profil
     }
 
 
-def compare_calibration(records: list[dict[str, Any]], saved: dict[str, Any], role: str = "unknown_or_partial") -> dict[str, Any]:
+def compare_calibration(
+    records: list[dict[str, Any]], saved: dict[str, Any], role: str = "unknown_or_partial"
+) -> dict[str, Any]:
     """Compare EEPROM values read above with a saved JSON calibration, by ID."""
     if not saved:
         return {"status": "missing_saved_calibration", "motors": {}}
@@ -154,9 +176,15 @@ def compare_calibration(records: list[dict[str, Any]], saved: dict[str, Any], ro
         motor_id = str(record["id"])
         candidates = [v for k, v in saved.items() if str(v.get("id", "")) == motor_id]
         if role == "left_arm_head_candidate":
-            candidates = [v for k, v in saved.items() if str(v.get("id", "")) == motor_id and k.startswith(("left_arm_", "head_"))]
+            candidates = [
+                v for k, v in saved.items() if str(v.get("id", "")) == motor_id and k.startswith(("left_arm_", "head_"))
+            ]
         elif role == "right_arm_wheels_candidate":
-            candidates = [v for k, v in saved.items() if str(v.get("id", "")) == motor_id and k.startswith(("right_arm_", "base_"))]
+            candidates = [
+                v
+                for k, v in saved.items()
+                if str(v.get("id", "")) == motor_id and k.startswith(("right_arm_", "base_"))
+            ]
         if len(candidates) > 1:
             result[motor_id] = {"status": "ambiguous_saved_motor"}
             continue
@@ -165,7 +193,10 @@ def compare_calibration(records: list[dict[str, Any]], saved: dict[str, Any], ro
             result[motor_id] = {"status": "missing_saved_motor"}
             continue
         fields = record.get("fields", {})
-        actual = {key: fields.get(key, {}).get("value") for key in ("Homing_Offset", "Min_Position_Limit", "Max_Position_Limit")}
+        actual = {
+            key: fields.get(key, {}).get("value")
+            for key in ("Homing_Offset", "Min_Position_Limit", "Max_Position_Limit")
+        }
         wanted = {
             "Homing_Offset": expected.get("homing_offset"),
             "Min_Position_Limit": expected.get("range_min"),
@@ -195,7 +226,13 @@ def close_read_only(bus: Any) -> str | None:
     return error
 
 
-def run_snapshot(bus_factory: Callable[[str], Any], ports: list[str], calibration: dict[str, Any], duration: float, include_control_profile: bool = False) -> dict[str, Any]:
+def run_snapshot(
+    bus_factory: Callable[[str], Any],
+    ports: list[str],
+    calibration: dict[str, Any],
+    duration: float,
+    include_control_profile: bool = False,
+) -> dict[str, Any]:
     if not math.isfinite(duration) or duration < 0 or duration > 5:
         raise ValueError("duration must be between 0 and 5 seconds")
     output: dict[str, Any] = {"source_host_time": time.time(), "no_camera_sync": True, "buses": []}
@@ -240,7 +277,13 @@ def main(argv: list[str] | None = None) -> int:
     from lerobot.motors.feetech.feetech import DEFAULT_PROTOCOL_VERSION
 
     saved = json.loads(args.calibration.read_text()) if args.calibration and args.calibration.exists() else {}
-    result = run_snapshot(lambda port: FeetechMotorsBus(port=port, motors=_motors(Motor, MotorNormMode)), args.port, saved, args.duration, args.include_control_profile)
+    result = run_snapshot(
+        lambda port: FeetechMotorsBus(port=port, motors=_motors(Motor, MotorNormMode)),
+        args.port,
+        saved,
+        args.duration,
+        args.include_control_profile,
+    )
     result["sdk_defaults"] = {
         "default_baudrate": FeetechMotorsBus.default_baudrate,
         "protocol_version": DEFAULT_PROTOCOL_VERSION,

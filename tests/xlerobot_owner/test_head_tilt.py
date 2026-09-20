@@ -1,7 +1,8 @@
 import time
 
-from embodirun_xlerobot_owner.hardware import HEAD_TILT_NAME, HardwareRobot
 from tests.xlerobot_owner.test_hardware import _config
+
+from embodirun_xlerobot_owner.hardware import HEAD_TILT_NAME, HardwareRobot
 
 
 def station(tmp_path):

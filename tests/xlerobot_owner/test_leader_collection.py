@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 import pytest
+
 from embodirun_xlerobot_owner.leader_collection import (
     ACTION_NAMES,
     DIRECT_FOLLOW_ACCELERATION_RAW,

@@ -58,7 +58,7 @@ class DemoRobot:
             "state": dict(self.state),
             "source_timestamp_ns": now,
             "state_timestamp_ns": now,
-            "camera_timestamps_ns": {name: now for name in CAMERAS},
+            "camera_timestamps_ns": dict.fromkeys(CAMERAS, now),
             "metadata": self.metadata,
             "armed": self.armed,
             "control_state": self.control_state(),
@@ -144,9 +144,7 @@ class RemoteRobot:
             with self.opener.open(request, timeout=request_timeout) as response:
                 result = json.load(response)
         except TimeoutError as exc:
-            raise TimeoutError(
-                f"AGX {endpoint} timed out after {request_timeout:g}s"
-            ) from exc
+            raise TimeoutError(f"AGX {endpoint} timed out after {request_timeout:g}s") from exc
         except urllib.error.HTTPError as exc:
             try:
                 message = json.load(exc).get("error", str(exc))
@@ -156,9 +154,7 @@ class RemoteRobot:
         except urllib.error.URLError as exc:
             reason = exc.reason
             if isinstance(reason, TimeoutError):
-                raise TimeoutError(
-                    f"AGX {endpoint} timed out after {request_timeout:g}s"
-                ) from exc
+                raise TimeoutError(f"AGX {endpoint} timed out after {request_timeout:g}s") from exc
             raise ConnectionError(f"AGX {endpoint} failed: {reason}") from exc
         if result.get("error"):
             raise RuntimeError(result["error"])
@@ -185,26 +181,20 @@ class RemoteRobot:
             "received": "gateway",
         }
         self.metadata = observation.get("metadata", self.metadata)
-        if self.armed and (not observation.get("armed", True)
-                           or (self.scope != "all" and observation.get("control_owned") is not True)):
+        if self.armed and (
+            not observation.get("armed", True) or (self.scope != "all" and observation.get("control_owned") is not True)
+        ):
             self.armed = False
-        return observation, {
-            name: base64.b64decode(value, validate=True)
-            for name, value in payload["images"].items()
-        }
+        return observation, {name: base64.b64decode(value, validate=True) for name, value in payload["images"].items()}
 
     def arm(self) -> dict:
         self.last_arm_result = None
         self.owner = secrets.token_urlsafe(24)
-        result = self._request(
-            "arm", {}, timeout=max(self.timeout, self.CONTROL_TIMEOUT_S)
-        )
+        result = self._request("arm", {}, timeout=max(self.timeout, self.CONTROL_TIMEOUT_S))
         self.last_arm_result = result
         self.armed = result.get("armed") is True
         if not self.armed:
-            raise RuntimeError(
-                "AGX did not confirm control enable: " + "; ".join(result.get("errors", []))
-            )
+            raise RuntimeError("AGX did not confirm control enable: " + "; ".join(result.get("errors", [])))
         return result
 
     def command(self, action: dict) -> dict:
@@ -212,15 +202,11 @@ class RemoteRobot:
 
     def stop(self) -> dict:
         self.armed = False
-        return self._request(
-            "stop", {}, timeout=max(self.timeout, self.CONTROL_TIMEOUT_S)
-        )
+        return self._request("stop", {}, timeout=max(self.timeout, self.CONTROL_TIMEOUT_S))
 
     def stop_all(self) -> dict:
         self.armed = False
-        return self._request(
-            "stop_all", {}, timeout=max(self.timeout, self.CONTROL_TIMEOUT_S)
-        )
+        return self._request("stop_all", {}, timeout=max(self.timeout, self.CONTROL_TIMEOUT_S))
 
     def release(self) -> dict:
         """Stop only if this exact client still owns its scoped lease."""

@@ -44,12 +44,9 @@ Documentation = "https://embodirun.readthedocs.io/"
 sglang = [
     "sglang[diffusion]==0.5.18; python_version >= '3.12' and sys_platform == 'linux'",
 ]
-# Optional WirelessComm data plane. WirelessComm will be published at
-# https://github.com/BUAA-CI-LAB/WirelessComm. Until that repository is public
-# this extra stays empty so the default HTTP path and the public lock never
-# require private access; install the transport separately (see
-# docs/installation.md). Once public, replace the empty list with the pinned
-# HTTPS requirement and re-lock.
+# Optional WirelessComm data plane. The transport is installed separately from
+# its own repository and pinned to a tag, never to a branch; see
+# docs/installation.md.
 wireless = ["wireless-comm @ git+https://github.com/BUAA-CI-LAB/WirelessComm@v0.1.0"]
 
 [dependency-groups]
@@ -156,4 +153,5 @@ select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
 ignore = ["E501", "B905", "C408"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["embodirun", "rlinf_deploy"]
+# The independently installed integration packages are first-party too.
+known-first-party = ["embodirun", "embodirun_*", "rlinf_deploy"]

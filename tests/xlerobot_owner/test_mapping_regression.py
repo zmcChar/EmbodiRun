@@ -5,6 +5,7 @@ import math
 from dataclasses import replace
 
 import pytest
+
 from embodirun_xlerobot_owner.control import InputFrame, MappingConfig, QuestMapper, SO101Kinematics
 
 ARM_JOINTS = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll")

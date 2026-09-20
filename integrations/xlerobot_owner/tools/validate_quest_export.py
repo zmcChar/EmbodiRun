@@ -35,7 +35,7 @@ def main():
             {
                 "source_timestamp_ns": stamp,
                 "state_timestamp_ns": stamp,
-                "camera_timestamps_ns": {name: stamp for name in images},
+                "camera_timestamps_ns": dict.fromkeys(images, stamp),
                 "received_timestamp_ns": stamp + 1_000_000,
             }
         )
@@ -71,8 +71,7 @@ def main():
         "action_shape": list(frame["action"].shape),
         "state_shape": list(frame["observation.state"].shape),
         "camera_shapes": {
-            name: list(frame[f"observation.images.{name}"].shape)
-            for name in ("front", "left_wrist", "right_wrist")
+            name: list(frame[f"observation.images.{name}"].shape) for name in ("front", "left_wrist", "right_wrist")
         },
         "export_result": result,
     }

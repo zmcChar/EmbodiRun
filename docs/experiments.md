@@ -15,6 +15,7 @@ does and does not establish.
 
 | Note | Question | Current conclusion |
 |---|---|---|
+| [Inference transport](inference-transport.md) | Does HTTP or WirelessComm change end-to-end inference latency, and where does a request's time go? | WirelessComm gave roughly a 4.5% throughput gain on the tested LAN. The communication band accounted for only 1.72 ms of an 18.91 ms E2E difference; the limit is model queueing. Payloads were small and dark, so this is a link result, not a normal-scene one. |
 | [Camera-only capture](camera-only-experiments.md) | Can cameras be captured, recorded, and published with no motion path at all? | Works as a read-only publisher; the motion API does not exist by construction. Paired transport measurements and TCP-fault recovery were taken under the recorded load, not as general claims. |
 | [Transport candidates](transport-experiments.md) | Do shared memory, raw frames, GStreamer, Zenoh, or NIXL/UCX reduce latency? | Implemented and locally tested as opt-in paths. None has yet demonstrated a speedup or better recovery on the tested hardware. |
 | [LightNav-0 with XLeRobot](lightnav0_xlerobot.md) | Can decoded local waypoints drive an XLeRobot base? | The binding and its CPU tests exist. Real-checkpoint evaluation, navigation success, and physical-robot validation are outstanding. |

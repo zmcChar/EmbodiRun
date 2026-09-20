@@ -15,11 +15,8 @@ this helper only supplies the temporary Host state and recorder directories.
 from __future__ import annotations
 
 import argparse
-from base64 import b64decode
-from contextlib import contextmanager
 import json
 import os
-from pathlib import Path
 import platform
 import shlex
 import subprocess
@@ -27,7 +24,11 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Any, Iterator
+from base64 import b64decode
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any
 
 from embodirun.services.control.contracts import ControlServiceConfig
 from embodirun.services.control.devices import DeviceManager
@@ -42,7 +43,6 @@ from embodirun.services.host.state import (
     ServiceState,
     StateStore,
 )
-
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "examples" / "shared-device-fake.yaml"
@@ -65,11 +65,7 @@ def local_fake_service(
     _require_fake_config(config)
     deployment = build_plan(config)
     runtime = deployment.runtimes[0]
-    service_spec = next(
-        service
-        for service in deployment.services
-        if service.service_id == runtime.service_id
-    )
+    service_spec = next(service for service in deployment.services if service.service_id == runtime.service_id)
     if service_spec.control_config_json is None:
         raise DemoError("fake walkthrough plan did not produce a control config")
     control_config = ControlServiceConfig.from_json(service_spec.control_config_json)
@@ -119,9 +115,7 @@ def local_fake_service(
 def _require_fake_config(config: Any) -> None:
     if config.models:
         raise DemoError("the local walkthrough refuses model runtimes")
-    if len(config.nodes) != 1 or any(
-        node.connection.kind != "local" for node in config.nodes.values()
-    ):
+    if len(config.nodes) != 1 or any(node.connection.kind != "local" for node in config.nodes.values()):
         raise DemoError("the local walkthrough requires one local-only node")
     if len(config.runtimes) != 1:
         raise DemoError("the local walkthrough requires exactly one runtime")
@@ -218,9 +212,7 @@ def _run_cli(config_path: Path, state_dir: Path, args: list[str]) -> dict[str, A
     )
     result = subprocess.run(command, capture_output=True, text=True, env=env)
     if result.returncode != 0:
-        raise DemoError(
-            f"CLI failed with exit {result.returncode}: {result.stderr.strip() or result.stdout.strip()}"
-        )
+        raise DemoError(f"CLI failed with exit {result.returncode}: {result.stderr.strip() or result.stdout.strip()}")
     try:
         payload = json.loads(result.stdout)
     except json.JSONDecodeError as error:
@@ -298,9 +290,7 @@ def run_smoke(config_path: Path, state_dir: Path) -> None:
             state_dir,
             ["observe", *common, "--include-robot"],
         )
-        recorded_observation_id = recorded.get(
-            "observation_id", recorded.get("snapshot_id")
-        )
+        recorded_observation_id = recorded.get("observation_id", recorded.get("snapshot_id"))
         if not isinstance(recorded_observation_id, str) or not recorded_observation_id:
             raise DemoError("recording observe did not return an observation ID")
         action_path = _action_file(state_dir, "short-action.json")
@@ -309,9 +299,7 @@ def run_smoke(config_path: Path, state_dir: Path) -> None:
             state_dir,
             ["observe", *common, "--include-robot"],
         )
-        short_observation_id = short_observation.get(
-            "observation_id", short_observation.get("snapshot_id")
-        )
+        short_observation_id = short_observation.get("observation_id", short_observation.get("snapshot_id"))
         if not isinstance(short_observation_id, str) or not short_observation_id:
             raise DemoError("short action observe did not return an observation ID")
         completed = _run_cli(
@@ -345,9 +333,7 @@ def run_smoke(config_path: Path, state_dir: Path) -> None:
             state_dir,
             ["observe", *common, "--include-robot"],
         )
-        long_observation_id = long_observation.get(
-            "observation_id", long_observation.get("snapshot_id")
-        )
+        long_observation_id = long_observation.get("observation_id", long_observation.get("snapshot_id"))
         if not isinstance(long_observation_id, str) or not long_observation_id:
             raise DemoError("long action observe did not return an observation ID")
         accepted = _run_cli(
@@ -486,19 +472,14 @@ def print_commands(
     """Print copyable commands for the same temporary Host fixture."""
 
     runtime = deployment.runtimes[0].runtime_id
-    prefix = (
-        f"embodirun --config {shlex.quote(str(config_path))} "
-        f"--state-dir {shlex.quote(str(state_dir))}"
-    )
+    prefix = f"embodirun --config {shlex.quote(str(config_path))} --state-dir {shlex.quote(str(state_dir))}"
     print(f"service endpoint: {service.endpoint}", file=sys.stderr)
     print(
-        f"{prefix} describe --runtime {runtime} --caller-id {CALLER_ID} "
-        f"--session-id {SESSION_ID} --json",
+        f"{prefix} describe --runtime {runtime} --caller-id {CALLER_ID} --session-id {SESSION_ID} --json",
         file=sys.stderr,
     )
     print(
-        f"{prefix} observe --runtime {runtime} --caller-id {CALLER_ID} "
-        f"--session-id {SESSION_ID} --json",
+        f"{prefix} observe --runtime {runtime} --caller-id {CALLER_ID} --session-id {SESSION_ID} --json",
         file=sys.stderr,
     )
 

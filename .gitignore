@@ -12,7 +12,7 @@ build/
 dist/
 artifacts/
 benchmarks/snapshots/
-benchmarks/http-wireless-inference-benchmark/reports/
+benchmarks/inference-transport/reports/
 checkpoints/
 .venv-microduck/
 examples/microduck_vln/config.env
@@ -22,7 +22,3 @@ examples/microduck_vln/*.local.json
 site/
 .tools/
 .os-review/
-
-# Logo working files: only the main logo is tracked, variants stay local.
-assets/*
-!assets/embodirun-logo.png

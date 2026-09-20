@@ -19,9 +19,7 @@ def prepare(directory: Path, hosts: list[str]) -> dict:
     from cryptography.x509.oid import NameOID
 
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    paths = {
-        name: directory / name for name in ("cert.pem", "key.pem", "browser-token", "robot-token")
-    }
+    paths = {name: directory / name for name in ("cert.pem", "key.pem", "browser-token", "robot-token")}
     if any(path.exists() for path in paths.values()):
         raise ValueError("credentials already exist; reuse them or select a new directory")
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -64,9 +62,7 @@ def prepare(directory: Path, hosts: list[str]) -> dict:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    setup = sub.add_parser(
-        "prepare", help="generate local HTTPS certificate and private access tokens"
-    )
+    setup = sub.add_parser("prepare", help="generate local HTTPS certificate and private access tokens")
     setup.add_argument("--directory", type=Path, required=True)
     setup.add_argument("--host", action="append", default=[])
     serve = sub.add_parser("serve", help="serve Mac browser UI or AGX endpoint")
@@ -74,13 +70,20 @@ def main(argv: list[str] | None = None) -> int:
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8443)
     serve.add_argument("--token-file", type=Path, required=True)
-    serve.add_argument("--browser-no-token-cidr", help="allow browser access without pairing from this private subnet only; robot API still requires its token")
+    serve.add_argument(
+        "--browser-no-token-cidr",
+        help="allow browser access without pairing from this private subnet only; robot API still requires its token",
+    )
     serve.add_argument("--ssl-cert", type=Path)
     serve.add_argument("--ssl-key", type=Path)
     serve.add_argument("--hardware-config", type=Path)
     resume = serve.add_mutually_exclusive_group()
-    resume.add_argument("--resume-held-state", type=Path, help="one-use stopped arm handoff; no torque writes or automatic arm")
-    resume.add_argument("--resume-stop-fault", type=Path, help="one-use blocked fault handoff; reads only, never clears a fault")
+    resume.add_argument(
+        "--resume-held-state", type=Path, help="one-use stopped arm handoff; no torque writes or automatic arm"
+    )
+    resume.add_argument(
+        "--resume-stop-fault", type=Path, help="one-use blocked fault handoff; reads only, never clears a fault"
+    )
     serve.add_argument("--mapping-config", type=Path)
     serve.add_argument("--robot-url")
     serve.add_argument("--robot-scope", choices=("all", "arms", "base"), default="all")
@@ -92,19 +95,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     serve.add_argument("--output", type=Path, default=Path("artifacts/quest/episodes"))
     serve.add_argument("--fps", type=float, default=20)
-    serve.add_argument(
-        "--pair", action="store_true", help="print a single-use 6-digit browser code (10 minutes)"
-    )
-    serve.add_argument(
-        "--robot-api", action="store_true", help="expose authenticated robot endpoint"
-    )
-    validate = sub.add_parser(
-        "validate", help="inspect episode completeness and training eligibility"
-    )
+    serve.add_argument("--pair", action="store_true", help="print a single-use 6-digit browser code (10 minutes)")
+    serve.add_argument("--robot-api", action="store_true", help="expose authenticated robot endpoint")
+    validate = sub.add_parser("validate", help="inspect episode completeness and training eligibility")
     validate.add_argument("episode", type=Path)
-    export = sub.add_parser(
-        "export", help="export stationary dual-arm episodes through LeRobotDataset"
-    )
+    export = sub.add_parser("export", help="export stationary dual-arm episodes through LeRobotDataset")
     export.add_argument("episodes", nargs="+", type=Path)
     export.add_argument("--repo-id", required=True)
     export.add_argument("--output", type=Path, required=True)
@@ -175,7 +170,9 @@ def main(argv: list[str] | None = None) -> int:
             if used.exists():
                 parser.error("restart snapshot was already claimed")
             snapshot.rename(used)
-            config["_resume_stop_fault" if args.resume_stop_fault else "_resume_held_state"] = json.loads(used.read_text())
+            config["_resume_stop_fault" if args.resume_stop_fault else "_resume_held_state"] = json.loads(
+                used.read_text()
+            )
         robot = HardwareRobot(config)
     if args.leader_command:
         if args.mode != "remote" or args.robot_scope != "base":
@@ -184,25 +181,23 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"leader command does not exist: {args.leader_command}")
         if not os.access(args.leader_command, os.X_OK):
             parser.error(f"leader command is not executable: {args.leader_command}")
-    mapping = (
-        MappingConfig(**json.loads(args.mapping_config.read_text()))
-        if args.mapping_config
-        else MappingConfig()
-    )
+    mapping = MappingConfig(**json.loads(args.mapping_config.read_text())) if args.mapping_config else MappingConfig()
     platform = Platform(
-        robot, token, output=args.output, fps=args.fps, mapping=mapping, robot_api=args.robot_api,
+        robot,
+        token,
+        output=args.output,
+        fps=args.fps,
+        mapping=mapping,
+        robot_api=args.robot_api,
         browser_no_token_cidr=args.browser_no_token_cidr,
-        leader_command=(str(args.leader_command.resolve()), "--no-run-prompt")
-        if args.leader_command else None,
+        leader_command=(str(args.leader_command.resolve()), "--no-run-prompt") if args.leader_command else None,
     )
     if args.pair:
         print(
             f"Browser pairing code: {platform.issue_pairing_code()} (one use; 10 minutes)",
             flush=True,
         )
-    web.run_app(
-        create_app(platform), host=args.host, port=args.port, ssl_context=tls, access_log=None
-    )
+    web.run_app(create_app(platform), host=args.host, port=args.port, ssl_context=tls, access_log=None)
     return 0
 
 

@@ -10,8 +10,8 @@ exclude_docs: |
 theme:
   name: material
   language: en
-  logo: assets/mark.png
-  favicon: assets/favicon.png
+  logo: https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/mark.png
+  favicon: https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/favicon.png
   features:
     - navigation.tabs
     - navigation.tabs.sticky
@@ -51,18 +51,23 @@ nav:
       - Support matrix: support-matrix.md
   - Integrating:
       - Inference API v1: http_api.md
+      - Agent execution workflow: agent-workflow.md
       - RPent integration: rpent-integration.md
       - π0.5 with two SO-101: pi05-bi-so101.md
   - Concepts:
       - Architecture: architecture.md
   - Experiments:
       - Overview: experiments.md
+      - Inference transport: inference-transport.md
       - Camera-only capture: camera-only-experiments.md
       - Transport candidates: transport-experiments.md
       - LightNav-0 with XLeRobot: lightnav0_xlerobot.md
       - MicroDuck VLN in MuJoCo: microduck-vln.md
   - Reference:
       - Python API: api.md
+  - Demos:
+      - Multi-robot serving: demos/multi-robot-serving.md
+      - Engine end-to-end contrast: demos/engine-e2e-contrast.md
   - Project:
       - Contributing: contributing.md
       - Code of Conduct: code-of-conduct.md
