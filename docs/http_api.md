@@ -1,4 +1,10 @@
-# VVLA policy API v1
+# Inference API v1
+
+!!! note "Wire schema names"
+    The wire schemas keep the `vvla.policy.*` prefix. `vvla` was the former name
+    of the inference engine (now [EmbodiInfer](https://github.com/BUAA-CI-LAB/EmbodiInfer)),
+    and the prefix is retained so that existing deployments keep working. The
+    `vvla` Python package name and CLI aliases are kept for the same reason.
 
 ## Agent proposal API
 
@@ -29,8 +35,8 @@ runtime IDs, authorization failures, and inference errors are rejected; no
 action is sent when proposal generation fails. `request_id` correlates the
 proposal request and policy step, but does not create a persistent job.
 
-RLinf Deploy treats VVLA as a remote policy service. The API is model-neutral
-and may be carried by HTTP or WirelessComm:
+EmbodiRun treats the inference service as a remote policy service. The API is
+model-neutral and may be carried by HTTP or WirelessComm:
 no checkpoint, tokenizer, prompt, or raw token fields cross the boundary.
 
 ## Session ordering
@@ -81,11 +87,11 @@ session state only once.
 }
 ```
 
-The VVLA HTTP layer is only responsible for model-native action chunks. Deploy
-maps and validates the rows in `pi05.action_chunk.v1` through the selected
-binding, executes the `run --chunk-steps` prefix, and plays those robot commands
-at the runtime control rate. Robot state fields and action dimensions are owned
-by the binding rather than a user-maintained VVLA adapter file.
+The inference HTTP layer is only responsible for model-native action chunks.
+EmbodiRun maps and validates the rows in `pi05.action_chunk.v1` through the
+selected binding, executes the `run --chunk-steps` prefix, and plays those robot
+commands at the runtime control rate. Robot state fields and action dimensions
+are owned by the binding rather than a user-maintained adapter file.
 
 ## WirelessComm mapping
 

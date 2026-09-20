@@ -24,7 +24,7 @@ to "Tested — real robot".
 |---|---|---|---|
 | π0.5 + SO-101 | Control, binding, deployment config | Tested — software; offline action checks exist | `configs/pi05/bi-so101-vvla.yaml` |
 | π0.5 + Bi-SO-101 | Dual-arm adapter, physical bus ownership | Tested — software | `configs/pi05/bi-so101-vvla.yaml` |
-| LIBERO + π0.5 (VVLA) | Simulator adapter, VVLA provider | Tested — software; closed loop needs GPU + checkpoint | `configs/simulation/libero-pi05-vvla.yaml` |
+| LIBERO + π0.5 | Simulator adapter, inference provider | Tested — software; closed loop needs GPU + checkpoint | `configs/simulation/libero-pi05-vvla.yaml` |
 | LIBERO + π0.5 (SGLang) | Simulator adapter, SGLang provider | Tested — software (skipped without sglang) | `configs/simulation/libero-pi05-sglang.yaml` |
 | VLABench + π0.5 | Simulator adapter | Experimental | `configs/simulation/vlabench-pi05-vvla.yaml` |
 | Habitat + StreamVLN | Simulator adapter | Experimental | `configs/simulation/habitat-streamvln-vvla.yaml` |

@@ -63,7 +63,7 @@ Use the camera host's matching PyGObject and GStreamer/GstVideo typelibs, versio
 native dependencies are supplied by the platform (for example `python3-gi`,
 `gir1.2-gstreamer-1.0`, `gir1.2-gst-plugins-base-1.0`, and the required plugin
 packages). A system Python or dedicated camera environment with those packages
-can publish SHM to the separate RLinf observation environment. Importing Deploy
+can publish SHM to the separate RLinf observation environment. Importing EmbodiRun
 or the camera module does not load GI; construction of this optional source does.
 Local validation used GStreamer 1.28.2 and PyGObject 3.56.2. The lock also resolves
 PyGObject 3.58.0; this is not a claim that this binding/native combination has
@@ -135,7 +135,7 @@ configured Zenoh SHM experiment. GStreamer successfully decoded existing camera
 JPEGs locally, but its scaled pixels differed from Pillow. Jetson multimedia
 performance and preprocessing equivalence require separate hardware tests.
 
-The reproducible RLinf runner and configuration are documented in
+The reproducible RLinf runner and configuration live outside this repository:
 `RLinf/examples/embodiment/TRANSPORT_OPTIMIZATION.md`. These opt-in candidates
 have not yet demonstrated a speedup or better recovery on A100/Thor/Orin.
 
@@ -160,7 +160,7 @@ an outstanding remote WRITE can still target them. `close()` only deregisters
 a healthy idle connection. Callers must restart failed workers and resynchronize;
 there is no automatic reconnect or device/transport fallback. A successful send
 confirms byte ownership, not application of weights or execution of an action.
-Deploy contains no model application code for this transport.
+EmbodiRun contains no model application code for this transport.
 
 RLinf's optional adapter uses its existing Worker control path, preserves
 key/shape/dtype negotiation, and sends initial checkpoint buckets and later

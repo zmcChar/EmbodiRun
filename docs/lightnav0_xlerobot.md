@@ -1,16 +1,22 @@
 # LightNav-0 with XLeRobot
 
+!!! warning "Engineering note, not a user guide"
+    This binding is experimental, is not registered in the default Host
+    configuration, and has no real-robot evidence. Read it as a record of an
+    unfinished path. See the [Support matrix](support-matrix.md) for the
+    status definitions.
+
 This experimental binding consumes decoded local waypoints from the existing
-EmbodiInfer HTTP API. EmbodiInfer owns LightNav weights, RGB history, prompts, RVQ
-decoding and acceleration. Deploy owns camera capture, session ordering, action
-validation, velocity limits, stop feedback and episode metrics.
+EmbodiInfer HTTP API. EmbodiInfer owns LightNav weights, RGB history, prompts,
+RVQ decoding and acceleration. EmbodiRun owns camera capture, session ordering,
+action validation, velocity limits, stop feedback and episode metrics.
 
 ## Dependencies and inference service
 
 Use a matching EmbodiInfer revision with the `lightnav0` policy and its HTTP
-serving adapter. The Deploy submodule pin is unchanged; the inference service
-must be provisioned separately until that policy is included in the pinned version.
-Follow Inference's `docs/proposals/0008-lightnav0-adapter.md` for server setup.
+serving adapter. The `third_party/embodiinfer` submodule pin does not yet include
+that policy, so the inference service must be provisioned separately. Follow
+EmbodiInfer's `docs/proposals/0008-lightnav0-adapter.md` for server setup.
 
 ```bash
 uv sync --frozen --no-dev --group binding-lightnav0
@@ -46,18 +52,18 @@ refuses base commands. A custom `--robot-factory module:function` must return an
 already connected and authorized robot. Stale camera/feedback, lost ownership,
 timeouts and model stop trigger the existing bounded stop/cleanup paths.
 
-## WIP: do not merge
+## Status and outstanding work
 
-This work is unfinished. The matching Inference adapter still delegates to the
-upstream engine; complete model computation integration into EmbodiInfer is
-outstanding. This binding is not yet registered in Host configuration or
-integrated with the pending unified control arbitration changes in Deploy PR 14.
-Keep this PR in Draft until those paths are complete and validated.
+The binding is implemented and covered at the CPU level, but it is not yet
+registered in Host configuration and not integrated with the unified control
+arbitration path. The matching EmbodiInfer adapter still delegates to the
+upstream engine; completing the model computation inside EmbodiInfer is
+outstanding.
 
 CPU tests cover local-frame transforms, curvature-preserving velocity limits,
-stale observations, authorization, cleanup and HTTP client validation. The real
-localhost HTTP smoke uses a fake upstream model. Real-checkpoint HTTP evaluation,
-navigation success and physical-robot validation remain outstanding.
+stale observations, authorization, cleanup and HTTP client validation. The
+localhost HTTP smoke test uses a fake upstream model. Real-checkpoint HTTP
+evaluation, navigation success and physical-robot validation remain outstanding.
 
 Simulation adapters, scene evaluation code, scene assets and recordings are not
-part of this PR. Historical model-output parity is not navigation success.
+part of this binding. Historical model-output parity is not navigation success.

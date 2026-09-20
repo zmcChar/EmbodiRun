@@ -48,7 +48,7 @@ Conditions:
 |---|---|
 | Inference host | 2×A100 80GB, service on GPU0, `vvla-http` (`π0.5`) |
 | Model adapter | `state_native`; cameras `observation.images.front` + `wrist`; `return_steps=50`; 6 action features |
-| Control | local `ControlService` from a deployment YAML; external VVLA model endpoint via an SSH tunnel |
+| Control | local `ControlService` from a deployment YAML; external inference endpoint via an SSH tunnel |
 | Robot | `simulated.policy_vector` binding `simulated.policy_vector.pi05` |
 | RPent | `BUAA-CI-LAB/RPent` `embodirun-integration`, robot `--robot embodirun` |
 

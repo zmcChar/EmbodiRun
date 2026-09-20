@@ -119,7 +119,7 @@ models:
 | `endpoint` | Required for an external service. |
 | `node`, `gpu`, `environment`, `source` | Placement, GPU, environment path, checkpoint. |
 | `server` | `bind` and `port` of the inference listener. |
-| `policy_kwargs` | Extra policy options (VVLA only); validated and merged into the generated adapter. |
+| `policy_kwargs` | Extra policy options (inference service only); validated and merged into the generated adapter. |
 | `image_keys` | Map policy image fields to checkpoint feature names. |
 | `adapter_config` | Advanced: point at an explicit adapter JSON instead of a binding-generated one. |
 | `environment_packages` | Extra packages to install in the model environment. |

@@ -1,6 +1,6 @@
 # Camera-only experiments
 
-Install the `camera` extra in the camera/observation environment. Other Deploy
+Install the `camera` extra in the camera/observation environment. Other EmbodiRun
 roles do not need OpenCV or Pillow.
 
 `embodirun.services.rollout.camera_capture` continuously captures V4L2 cameras,
@@ -55,16 +55,18 @@ joint states and zero rewards. Camera acquisition continued during paired tests;
 both variants read the same recorded JPEGs over HTTP and decoded/resized the two
 views to 224 × 224 RGB. Separate live-input runs measured software capture freshness.
 
-Five normal C/D pairs used RLinf Channel versus Deploy WirelessEndpoint, both on
-the same wired LAN. Each body offered 100 requests per trial at 2 Hz with a one-second
+Five normal C/D pairs compared the RLinf channel transport with the EmbodiRun
+wireless endpoint, both on the same wired LAN. Each body offered 100 requests per trial at 2 Hz with a one-second
 deadline. Both variants accepted 1000/1000 responses. Wireless reduced paired RTT p95
 by 8.01% on average, with paired bootstrap 95% CI [-10.14%, -5.42%]; mean trial p95
 was 253.88 ms for Channel and 233.56 ms for Wireless. This is a latency result under
 the measured load; useful throughput was equal. RTT includes inference and queueing.
-The run pinned RLinf `295b3406`, Deploy `557b4b4` and EmbodiInfer `2eb1d3ac`.
+The run pinned specific RLinf, EmbodiRun and EmbodiInfer revisions; those
+internal revisions are recorded in the experiment archive, not in this
+repository.
 
 A separate five-pair A100–Thor test ran actual PPO updates and native CPU/Gloo patch
-weight synchronization, pinned to RLinf `87ca0f8a` and Deploy `97956cd6`. Adding Deploy
+weight synchronization, pinned to specific RLinf and EmbodiRun revisions. Adding EmbodiRun
 changed steady weight-ready p95 by +12.28% on average, with 95% CI [-8.03%, +32.16%].
 This does not establish either negligible overhead or a consistent slowdown. Mean
 updates were 1.110 GB, with 56.13% in indices. Lossless 16-bit column-index packing
@@ -82,7 +84,7 @@ nothing about recovery from a broken TCP connection.
 
 Three original-receive TCP fault pairs explicitly shut down the affected worker's
 existing data connections to Thor, protecting Ray control and camera ports. Both
-variants used the same Deploy envelope and action validation. Channel closed eight
+variants used the same EmbodiRun envelope and action validation. Channel closed eight
 native data/store sockets and Wireless closed one socket per trial under the same
 peer/port selection rule. Subsequent reconnection was allowed; this is not sustained
 network loss or a device restart.
@@ -127,6 +129,6 @@ Thor completed 42,817 background camera reads without errors. Experiment process
 were stopped; a resident HTTP inference service from another Thor workspace was
 retained, so GPU use was not guaranteed exclusive or free of other requests.
 
-The the original experiment report (internal archive)
-retain all 46 formal trials, 7,200 planned request rows, failures and runtime provenance.
-Camera images and full machine logs remain in the experiment workspace.
+The original experiment report retains all 46 formal trials, 7,200 planned
+request rows, failures and runtime provenance. Camera images and full machine logs
+remain in the experiment workspace.

@@ -30,23 +30,29 @@ theme:
 
 nav:
   - Home: index.md
-  - Installation: installation.md
-  - Quick Start: quickstart.md
-  - Configuration: configuration.md
-  - Architecture: architecture.md
-  - Support Matrix: support-matrix.md
-  - License and relicensing: license.md
-  - Contributing: contributing.md
-  - Code of Conduct: code-of-conduct.md
-  - Control: control.md
-  - Safety: safety.md
-  - Inference API v1: http_api.md
-  - π0.5 Bi-SO-101: pi05-bi-so101.md
-  - RPent integration: rpent-integration.md
-  - Experimental:
-      - LightNav-0 XLeRobot: lightnav0_xlerobot.md
-      - Camera experiments: camera-only-experiments.md
-      - Transport experiments: transport-experiments.md
+  - Getting started:
+      - Installation: installation.md
+      - Quick start: quickstart.md
+      - Configuration: configuration.md
+  - Operating:
+      - Control: control.md
+      - Safety: safety.md
+      - Support matrix: support-matrix.md
+  - Integrating:
+      - Inference API v1: http_api.md
+      - RPent integration: rpent-integration.md
+      - π0.5 with two SO-101: pi05-bi-so101.md
+  - Concepts:
+      - Architecture: architecture.md
+  - Experiments:
+      - Overview: experiments.md
+      - Camera-only capture: camera-only-experiments.md
+      - Transport candidates: transport-experiments.md
+      - LightNav-0 with XLeRobot: lightnav0_xlerobot.md
+  - Project:
+      - Contributing: contributing.md
+      - Code of Conduct: code-of-conduct.md
+      - License and relicensing: license.md
 
 markdown_extensions:
   - admonition
