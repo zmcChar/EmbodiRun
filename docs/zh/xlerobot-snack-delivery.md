@@ -44,7 +44,7 @@ Recipe 是一个场景的公开、可复现运行配方：把任务阶段、硬�
 | **EmbodiInfer** | 加载并提供 VLA 检查点，执行推理或优化。 |
 | **XLeRobot owner** | 统一访问电机和相机，提供关节 / 轮速反馈，执行限位并确认停止状态。 |
 
-控制边界是 EmbodiRun 的公共 API。Agent 只调用 `observe`、`propose`、`execute`、`inspect`、`cancel` 和 `stop`，不直接打开串口或摄像头。请求和执行规则见[Agent 执行流程](../agent-workflow.md)、[Control](../control.md) 和 [Safety](../safety.md)。
+控制边界是 EmbodiRun 的公共 API。Agent 只调用 `observe`、`propose`、`execute`、`inspect`、`cancel` 和 `stop`，不直接打开串口或摄像头。请求和执行规则见 [Agent 执行流程](https://embodirun.readthedocs.io/en/latest/agent-workflow/)、[Control](https://embodirun.readthedocs.io/en/latest/control/) 和 [Safety](https://embodirun.readthedocs.io/en/latest/safety/)。
 
 ## 硬件清单
 
@@ -69,9 +69,9 @@ Recipe 是一个场景的公开、可复现运行配方：把任务阶段、硬�
 | --- | --- |
 | Recipe 主机 | Python 3.10+、本仓库和公共 EmbodiRun 客户端。 |
 | XLeRobot owner | owner 集成、唯一串口 owner、稳定设备身份、电机 ID、机械臂标定、相机角色和反馈时间戳。先以只读模式启动，见 [XLeRobot owner](https://github.com/BUAA-CI-LAB/EmbodiRun/tree/main/integrations/xlerobot_owner)。 |
-| EmbodiRun Control | 一份部署 YAML，写明 Control runtime、设备 binding、动作限幅、观测新鲜度检查和服务地址。见[配置](../configuration.md)和 [Control](../control.md)。 |
-| VLA 服务 | 由 manipulation runtime ID 选择的 π0.5 / VLA 服务。检查点和模型服务凭据留在部署配置中，不提交到仓库。见 [π0.5 与两个 SO-101](../pi05-bi-so101.md) 和 [Inference API v1](../http_api.md)。 |
-| RPent | 只通过 EmbodiRun 公共边界调用运行时的任务与路线规划器。见 [RPent 集成](../rpent-integration.md)。 |
+| EmbodiRun Control | 一份部署 YAML，写明 Control runtime、设备 binding、动作限幅、观测新鲜度检查和服务地址。见[配置](https://embodirun.readthedocs.io/en/latest/configuration/)和 [Control](https://embodirun.readthedocs.io/en/latest/control/)。 |
+| VLA 服务 | 由 manipulation runtime ID 选择的 π0.5 / VLA 服务。检查点和模型服务凭据留在部署配置中，不提交到仓库。见 [π0.5 与两个 SO-101](https://embodirun.readthedocs.io/en/latest/pi05-bi-so101/) 和 [Inference API v1](https://embodirun.readthedocs.io/en/latest/http_api/)。 |
+| RPent | 只通过 EmbodiRun 公共边界调用运行时的任务与路线规划器。见 [RPent 集成](https://embodirun.readthedocs.io/en/latest/rpent-integration/)。 |
 | 路线文件 | 使用者录制的去程 / 返程片段，或 RPent 根据示意图生成的路线文件。私有地图和录制文件放在公开仓库之外。 |
 
 公开 README 和本文不会要求用户粘贴 token。认证信息、私有地址、模型检查点和场地路径应放在部署环境或带认证的网关中。
@@ -88,7 +88,7 @@ Recipe 是一个场景的公开、可复现运行配方：把任务阶段、硬�
 6. 针对交付表面和接收者，重新标定右臂交付姿态与夹爪开度。
 7. 以低速、有人监管的方式开始运行。每个有界动作都要检查，并在进入下一阶段前等待新鲜反馈。
 
-[快速开始](../quickstart.md)、[Agent 执行流程](../agent-workflow.md)、[Control](../control.md) 和 [Safety](../safety.md) 介绍 CLI 与运行时语义。请求被接受不等于机器人已经完成实体动作；请保留 owner 反馈和最终交付证据。
+[快速开始](quickstart.md)、[Agent 执行流程](https://embodirun.readthedocs.io/en/latest/agent-workflow/)、[Control](https://embodirun.readthedocs.io/en/latest/control/) 和 [Safety](https://embodirun.readthedocs.io/en/latest/safety/) 介绍 CLI 与运行时语义。请求被接受不等于机器人已经完成实体动作；请保留 owner 反馈和最终交付证据。
 
 > **性能材料占位**
 >
@@ -100,10 +100,10 @@ Recipe 是一个场景的公开、可复现运行配方：把任务阶段、硬�
 
 ## 参考链接
 
-- [EmbodiRun 安装](../installation.md)
-- [EmbodiRun 架构](../architecture.md)
-- [EmbodiRun Inference API](../http_api.md)
-- [EmbodiRun RPent 集成](../rpent-integration.md)
+- [EmbodiRun 安装](https://embodirun.readthedocs.io/en/latest/installation/)
+- [EmbodiRun 架构](https://embodirun.readthedocs.io/en/latest/architecture/)
+- [EmbodiRun Inference API](https://embodirun.readthedocs.io/en/latest/http_api/)
+- [EmbodiRun RPent 集成](https://embodirun.readthedocs.io/en/latest/rpent-integration/)
 - [XLeRobot 源码与成本说明](https://github.com/Vector-Wangel/XLeRobot)
 - [XLeRobot 双轮装配](https://xlerobot.readthedocs.io/en/latest/hardware/getting_started/assemble_2wheel.html)
 - [LeRobot SO-101 装配与标定](https://huggingface.co/docs/lerobot/main/assemble_so101)
