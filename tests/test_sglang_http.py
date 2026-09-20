@@ -71,6 +71,132 @@ def test_sglang_lerobot_statistics_preserve_mean_std_math():
             statistics.denormalize(invalid)
 
 
+def test_sglang_lerobot_statistics_preserve_quantiles_math():
+    """QUANTILES must match lerobot.processor.normalize_processor bit for bit."""
+    pytest.importorskip("sglang.multimodal_gen")
+    import torch
+
+    from embodirun.services.inference.adapters.sglang.pi05 import _Statistics
+
+    q01 = torch.tensor([0.0, -2.0])
+    width = torch.tensor([4.0, 1.0])  # q99 - q01
+    statistics = _Statistics(q01, width, 1e-8, "QUANTILES")
+    values = torch.tensor([[2.0, 3.0]])
+    torch.testing.assert_close(
+        statistics.normalize(values),
+        2.0 * (values - q01) / width - 1.0,
+        rtol=0,
+        atol=0,
+    )
+    torch.testing.assert_close(
+        statistics.denormalize(values),
+        (values + 1.0) * width / 2.0 + q01,
+        rtol=0,
+        atol=0,
+    )
+    torch.testing.assert_close(
+        statistics.denormalize(statistics.normalize(values)),
+        values,
+        rtol=0,
+        atol=1e-5,
+    )
+    with pytest.raises(ValueError, match="dimensions"):
+        statistics.normalize([1.0])
+
+
+@pytest.mark.parametrize("delta_enabled", [False, True])
+def test_sglang_lerobot_statistics_load_quantiles_checkpoint(tmp_path, delta_enabled):
+    """QUANTILES loads from q01/q99; a disabled delta processor is a safe no-op."""
+    pytest.importorskip("sglang.multimodal_gen")
+    import torch
+    from safetensors.torch import save_file
+
+    from embodirun.services.inference.adapters.sglang.pi05 import _Statistics
+
+    checkpoint = tmp_path / "snapshot"
+    checkpoint.mkdir()
+    save_file(
+        {
+            "observation.state.mean": torch.zeros(2),
+            "observation.state.std": torch.ones(2),
+            "observation.state.q01": torch.tensor([-1.0, -1.0]),
+            "observation.state.q99": torch.tensor([1.0, 3.0]),
+        },
+        str(checkpoint / "statistics.safetensors"),
+    )
+    steps = [
+        {
+            "registry_name": "normalizer_processor",
+            "config": {
+                "norm_map": {"STATE": "QUANTILES", "VISUAL": "IDENTITY"},
+                "features": {"observation.state": {"shape": [2]}},
+                "eps": 1e-8,
+            },
+            "state_file": "statistics.safetensors",
+        },
+        {
+            "registry_name": "delta_actions_processor",
+            "config": {"enabled": delta_enabled},
+        },
+    ]
+    (checkpoint / "policy_preprocessor.json").write_text(json.dumps({"steps": steps}))
+
+    if delta_enabled:
+        # An enabled delta processor changes action semantics; refuse loudly.
+        with pytest.raises(ValueError, match="enabled delta_actions_processor"):
+            _Statistics.load(
+                checkpoint,
+                "preprocessor",
+                "normalizer_processor",
+                "observation.state",
+                "STATE",
+            )
+        return
+
+    stats = _Statistics.load(checkpoint, "preprocessor", "normalizer_processor", "observation.state", "STATE")
+    assert stats.mode == "QUANTILES"
+    # q01=[-1,-1], q99=[1,3] -> width=[2,4]; the midpoint maps to 0.
+    torch.testing.assert_close(stats.normalize([0.0, 1.0]), torch.tensor([0.0, 0.0]), rtol=0, atol=0)
+
+
+def test_sglang_lerobot_statistics_reject_unknown_normalization(tmp_path):
+    """A mode outside the supported set must be rejected, not silently ignored."""
+    pytest.importorskip("sglang.multimodal_gen")
+    import torch
+    from safetensors.torch import save_file
+
+    from embodirun.services.inference.adapters.sglang.pi05 import _Statistics
+
+    checkpoint = tmp_path / "snapshot"
+    checkpoint.mkdir()
+    save_file(
+        {
+            "observation.state.mean": torch.zeros(2),
+            "observation.state.std": torch.ones(2),
+        },
+        str(checkpoint / "statistics.safetensors"),
+    )
+    (checkpoint / "policy_preprocessor.json").write_text(
+        json.dumps(
+            {
+                "steps": [
+                    {
+                        "registry_name": "normalizer_processor",
+                        "config": {
+                            "norm_map": {"STATE": "MIN_MAX", "VISUAL": "IDENTITY"},
+                            "features": {"observation.state": {"shape": [2]}},
+                            "eps": 1e-8,
+                        },
+                        "state_file": "statistics.safetensors",
+                    }
+                ]
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="STATE in"):
+        _Statistics.load(checkpoint, "preprocessor", "normalizer_processor", "observation.state", "STATE")
+
+
 def test_sglang_lerobot_manifest_excludes_duplicate_processor_tensors(tmp_path):
     pytest.importorskip("sglang.multimodal_gen")
     import torch
