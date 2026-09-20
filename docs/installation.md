@@ -56,6 +56,22 @@ environment; set the ARX5 robot option `sdk_path` to its absolute import
 directory on the control node. ARX5 also needs the vendor native/ROS libraries
 and a configured SocketCAN interface.
 
+### Installer scripts
+
+Two helpers cover the common cases:
+
+- `scripts/install.sh` syncs this checkout with a chosen group and extra:
+
+  ```bash
+  scripts/install.sh --group robot-so101
+  scripts/install.sh --group host --extra sglang
+  ```
+
+- `requirements/install.sh` installs a standalone environment at a chosen path
+  and Python version, with optional component extras and a selectable PyTorch
+  version. Run `bash requirements/install.sh --help` for the full option list.
+  `EMBODIRUN_ENV_ROOT` and `EMBODIRUN_PYTORCH_INDEX` override its defaults.
+
 ## Extras
 
 | Extra | Contents |

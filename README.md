@@ -175,6 +175,7 @@ model, robot, or platform being supported does not mean they work together.
 | RPent agent adapter | `agents/rpent` public-client session | Experimental, software only | `agents/rpent/README.md` |
 | Astra + π0.5 review loop | `agents/astra_pi05` examples | Experimental, mock reviewer | `agents/astra_pi05/README.md` |
 | XLeRobot external owner | `integrations/xlerobot_owner` | Experimental, separately installed | `integrations/xlerobot_owner/README.md` |
+| LightNav-0 + XLeRobot | `bindings/xlerobot/lightnav0` | Experimental, software | `docs/lightnav0_xlerobot.md` |
 
 "Tested — software" means the path is covered by automated tests in this
 repository. It does **not** mean a physical robot completed a task.

@@ -9,6 +9,12 @@ def test_model_dependencies_are_isolated_to_the_sglang_service() -> None:
     forbidden = {"models", "policies", "backends", "engine"}
     assert not forbidden.intersection(path.name for path in root.iterdir())
     integration = root / "services/inference/adapters/sglang/pi05.py"
+    # Opt-in, lazily imported experiments that may touch a model runtime but are
+    # never on the Host/client import path.
+    opt_in = {
+        integration,
+        root / "services/rollout/nixl_tensors.py",
+    }
     for source in root.rglob("*.py"):
         tree = ast.parse(source.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
@@ -22,8 +28,8 @@ def test_model_dependencies_are_isolated_to_the_sglang_service() -> None:
                 package = module.partition(".")[0]
                 assert package not in {"vvla", "transformers"}, source
                 if package in {"torch", "sglang", "safetensors"}:
-                    # Opt-in server integration, never Host/client runtime code.
-                    assert source == integration, source
+                    # Opt-in integration, never Host/client runtime code.
+                    assert source in opt_in, source
 
 
 def test_host_and_client_import_without_inference_frameworks() -> None:

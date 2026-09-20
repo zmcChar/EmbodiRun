@@ -53,6 +53,8 @@ wireless = []
 [dependency-groups]
 dev = [
     { include-group = "host" },
+    "numpy>=1.26,<3",
+    "Pillow>=10,<13",
     "pytest>=8,<9",
 ]
 host = [

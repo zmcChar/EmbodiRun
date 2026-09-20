@@ -22,6 +22,7 @@ class V4L2CameraConfig:
     width: int
     height: int
     fps: float
+    input_format: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
@@ -39,6 +40,8 @@ class V4L2CameraConfig:
             or self.fps <= 0
         ):
             raise ValueError("camera fps must be a finite positive number")
+        if self.input_format not in {None, "mjpeg", "yuy2"}:
+            raise ValueError("camera input_format must be mjpeg or yuy2 when set")
 
 
 class V4L2CameraSource:
@@ -67,6 +70,7 @@ class V4L2CameraSource:
         if not self._cameras:
             raise CameraError("at least one V4L2 camera is required")
         self._captures: list[Any] = []
+        self.metadata: dict[str, Any] = {"negotiated_cameras": {}}
         try:
             for camera in self._cameras:
                 capture = cv2_module.VideoCapture(camera.device, cv2_module.CAP_V4L2)
@@ -75,6 +79,15 @@ class V4L2CameraSource:
                     raise CameraError(
                         f"camera {camera.name!r} cannot open {camera.device!r}"
                     )
+                if camera.input_format is not None:
+                    fourcc = "MJPG" if camera.input_format == "mjpeg" else "YUYV"
+                    if not capture.set(
+                        cv2_module.CAP_PROP_FOURCC,
+                        cv2_module.VideoWriter_fourcc(*fourcc),
+                    ):
+                        raise CameraError(
+                            f"camera {camera.name!r} rejected input format {fourcc}"
+                        )
                 capture.set(cv2_module.CAP_PROP_FRAME_WIDTH, camera.width)
                 capture.set(cv2_module.CAP_PROP_FRAME_HEIGHT, camera.height)
                 capture.set(cv2_module.CAP_PROP_FPS, camera.fps)
@@ -82,6 +95,32 @@ class V4L2CameraSource:
                     capture.set(cv2_module.CAP_PROP_BUFFERSIZE, 1)
             for _ in range(3):
                 self._capture_frames()
+            for camera, capture in zip(self._cameras, self._captures):
+                if camera.input_format is None:
+                    continue
+                actual = int(capture.get(cv2_module.CAP_PROP_FOURCC))
+                fourcc = "".join(chr((actual >> (8 * n)) & 255) for n in range(4))
+                width = capture.get(cv2_module.CAP_PROP_FRAME_WIDTH)
+                height = capture.get(cv2_module.CAP_PROP_FRAME_HEIGHT)
+                fps = capture.get(cv2_module.CAP_PROP_FPS)
+                expected = "MJPG" if camera.input_format == "mjpeg" else "YUYV"
+                if (
+                    fourcc != expected
+                    or (width, height) != (camera.width, camera.height)
+                    or not math.isfinite(fps)
+                    or abs(fps - camera.fps) > 0.05
+                ):
+                    raise CameraError(
+                        f"camera {camera.name!r} negotiated {fourcc} "
+                        f"{width}x{height}@{fps}, expected {expected} "
+                        f"{camera.width}x{camera.height}@{camera.fps}"
+                    )
+                self.metadata["negotiated_cameras"][camera.name] = {
+                    "fourcc": fourcc,
+                    "width": width,
+                    "height": height,
+                    "fps": fps,
+                }
         except BaseException:
             self.close()
             raise

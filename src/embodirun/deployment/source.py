@@ -16,6 +16,34 @@ _DEPENDENCY_FILES = ("pyproject.toml", "uv.lock")
 _ROOT_FILES = (*_DEPENDENCY_FILES, "README.md")
 _SOURCE_DIRS = ("src/embodirun", "integrations")
 
+# Historical and internal repository names that refer to the same public
+# project.  Managed checkouts cloned before the rename keep working instead of
+# forcing a fresh clone.
+_REPOSITORY_ALIASES = {
+    "rlinf-deploy": "EmbodiRun",
+    "rlinf-inference": "EmbodiInfer",
+    "embodirun-internal": "EmbodiRun",
+    "embodiinfer-internal": "EmbodiInfer",
+    "embodirun": "EmbodiRun",
+    "embodiinfer": "EmbodiInfer",
+}
+
+
+def repository_identity(repository: str) -> str:
+    """Normalize a GitHub repository reference for rename-tolerant comparison."""
+
+    normalized = repository.strip().removesuffix(".git")
+    for prefix in (
+        "git@github.com:buaa-ci-lab/",
+        "https://github.com/buaa-ci-lab/",
+        "http://github.com/buaa-ci-lab/",
+    ):
+        lowered = normalized.lower()
+        if lowered.startswith(prefix):
+            name = lowered.removeprefix(prefix)
+            return _REPOSITORY_ALIASES.get(name, name)
+    return normalized.lower()
+
 
 class SourceError(ValueError):
     """Deployment source cannot be resolved or installed safely."""
@@ -80,7 +108,7 @@ class ProjectManager:
                 )
             )
         ).stdout.strip()
-        if origin != repository:
+        if repository_identity(origin) != repository_identity(repository):
             raise SourceError(
                 f"managed checkout {project_dir!r} has unexpected origin {origin!r}"
             )

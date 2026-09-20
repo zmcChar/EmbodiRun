@@ -39,6 +39,8 @@ to "Tested — real robot".
 | RPent agent adapter | Public-client session | Experimental, software only | `agents/rpent/README.md` |
 | Astra + π0.5 review loop | Cooperative loop with an injectable reviewer | Experimental, mock reviewer | `agents/astra_pi05/README.md` |
 | XLeRobot external owner | Optional integration package | Experimental, separately installed | `integrations/xlerobot_owner/README.md` |
+| LightNav-0 + XLeRobot (remote HTTP) | Binding, remote robot client, local segment, teleop | Experimental, software | `docs/lightnav0_xlerobot.md` |
+| Camera / transport experiments | GStreamer capture, camera shared memory, NIXL tensors, Zenoh endpoint | Experimental, skipped without the optional dependency | `docs/camera-only-experiments.md`, `docs/transport-experiments.md` |
 
 ## Not yet supported
 

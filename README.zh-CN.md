@@ -136,6 +136,7 @@ EmbodiRun 把三层性能分开测量，让每个数字都有明确范围：模�
 | RPent Agent 适配 | `agents/rpent` 公共客户端会话 | Experimental，仅软件 | `agents/rpent/README.md` |
 | Astra + π0.5 评审循环 | `agents/astra_pi05` 示例 | Experimental，模拟 reviewer | `agents/astra_pi05/README.md` |
 | XLeRobot external owner | `integrations/xlerobot_owner` | Experimental，独立安装 | `integrations/xlerobot_owner/README.md` |
+| LightNav-0 + XLeRobot | `bindings/xlerobot/lightnav0` | Experimental，软件 | `docs/lightnav0_xlerobot.md` |
 
 “Tested —— 软件”表示该路径有本仓库自动化测试覆盖，**不**表示真机已完成任务。
 

@@ -100,6 +100,43 @@ class CameraFrame:
         return self.captured_timestamp_ns
 
 
+@dataclass(frozen=True, slots=True)
+class RawCameraFrame:
+    """Owned, packed uint8 image bytes for local observation consumers.
+
+    This separate type is not an encoded image accepted by inference clients.
+    It skips application JPEG encoding; camera-driver decoding may still occur.
+    It is kept for local capture and transport experiments that need a raw
+    packed frame rather than an encoded :class:`CameraFrame`.
+    """
+
+    name: str
+    width: int
+    height: int
+    data: bytes
+    pixel_format: str = "bgr8"
+    mime_type: str = "application/x-embodirun-raw-image"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("camera name must not be empty")
+        if any(
+            type(value) is not int or value <= 0 for value in (self.width, self.height)
+        ):
+            raise ValueError("raw camera dimensions must be positive integers")
+        if self.pixel_format not in {"bgr8", "rgb8"}:
+            raise ValueError("raw camera pixel format must be bgr8 or rgb8")
+        if self.mime_type != "application/x-embodirun-raw-image":
+            raise ValueError("unexpected raw camera MIME type")
+        if (
+            not isinstance(self.data, bytes)
+            or len(self.data) != self.width * self.height * 3
+        ):
+            raise ValueError(
+                "raw camera payload must contain exactly width*height*3 bytes"
+            )
+
+
 class CameraSource(Protocol):
     """Capture and release a configured collection of cameras."""
 

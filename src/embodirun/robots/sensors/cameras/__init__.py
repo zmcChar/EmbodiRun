@@ -8,7 +8,7 @@ from functools import cache
 from importlib import import_module
 
 from .. import SensorInput
-from .camera import CameraFrame, CameraSource, CameraSources
+from .camera import CameraFrame, CameraSource, CameraSources, RawCameraFrame
 from .realsense import (
     RealSenseCameraConfig,
     RealSenseCameraError,
@@ -73,6 +73,7 @@ __all__ = [
     "CameraFrame",
     "CameraSource",
     "CameraSources",
+    "RawCameraFrame",
     "FakeCameraConfig",
     "FakeCameraError",
     "FakeCameraSource",
