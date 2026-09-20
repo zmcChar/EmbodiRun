@@ -40,6 +40,7 @@ nav:
   - Safety: safety.md
   - Inference API v1: http_api.md
   - π0.5 Bi-SO-101: pi05-bi-so101.md
+  - RPent integration: rpent-integration.md
   - Experimental:
       - LightNav-0 XLeRobot: lightnav0_xlerobot.md
       - Camera experiments: camera-only-experiments.md

@@ -30,6 +30,8 @@ Operating a robot:
 Integrating:
 
 - [Inference API v1](http_api.md) — the versioned policy API.
+- [RPent integration](rpent-integration.md) — the Agent boundary and a
+  reproducible software chain against a real π0.5 service.
 - [π0.5 with two SO-101 followers](pi05-bi-so101.md) — a dual-arm deployment
   guide.
 - [`agents/CLIENT.md`](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/agents/CLIENT.md)
