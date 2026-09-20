@@ -1,8 +1,7 @@
 # Local simulated device example
 
 For **real VVLA inference with recorded images and simulated execution**, see
-[the shared-device inference walkthrough](shared-device-inference.md). Its Thor
-results are recorded in [the experiment report](../docs/design/agent-device-services/thor-experiments.md).
+[the shared-device inference walkthrough](shared-device-inference.md).
 
 `shared-device-fake.yaml` starts a robot-only Control service with no model or
 inference endpoint. The `simulated.joints` adapter keeps five SO-style joint
