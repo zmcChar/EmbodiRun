@@ -25,6 +25,13 @@ def _mapping(value: object, name: str) -> dict[str, Any]:
 
 @dataclass(frozen=True, slots=True)
 class ImagePayload:
+    """One encoded camera image as it crosses the inference boundary.
+
+    The bytes are already encoded, so the transport stays model-neutral and the payload can
+    be written straight to HTTP or WirelessComm. ``name`` identifies the camera, and adapter
+    configuration is what maps that name onto a checkpoint image feature.
+    """
+
     name: str
     mime_type: str
     data: bytes
@@ -39,6 +46,14 @@ class ImagePayload:
 
 @dataclass(frozen=True, slots=True)
 class PolicyObservation:
+    """One inference request for a session at a given step.
+
+    The fields are deliberately model-neutral: an instruction, a flat state mapping, the
+    camera images, and the session and step identity the service needs to order requests
+    idempotently. ``reset`` starts a new episode for a recurrent policy, and ``metadata``
+    carries whatever a specific adapter needs without widening the contract.
+    """
+
     session_id: str
     request_id: str
     step_id: int
@@ -69,6 +84,14 @@ class PolicyObservation:
 
 @dataclass(frozen=True, slots=True)
 class PolicyAction:
+    """One action returned by a policy service.
+
+    ``kind`` names the action and ``values`` carries its parameters, so the runtime can
+    validate and route an action without knowing which model produced it. An accepted
+    action is a request rather than a completed motion: execution and its safety checks
+    belong to the runtime. ``from_payload`` builds one from the wire representation.
+    """
+
     kind: str
     values: Mapping[str, Any]
 
@@ -89,6 +112,15 @@ class PolicyAction:
 
 @dataclass(frozen=True, slots=True)
 class PolicyResult:
+    """One step response from a policy service.
+
+    It carries the action chunk together with everything needed to account for it: the
+    ``request_id`` it answers, the session and the ``session_revision`` it advances, the
+    action space the chunk is expressed in, per-stage ``timing``, and the
+    ``policy_revision`` that produced it. ``from_payload`` builds one from the wire
+    representation.
+    """
+
     request_id: str
     session_id: str
     step_id: int
@@ -138,6 +170,13 @@ class PolicyResult:
 
 @dataclass(frozen=True, slots=True)
 class Session:
+    """Identity and committed revision of one inference session.
+
+    A session groups the steps of one episode so a recurrent policy can carry state between
+    calls. ``revision`` is the revision the service reports for that committed state, which
+    is what lets a client tell whether it is looking at the state it expects.
+    """
+
     session_id: str
     revision: int
 

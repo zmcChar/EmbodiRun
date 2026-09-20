@@ -33,6 +33,7 @@ class InferenceClient(Protocol):
 # Preserve the established public name while bindings migrate to the more
 # transport-neutral interface name.
 PolicyClient = InferenceClient
+"""Backward-compatible alias for :class:`InferenceClient`."""
 
 
 __all__ = ["InferenceClient", "PolicyClient"]
