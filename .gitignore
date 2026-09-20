@@ -17,5 +17,6 @@ checkpoints/
 
 # Local scratch and documentation build output
 site/
+site-zh/
 .tools/
 .os-review/

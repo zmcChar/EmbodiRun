@@ -76,3 +76,8 @@ jobs:
         run: |
           pip install -r docs/requirements.txt
           mkdocs build --strict
+
+      # The Simplified Chinese site is a separate Read the Docs project built
+      # from this repository, so it has to keep building here.
+      - name: Build the Simplified Chinese documentation
+        run: mkdocs build --strict -f mkdocs.zh.yml

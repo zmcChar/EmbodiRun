@@ -1,17 +1,27 @@
+# Simplified Chinese site. Read the Docs builds this as a translation of the
+# `embodirun` project, from the same repository and branch; see
+# .readthedocs.zh.yaml.
+#
+# Keep this file in step with mkdocs.yml: only the language, the docs_dir, the
+# navigation and the page set differ.
 site_name: EmbodiRun
-site_description: An Efficient Deployment & Execution Runtime for Embodied AI
-site_url: https://embodirun.readthedocs.io/
+site_description: 面向具身智能的高效部署与执行运行时
+site_url: https://embodirun.readthedocs.io/zh-cn/latest/
 repo_url: https://github.com/BUAA-CI-LAB/EmbodiRun
 repo_name: BUAA-CI-LAB/EmbodiRun
-docs_dir: docs
-# `docs/zh/` belongs to the Simplified Chinese build; see mkdocs.zh.yml.
-exclude_docs: |
-  requirements.txt
-  zh/
+
+# The Chinese pages are their own documentation root, so that the landing page
+# is the version root rather than /zh/ underneath it. `docs/zh/stylesheets` is a
+# symlink to `docs/stylesheets`, which is how both builds share one brand
+# stylesheet: `extra_css` may not point outside `docs_dir`, and MkDocs silently
+# emits a <link> without copying the file when it does. Check out with symlinks
+# enabled (`git config core.symlinks true`) to build this site locally.
+docs_dir: docs/zh
+site_dir: site-zh
 
 theme:
   name: material
-  language: en
+  language: zh
   logo: https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/mark.png
   favicon: https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/favicon.png
   features:
@@ -32,47 +42,21 @@ theme:
       accent: custom
       toggle:
         icon: material/brightness-7
-        name: Switch to dark mode
+        name: 切换到深色模式
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
       primary: custom
       accent: custom
       toggle:
         icon: material/brightness-4
-        name: Switch to light mode
+        name: 切换到浅色模式
 
+# Add a page here only once docs/zh/<page>.md exists. A navigation entry that
+# points at an untranslated page fails the strict build, which is the intent:
+# better a short navigation than a link to a page that does not exist.
 nav:
-  - Home: index.md
-  - Getting started:
-      - Installation: installation.md
-      - Quick start: quickstart.md
-      - Configuration: configuration.md
-  - Operating:
-      - Control: control.md
-      - Safety: safety.md
-      - Support matrix: support-matrix.md
-  - Integrating:
-      - Inference API v1: http_api.md
-      - Agent execution workflow: agent-workflow.md
-      - RPent integration: rpent-integration.md
-      - π0.5 with two SO-101: pi05-bi-so101.md
-  - Concepts:
-      - Architecture: architecture.md
-  - Experiments:
-      - Overview: experiments.md
-      - Inference transport: inference-transport.md
-      - Camera-only capture: camera-only-experiments.md
-      - Transport candidates: transport-experiments.md
-      - LightNav-0 with XLeRobot: lightnav0_xlerobot.md
-  - Reference:
-      - Python API: api.md
-  - Demos:
-      - Multi-robot serving: demos/multi-robot-serving.md
-      - Engine end-to-end contrast: demos/engine-e2e-contrast.md
-  - Project:
-      - Contributing: contributing.md
-      - Code of Conduct: code-of-conduct.md
-      - License and relicensing: license.md
+  - 首页: index.md
+  - 快速开始: quickstart.md
 
 markdown_extensions:
   - admonition
@@ -85,7 +69,6 @@ markdown_extensions:
   - pymdownx.superfences:
       # Material bundles the Mermaid runtime and initialises it for any page
       # that contains a `mermaid` block, so no extra_javascript is needed.
-      # Diagrams then follow the palette and the light/dark toggle.
       custom_fences:
         - name: mermaid
           class: mermaid
