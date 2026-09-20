@@ -8,15 +8,15 @@
 
 | 节点 | SSH | 角色 |
 |---|---|---|
-| Thor | `operator@192.0.2.10` | PI0.5，`/home/user/models/pi05_so101` |
-| AGX Orin | `operator@192.0.2.10` | `so101-1-runtime`，串口尾号 `5C4C125563`，两台相机 |
-| Orin NX | `jetson@192.168.2.148` | `so101-2-runtime`，串口尾号 `5C4C125310`，两台相机 |
+| Thor | `operator@192.168.10.10` | PI0.5，`/models/pi05_so101` |
+| AGX Orin | `operator@192.168.10.11` | `so101-1-runtime`，串口尾号 `5C4C125563`，两台相机 |
+| Orin NX | `operator@192.168.10.12` | `so101-2-runtime`，串口尾号 `5C4C125310`，两台相机 |
 
 - HTTP：[http.yaml](../../configs/http-wireless-inference/http.yaml)。Thor 监听 `8000`。
 - WirelessComm：[wireless.yaml](../../configs/http-wireless-inference/wireless.yaml)。Thor 和两个客户端分别在各自节点监听 `9300`。
 
 两份配置使用相同 checkpoint、BF16、10 步去噪、完整循环 CUDA Graph 和 50×6 动作输出。
-AGX Orin 沿用已存在的 `thor_so101_follower` 标定文件名，文件实际位于 `/home/user/`。
+AGX Orin 沿用已存在的 `thor_so101_follower` 标定文件名，文件实际位于 `/home/operator/`。
 WirelessComm 未额外设置带宽限速；这是同一 LAN 上的协议对比，不是 Wi-Fi 与有线网络的对比。
 `models.<id>.server_args` 将额外模型参数传给对应 VVLA 服务入口。
 

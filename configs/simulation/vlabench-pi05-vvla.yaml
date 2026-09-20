@@ -31,7 +31,7 @@ models:
     node: workstation
     gpu: cuda:0
     environment: .venv-vvla-pi05
-    source: /home/user/huggingface/pi05_vlabench_primitive_f658a8b
+    source: /models/pi05_vlabench_primitive
     # OpenPI camera slot names are generic; map by the checkpoint's training order.
     image_keys:
       observation.images.image: observation.images.base_0_rgb

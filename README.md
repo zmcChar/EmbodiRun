@@ -144,9 +144,9 @@ uv run embodirun \
 ```
 
 The HTTP and WirelessComm lab examples both run PI0.5 on Thor
-(`192.168.2.232`), with `so101-1` and its cameras on AGX Orin
-(`192.168.2.174`) and `so101-2` and its cameras on Orin NX
-(`192.168.2.148`). Both arms share the same model service. Run one protocol
+(`192.168.10.10`), with `so101-1` and its cameras on AGX Orin
+(`192.168.10.11`) and `so101-2` and its cameras on Orin NX
+(`192.168.10.12`). Both arms share the same model service. Run one protocol
 configuration at a time. The
 [HTTP / WirelessComm inference benchmark](benchmarks/http-wireless-inference-benchmark/README.md)
 includes a read-only recorder for real camera frames and joint state, then

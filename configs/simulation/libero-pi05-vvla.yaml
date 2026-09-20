@@ -32,7 +32,7 @@ models:
     gpu: cuda:0
     environment: .venv-vvla-pi05
     # LeRobot Pi0.5 LIBERO fine-tune, revision 8e174154 (8D state / 7D actions).
-    source: /home/user/huggingface/hub/models--lerobot--pi05_libero_finetuned_v044/snapshots/8e174154ef5f6c60a8da12ae99c303d8963138c1
+    source: /models/pi05_libero_finetuned
     image_keys:
       observation.images.image: observation.images.image
       observation.images.wrist_image: observation.images.image2

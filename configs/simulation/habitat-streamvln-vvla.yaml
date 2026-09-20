@@ -17,8 +17,8 @@ simulators:
   habitat-01:
     type: habitat
     node: workstation
-    dataset: /home/user/.cache/rlinf-deploy/data/habitat-test-scenes/streamvln-demo.json.gz
-    scenes_dir: /home/user/.cache/rlinf-deploy/data/habitat-test-scenes
+    dataset: /data/habitat-test-scenes/streamvln-demo.json.gz
+    scenes_dir: /data/habitat-test-scenes
     episode_id: streamvln-gui-demo
     max_episode_steps: 500
     success_distance_m: 0.5
@@ -35,10 +35,10 @@ models:
     type: streamvln
     node: workstation
     gpu: cuda:0
-    environment: /home/user/sim-train-infer/RLinf-deploy/.venv-vvla-streamvln
+    environment: ./.venv-vvla-streamvln
     environment_packages:
-      - /home/user/sim-train-infer/RLinf-deploy/third_party/vvla
-    source: /home/user/huggingface/streamvln
+      - ./third_party/embodiinfer
+    source: /models/streamvln
     server:
       bind: 127.0.0.1
       port: 8000

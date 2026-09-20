@@ -44,9 +44,11 @@ Documentation = "https://embodirun.readthedocs.io/"
 sglang = [
     "sglang[diffusion]==0.5.18; python_version >= '3.12' and sys_platform == 'linux'",
 ]
-wireless = [
-    "wireless-comm @ git+ssh://git@github.com/BUAA-CI-LAB/WirelessComm.git@da66e99d391d6e2ef76583aa973b03f9dc8b12d5",
-]
+# Optional WirelessComm data plane. WirelessComm is not published here, so this
+# extra stays empty: the default HTTP path and the public lock never require a
+# private repository. Install the transport separately on nodes that need it
+# (see docs/installation.md), then select it with this extra.
+wireless = []
 
 [dependency-groups]
 dev = [

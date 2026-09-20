@@ -91,7 +91,7 @@ def service_examples(tmp_path_factory):
             document["nodes"] = {name: node for name, node in document["nodes"].items()
                                  if name in {model["node"], robot["node"]}}
             for node in document["nodes"].values():
-                node["connection"].pop("proxy_command")
+                node["connection"].pop("proxy_command", None)
             document.update(robots={arm: robot}, sensors=sensors,
                             runtimes={f"{arm}-runtime": runtime})
             path = directory / f"{transport}.yaml"
@@ -298,9 +298,9 @@ class FakeNodeExecutor:
         self.commands.append((command, check))
         argv = command.argv
         if argv == ("printenv", "HOME"):
-            return CommandResult(0, "/home/user\n")
+            return CommandResult(0, "/home/operator\n")
         if argv == ("printenv", "PATH"):
-            return CommandResult(0, "/usr/bin:/home/user/.local/bin\n")
+            return CommandResult(0, "/usr/bin:/home/operator/.local/bin\n")
         if argv == ("uname", "-s"):
             return CommandResult(0, "Linux\n")
         if argv == ("uname", "-m"):
@@ -589,7 +589,7 @@ def test_single_node_environment_and_runtime() -> None:
         "--policy",
         "pi05",
         "--checkpoint",
-        "/home/user/models/pi05_so101",
+        "/models/pi05_so101",
         "--device",
         "cuda:0",
         "--host",
@@ -688,13 +688,13 @@ def test_wireless_example_generates_complementary_endpoints() -> None:
     client = json.loads(control.wireless_config_json)
     assert server["local"] == {
         "node_id": "model.pi05-01",
-        "host": "192.168.2.232",
+        "host": "192.168.10.10",
         "bind_host": "0.0.0.0",
         "port": 9300,
     }
     assert client["local"] == {
         "node_id": "runtime.so101-2-runtime",
-        "host": "192.168.2.148",
+        "host": "192.168.10.12",
         "bind_host": "0.0.0.0",
         "port": 9300,
     }
@@ -1109,9 +1109,9 @@ def test_sglang_pi05_reuses_existing_so101_binding(tmp_path) -> None:
         EXAMPLE.read_text(encoding="utf-8")
         .replace("backend: vvla", "backend: sglang")
         .replace(
-            "    source: /home/user/models/pi05_so101\n",
+            "    source: /models/pi05_so101\n",
             '    environment_packages: ["sglang[diffusion]==0.5.18"]\n'
-            "    source: /home/user/models/pi05_so101\n",
+            "    source: /models/pi05_so101\n",
         ),
         encoding="utf-8",
     )
@@ -1121,7 +1121,7 @@ def test_sglang_pi05_reuses_existing_so101_binding(tmp_path) -> None:
     assert model_service.command.argv[:5] == (
         "sglang",
         "serve",
-        "/home/user/models/pi05_so101",
+        "/models/pi05_so101",
         "--model-type",
         "diffusion",
     )
@@ -2037,11 +2037,11 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
     assert any(argv[-2:] == ("--group", "robot-so101") for argv in init_argv)
     assert executors[0].closed is True
     active_source = active_deploy_project(
-        "/home/user/.local/share/rlinf-deploy/thor-so101-pi05"
+        "/home/operator/.local/share/rlinf-deploy/thor-so101-pi05"
     )
     assert executors[0].symlinks == {
         active_source: (
-            "/home/user/.local/share/rlinf-deploy/thor-so101-pi05/sources/deploy"
+            "/home/operator/.local/share/rlinf-deploy/thor-so101-pi05/sources/deploy"
         )
     }
 
@@ -2087,7 +2087,7 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
     )
     assert (
         model_request["argv"][0]
-        == "/home/user/.local/share/rlinf-deploy/thor-so101-pi05/"
+        == "/home/operator/.local/share/rlinf-deploy/thor-so101-pi05/"
         "sources/inference/.venv-vvla/bin/vvla-http-serve"
     )
     assert any(
@@ -2270,7 +2270,7 @@ def test_cli_sync_updates_only_deploy_dependencies_when_lock_changes(
     assert uv_commands[0].argv[-2:] == ("--group", "robot-so101")
     assert uv_commands[0].environment == {
         "UV_PROJECT_ENVIRONMENT": (
-            "/home/user/.local/share/rlinf-deploy/thor-so101-pi05/"
+            "/home/operator/.local/share/rlinf-deploy/thor-so101-pi05/"
             "sources/deploy/.venv-robot-so101"
         )
     }
@@ -2548,8 +2548,8 @@ def test_vvla_model_image_keys_are_forwarded_to_the_policy_adapter(tmp_path) -> 
     config_path = tmp_path / "vvla-image-keys.yaml"
     config_path.write_text(
         EXAMPLE.read_text(encoding="utf-8").replace(
-            "    source: /home/user/models/pi05_so101\n",
-            "    source: /home/user/models/pi05_so101\n"
+            "    source: /models/pi05_so101\n",
+            "    source: /models/pi05_so101\n"
             "    image_keys:\n"
             "      observation.images.front: observation.images.base_0_rgb\n"
             "      observation.images.wrist: observation.images.left_wrist_0_rgb\n",

@@ -110,7 +110,7 @@ def test_control_service_rejects_non_loopback_task_listener() -> None:
 
 def test_host_client_rejects_non_loopback_control_endpoint() -> None:
     with pytest.raises(ValueError, match="loopback"):
-        ControlClient(LocalExecutor(), "http://192.168.2.232:8100")
+        ControlClient(LocalExecutor(), "http://192.168.10.10:8100")
 
 
 def test_control_service_executes_chunks_and_releases_resources(
