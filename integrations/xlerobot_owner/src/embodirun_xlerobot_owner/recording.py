@@ -16,6 +16,7 @@ corruption.
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import json
 import math
@@ -159,10 +160,8 @@ def _atomic_write_bytes(path: Path, payload: bytes) -> None:
             os.fsync(stream.fileno())
         os.replace(temporary, path)
     except BaseException:
-        try:
+        with contextlib.suppress(OSError):
             temporary.unlink()
-        except OSError:
-            pass
         raise
 
 
@@ -256,7 +255,7 @@ def _frame_timestamps(frame: Mapping[str, Any]) -> dict[str, Any]:
 def _frame_timestamp_domains(frame: Mapping[str, Any]) -> dict[str, str]:
     """Return clock domains, using one shared fixture domain when unspecified."""
 
-    result = {key: "__default__" for key in ("source", "state", "camera", "received", "sent")}
+    result = dict.fromkeys(("source", "state", "camera", "received", "sent"), "__default__")
     observation = frame.get("observation")
     feedback = frame.get("feedback")
     for container in (frame, observation, feedback):
@@ -331,9 +330,7 @@ def _camera_role_aliases(metadata: Mapping[str, Any]) -> dict[str, str]:
     return aliases
 
 
-def _canonical_image_paths(
-    frame: Mapping[str, Any], metadata: Mapping[str, Any]
-) -> dict[str, str] | None:
+def _canonical_image_paths(frame: Mapping[str, Any], metadata: Mapping[str, Any]) -> dict[str, str] | None:
     raw = frame.get("images")
     if not isinstance(raw, Mapping):
         return None
@@ -394,13 +391,13 @@ def _vector_from_container(
             raw_names_tuple = tuple(raw_names)
             if len(raw_names_tuple) == len(expected) and set(raw_names_tuple) == set(expected):
                 for sequence in sequences:
-                    if isinstance(sequence, Sequence) and not isinstance(
-                        sequence, (str, bytes, bytearray)
-                    ) and len(sequence) == len(raw_names_tuple):
+                    if (
+                        isinstance(sequence, Sequence)
+                        and not isinstance(sequence, (str, bytes, bytearray))
+                        and len(sequence) == len(raw_names_tuple)
+                    ):
                         by_name = dict(zip(raw_names_tuple, sequence))
-                        return tuple(
-                            _finite_number(by_name[joint], f"{name}.{joint}") for joint in expected
-                        )
+                        return tuple(_finite_number(by_name[joint], f"{name}.{joint}") for joint in expected)
     return None
 
 
@@ -443,10 +440,7 @@ def _base_velocity(value: Any) -> tuple[float, ...] | None:
                 if len(candidate) == 3:
                     return tuple(_finite_number(item, f"{key}[{index}]") for index, item in enumerate(candidate))
         if all(key in container for key in ("vx_m_s", "vy_m_s", "yaw_rate_rad_s")):
-            return tuple(
-                _finite_number(container[key], key)
-                for key in ("vx_m_s", "vy_m_s", "yaw_rate_rad_s")
-            )
+            return tuple(_finite_number(container[key], key) for key in ("vx_m_s", "vy_m_s", "yaw_rate_rad_s"))
         if "x.vel" in container or "theta.vel" in container:
             values = []
             for key in ("x.vel", "theta.vel"):
@@ -681,11 +675,7 @@ def _scan_frames(
                 decoded = raw.decode("utf-8")
                 value = json.loads(decoded)
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                if (
-                    not has_newline
-                    and stream.peek(1) == b""
-                    and _is_incomplete_json_line(decoded, exc)
-                ):
+                if not has_newline and stream.peek(1) == b"" and _is_incomplete_json_line(decoded, exc):
                     scan.incomplete_final_line = True
                     break
                 message = f"corrupt JSONL at line {line_number}: {exc}"
@@ -739,11 +729,7 @@ def _load_frames(episode: Path) -> Iterator[dict[str, Any]]:
                 decoded = raw.decode("utf-8")
                 value = json.loads(decoded)
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                if (
-                    not has_newline
-                    and stream.peek(1) == b""
-                    and _is_incomplete_json_line(decoded, exc)
-                ):
+                if not has_newline and stream.peek(1) == b"" and _is_incomplete_json_line(decoded, exc):
                     return
                 raise EpisodeCorruptionError(f"corrupt JSONL at line {line_number}: {exc}") from exc
             if not isinstance(value, dict):
@@ -870,9 +856,7 @@ class EpisodeRecorder:
                 "received_timestamp_ns",
             )
         }
-        relative_images = {
-            role: str(path.relative_to(self._path)) for role, _, path in image_payloads
-        }
+        relative_images = {role: str(path.relative_to(self._path)) for role, _, path in image_payloads}
         frame = {
             "frame_index": frame_index,
             "recorded_timestamp_ns": recorded_ns,
@@ -903,10 +887,8 @@ class EpisodeRecorder:
                 os.fsync(stream.fileno())
         except BaseException:
             for path in written_paths:
-                try:
+                with contextlib.suppress(OSError):
                     path.unlink()
-                except OSError:
-                    pass
             raise
 
         self._frame_count += 1
@@ -1018,9 +1000,7 @@ def _gap_analysis(scan: _FrameScan, fps: float, metadata: Mapping[str, Any]) -> 
         "expected_interval_ms": expected_ns / 1_000_000.0,
         "timestamp_sample_count": scan.timestamp_sample_count,
         "irregular_interval_count": scan.irregular_interval_count,
-        "largest_interval_ms": None
-        if scan.largest_interval_ns is None
-        else scan.largest_interval_ns / 1_000_000.0,
+        "largest_interval_ms": None if scan.largest_interval_ns is None else scan.largest_interval_ns / 1_000_000.0,
         "nonmonotonic_timestamps": scan.nonmonotonic_timestamps,
         "frame_index_gap_count": scan.frame_index_gap_count,
         "explicit_dropped_count": scan.explicit_dropped_count,
@@ -1078,7 +1058,9 @@ def _validate_frame(frame: Mapping[str, Any], report: _Validation, metadata: Map
         report.error("observation", f"frame {report.frame_count} is missing observation")
     elif _state_vector(observation) is None:
         report.state_ok = False
-        report.error("observation_state", f"frame {report.frame_count} lacks exactly the canonical 12-joint observation.state")
+        report.error(
+            "observation_state", f"frame {report.frame_count} lacks exactly the canonical 12-joint observation.state"
+        )
     if action_values is None:
         report.action_ok = False
         report.error("action", f"frame {report.frame_count} lacks a canonical 12-joint command action")
@@ -1086,7 +1068,9 @@ def _validate_frame(frame: Mapping[str, Any], report: _Validation, metadata: Map
     paths = _canonical_image_paths(frame, metadata)
     if paths is None or any(role not in paths for role in CAMERA_ROLES):
         report.camera_ok = False
-        report.error("camera_roles", f"frame {report.frame_count} must contain front, left_wrist, and right_wrist images")
+        report.error(
+            "camera_roles", f"frame {report.frame_count} must contain front, left_wrist, and right_wrist images"
+        )
     else:
         for role in CAMERA_ROLES:
             try:
@@ -1151,9 +1135,7 @@ def _validate_frame(frame: Mapping[str, Any], report: _Validation, metadata: Map
                 f"frame {report.frame_count} timestamp skew {skew_ns / 1_000_000.0:.3f} ms exceeds configured max_skew_ms={max_skew_ms}",
             )
     elif isinstance(source, int) and not isinstance(source, bool):
-        mismatched_domains = [
-            name for name in ("state", "camera") if domains[name] != domains["source"]
-        ]
+        mismatched_domains = [name for name in ("state", "camera") if domains[name] != domains["source"]]
         if mismatched_domains:
             report.timestamp_ok = False
             report.error(
@@ -1173,7 +1155,10 @@ def _validate_frame(frame: Mapping[str, Any], report: _Validation, metadata: Map
         elif isinstance(source, int) and not isinstance(source, bool):
             if received < source:
                 report.timestamp_ok = False
-                report.error("timestamp_freshness", f"frame {report.frame_count} received_timestamp_ns precedes source_timestamp_ns")
+                report.error(
+                    "timestamp_freshness",
+                    f"frame {report.frame_count} received_timestamp_ns precedes source_timestamp_ns",
+                )
             max_age_ms = _declared_max_ms(
                 metadata,
                 "max_observation_age_ms",
@@ -1284,6 +1269,7 @@ def validate_episode(path: Path) -> dict[str, Any]:
 
     scan: _FrameScan | None = None
     try:
+
         def check(frame: dict[str, Any]) -> None:
             report.frame_count += 1
             _validate_frame(frame, report, report.metadata)
@@ -1297,7 +1283,9 @@ def validate_episode(path: Path) -> dict[str, Any]:
     except EpisodeError as exc:
         report.error("json_corruption", str(exc))
     if scan is not None and scan.incomplete_final_line:
-        report.warning("incomplete_final_line", "the incomplete final JSONL line is ignored; resume may truncate only that line")
+        report.warning(
+            "incomplete_final_line", "the incomplete final JSONL line is ignored; resume may truncate only that line"
+        )
         report.error_codes.add("incomplete_final_line")
     if report.frame_count == 0 and scan is not None:
         report.error("empty", "episode contains no complete frames")
@@ -1442,15 +1430,15 @@ def _validate_export_frame(frame: Mapping[str, Any], episode: Path, metadata: Ma
         if not path.is_file() or not _jpeg_signature(path):
             raise LeRobotExportError(f"{episode}: {role} image is missing or is not a complete JPEG")
     timestamps = _frame_timestamps(frame)
-    if not isinstance(timestamps["source_timestamp_ns"], int) or not isinstance(
-        timestamps["state_timestamp_ns"], int
-    ):
+    if not isinstance(timestamps["source_timestamp_ns"], int) or not isinstance(timestamps["state_timestamp_ns"], int):
         raise LeRobotExportError(f"{episode}: frame needs source_timestamp_ns and state_timestamp_ns")
     if not isinstance(timestamps["camera_timestamps_ns"], Mapping):
         raise LeRobotExportError(f"{episode}: frame needs camera_timestamps_ns")
 
 
-def _resample_policy(metadata: Mapping[str, Any], *, source_fps: float | None, target_fps: float, irregular: bool) -> dict[str, Any]:
+def _resample_policy(
+    metadata: Mapping[str, Any], *, source_fps: float | None, target_fps: float, irregular: bool
+) -> dict[str, Any]:
     mismatch = source_fps is None or abs(source_fps - target_fps) > 1e-9
     if not mismatch and not irregular:
         return {
@@ -1688,18 +1676,22 @@ def _export_resampled_episode(
         dataset.save_episode()
     except Exception as exc:
         raise LeRobotExportError(f"LeRobotDataset.save_episode failed for {episode}: {exc}") from exc
-    return emitted, shapes, {
-        "mode": "nearest_previous_valid",
-        "source_fps": bounds.source_fps,
-        "target_fps": target_fps,
-        "irregular_source": bounds.irregular,
-        "policy": "hold nearest previous valid observation and action; reject age above configured max gap",
-        "max_gap_ms": max_gap_ns / 1_000_000.0,
-        "max_observation_age_ms": max_observation_age / 1_000_000.0,
-        "max_action_age_ms": max_action_age / 1_000_000.0,
-        "gap_count": gap_count,
-        "output_frame_count": emitted,
-    }
+    return (
+        emitted,
+        shapes,
+        {
+            "mode": "nearest_previous_valid",
+            "source_fps": bounds.source_fps,
+            "target_fps": target_fps,
+            "irregular_source": bounds.irregular,
+            "policy": "hold nearest previous valid observation and action; reject age above configured max gap",
+            "max_gap_ms": max_gap_ns / 1_000_000.0,
+            "max_observation_age_ms": max_observation_age / 1_000_000.0,
+            "max_action_age_ms": max_action_age / 1_000_000.0,
+            "gap_count": gap_count,
+            "output_frame_count": emitted,
+        },
+    )
 
 
 def export_lerobot(
@@ -1738,9 +1730,7 @@ def export_lerobot(
     reports = [validate_episode(path) for path in paths]
     for report in reports:
         if not allow_demo and not report["trainable"]:
-            raise LeRobotExportError(
-                f"episode is not trainable: {report['path']}; errors={report['errors']}"
-            )
+            raise LeRobotExportError(f"episode is not trainable: {report['path']}; errors={report['errors']}")
         fatal = {
             "metadata",
             "json_corruption",

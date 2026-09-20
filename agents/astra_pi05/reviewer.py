@@ -9,6 +9,7 @@ CLI is never needed for local verification.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import math
 import os
@@ -17,9 +18,10 @@ import signal
 import struct
 import tempfile
 import time
-from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping, Sequence
 import zlib
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from pathlib import Path
+from typing import Any
 
 from .decision import (
     ACTION_DIM,
@@ -72,12 +74,8 @@ DECISION_SCHEMA: dict[str, Any] = {
                 "additionalProperties": False,
                 "required": ["left", "right", "frame", "units", "duration_s"],
                 "properties": {
-                    "left": {
-                        "anyOf": [{"$ref": "#/$defs/waypoint"}, {"type": "null"}]
-                    },
-                    "right": {
-                        "anyOf": [{"$ref": "#/$defs/waypoint"}, {"type": "null"}]
-                    },
+                    "left": {"anyOf": [{"$ref": "#/$defs/waypoint"}, {"type": "null"}]},
+                    "right": {"anyOf": [{"$ref": "#/$defs/waypoint"}, {"type": "null"}]},
                     "frame": {
                         "type": "string",
                         "const": "so101_shoulder_plane",
@@ -99,17 +97,11 @@ DECISION_SCHEMA: dict[str, Any] = {
     },
 }
 
-CommandRunner = Callable[
-    [Sequence[str], Path], Awaitable[tuple[int, str, str]]
-]
+CommandRunner = Callable[[Sequence[str], Path], Awaitable[tuple[int, str, str]]]
 
 
 def _finite_number(value: Any) -> bool:
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(float(value))
-    )
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
 
 
 def _mapping(value: Any, label: str) -> Mapping[str, Any]:
@@ -159,11 +151,7 @@ def _validate_packet(
         raise ValueError(f"proposal.metadata.horizon must be {HORIZON!r}")
 
     actions = proposal.get("actions")
-    if (
-        not isinstance(actions, Sequence)
-        or isinstance(actions, (str, bytes))
-        or len(actions) != HORIZON
-    ):
+    if not isinstance(actions, Sequence) or isinstance(actions, (str, bytes)) or len(actions) != HORIZON:
         raise ValueError("proposal.actions must be a 50-step sequence")
     for index, row in enumerate(actions):
         if (
@@ -186,9 +174,7 @@ def _validate_packet(
     images = _mapping(observation.get("images"), "observation.images")
     required = {"front", "left_wrist", "right_wrist"}
     if set(images) != required:
-        raise ValueError(
-            "observation.images must contain exactly front, left_wrist, right_wrist"
-        )
+        raise ValueError("observation.images must contain exactly front, left_wrist, right_wrist")
     paths: list[Path] = []
     for name, value in images.items():
         if not isinstance(name, str) or not isinstance(value, str) or not os.path.isabs(value):
@@ -219,14 +205,10 @@ def _validate_packet(
     return proposal_id, observation_id, paths, dict(packet)
 
 
-def _validate_decision(
-    raw: Any, proposal_id: str, observation_id: str
-) -> dict[str, Any]:
+def _validate_decision(raw: Any, proposal_id: str, observation_id: str) -> dict[str, Any]:
     """Compatibility helper for callers that validate fake reviewer output."""
 
-    return validate_decision(
-        raw, proposal_id=proposal_id, observation_id=observation_id
-    )
+    return validate_decision(raw, proposal_id=proposal_id, observation_id=observation_id)
 
 
 def _trajectory_png(preview: Mapping[str, Any], target: Path) -> None:
@@ -316,10 +298,7 @@ def _trajectory_png_stdlib(preview: Mapping[str, Any], target: Path) -> None:
         ]
         for first, second in zip(scaled, scaled[1:]):
             line(first, second, color)
-    raw = b"".join(
-        b"\x00" + bytes(pixels[row * width * 3 : (row + 1) * width * 3])
-        for row in range(height)
-    )
+    raw = b"".join(b"\x00" + bytes(pixels[row * width * 3 : (row + 1) * width * 3]) for row in range(height))
 
     def chunk(kind: bytes, data: bytes) -> bytes:
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
@@ -344,17 +323,13 @@ async def _default_runner(argv: Sequence[str], cwd: Path) -> tuple[int, str, str
     try:
         stdout, stderr = await process.communicate()
     except asyncio.CancelledError:
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
         try:
             await asyncio.wait_for(process.wait(), timeout=2.0)
         except (asyncio.TimeoutError, ProcessLookupError):
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
             await process.wait()
         raise
     return (
@@ -389,9 +364,7 @@ class AstraCodexReviewer:
 
     decision_schema = DECISION_SCHEMA
 
-    def _validate_packet(
-        self, packet: Mapping[str, Any]
-    ) -> tuple[str, str, list[Path], dict[str, Any]]:
+    def _validate_packet(self, packet: Mapping[str, Any]) -> tuple[str, str, list[Path], dict[str, Any]]:
         return _validate_packet(packet)
 
     def _render_preview(
@@ -414,10 +387,7 @@ class AstraCodexReviewer:
         max_prefix_steps: int,
     ) -> dict[str, Any]:
         result = _validate_decision(raw, proposal_id, observation_id)
-        if (
-            result["decision"] == "execute_prefix"
-            and result["execute_steps"] > max_prefix_steps
-        ):
+        if result["decision"] == "execute_prefix" and result["execute_steps"] > max_prefix_steps:
             raise ValueError("Astra execute_prefix exceeds max_prefix_steps")
         return result
 
@@ -432,9 +402,7 @@ class AstraCodexReviewer:
         if not _finite_number(timeout_s) or float(timeout_s) <= 0:
             raise ValueError("timeout_s must be positive and finite")
         if reasoning_effort is not None and reasoning_effort not in REASONING_EFFORTS:
-            raise ValueError(
-                f"reasoning_effort must be one of {sorted(REASONING_EFFORTS)}"
-            )
+            raise ValueError(f"reasoning_effort must be one of {sorted(REASONING_EFFORTS)}")
         self.codex_bin = codex_bin
         self.timeout_s = float(timeout_s)
         self.reasoning_effort = reasoning_effort
@@ -444,11 +412,7 @@ class AstraCodexReviewer:
     async def review(self, packet: Mapping[str, Any]) -> Mapping[str, Any]:
         started = time.monotonic()
         max_prefix = packet.get("max_prefix_steps", MAX_PREFIX)
-        if (
-            isinstance(max_prefix, bool)
-            or not isinstance(max_prefix, int)
-            or not 1 <= max_prefix <= MAX_PREFIX
-        ):
+        if isinstance(max_prefix, bool) or not isinstance(max_prefix, int) or not 1 <= max_prefix <= MAX_PREFIX:
             raise ValueError("max_prefix_steps must be an integer from 1 to 15")
         proposal_id, observation_id, image_paths, copied_packet = self._validate_packet(packet)
         with tempfile.TemporaryDirectory(prefix="astra-pi05-review-") as work:
@@ -521,24 +485,18 @@ class AstraCodexReviewer:
                 argv.extend(("--image", str(image)))
             argv.extend(("--", self._prompt(prompt_packet, staged_mapping | {"trajectory": trajectory.name})))
             try:
-                code, stdout, stderr = await asyncio.wait_for(
-                    self.command_runner(argv, root), timeout=self.timeout_s
-                )
+                code, stdout, stderr = await asyncio.wait_for(self.command_runner(argv, root), timeout=self.timeout_s)
             except asyncio.TimeoutError as error:
                 raise TimeoutError("Astra reviewer timed out") from error
             if code != 0:
-                raise RuntimeError(
-                    f"Astra reviewer failed ({code}): {_failure_message(stdout, stderr)}"
-                )
+                raise RuntimeError(f"Astra reviewer failed ({code}): {_failure_message(stdout, stderr)}")
             if not output.is_file():
                 raise ValueError("Astra returned no output-last-message JSON")
             try:
                 raw = json.loads(output.read_text(encoding="utf-8"))
             except json.JSONDecodeError as error:
                 raise ValueError("Astra returned malformed JSON") from error
-            result = self._validate_result(
-                raw, proposal_id, observation_id, max_prefix
-            )
+            result = self._validate_result(raw, proposal_id, observation_id, max_prefix)
         self.last_timing = {"total_s": time.monotonic() - started}
         return result
 

@@ -34,11 +34,7 @@ JOINT_SUFFIXES = (
     "wrist_roll",
     "gripper",
 )
-LEADER_NAMES = tuple(
-    f"{side}_arm_{suffix}"
-    for side in ("left", "right")
-    for suffix in JOINT_SUFFIXES
-)
+LEADER_NAMES = tuple(f"{side}_arm_{suffix}" for side in ("left", "right") for suffix in JOINT_SUFFIXES)
 ACTION_NAMES = tuple(f"{name}.pos" for name in LEADER_NAMES)
 MODEL_NUMBER = 777
 DIRECT_FOLLOW_VELOCITY_RAW = 3400
@@ -57,7 +53,7 @@ def load_leader_calibration(path: Path) -> dict[str, dict[str, int]]:
         raise ValueError("leader calibration must contain the exact 12 left/right joints")
     result: dict[str, dict[str, int]] = {}
     for offset in (0, 6):
-        for expected_id, name in enumerate(LEADER_NAMES[offset:offset + 6], start=1):
+        for expected_id, name in enumerate(LEADER_NAMES[offset : offset + 6], start=1):
             entry = value[name]
             if not isinstance(entry, dict):
                 raise TypeError(f"calibration entry {name} must be an object")
@@ -75,18 +71,14 @@ def load_leader_calibration(path: Path) -> dict[str, dict[str, int]]:
     return result
 
 
-def raw_to_action(
-    raw_by_name: dict[str, int], calibration: dict[str, dict[str, int]]
-) -> dict[str, float]:
+def raw_to_action(raw_by_name: dict[str, int], calibration: dict[str, dict[str, int]]) -> dict[str, float]:
     action: dict[str, float] = {}
     for name in LEADER_NAMES:
         raw = int(raw_by_name[name])
         entry = calibration[name]
         bounded = max(entry["range_min"], min(entry["range_max"], raw))
         if name.endswith("_gripper"):
-            value = (bounded - entry["range_min"]) * 100.0 / (
-                entry["range_max"] - entry["range_min"]
-            )
+            value = (bounded - entry["range_min"]) * 100.0 / (entry["range_max"] - entry["range_min"])
             if entry["drive_mode"]:
                 value = 100.0 - value
         else:
@@ -96,9 +88,7 @@ def raw_to_action(
     return action
 
 
-def clamp_to_remote_limits(
-    action: dict[str, float], metadata: dict[str, Any]
-) -> tuple[dict[str, float], list[str]]:
+def clamp_to_remote_limits(action: dict[str, float], metadata: dict[str, Any]) -> tuple[dict[str, float], list[str]]:
     limits = metadata.get("joint_limits")
     if not isinstance(limits, dict):
         raise TypeError("AGX metadata does not contain joint_limits")
@@ -109,10 +99,7 @@ def clamp_to_remote_limits(
         if (
             not isinstance(bounds, list)
             or len(bounds) != 2
-            or any(
-                isinstance(item, bool) or not isinstance(item, (int, float))
-                for item in bounds
-            )
+            or any(isinstance(item, bool) or not isinstance(item, (int, float)) for item in bounds)
         ):
             raise ValueError(f"AGX metadata has no valid limits for {key}")
         low, high = float(bounds[0]), float(bounds[1])
@@ -147,17 +134,13 @@ def step_toward_target(
     return result, aligned
 
 
-def moved_during_alignment(
-    reference: dict[str, float], current: dict[str, float]
-) -> list[str]:
+def moved_during_alignment(reference: dict[str, float], current: dict[str, float]) -> list[str]:
     if set(reference) != set(current):
         raise ValueError("alignment actions must have identical keys")
     moved = []
     for key, reference_value in reference.items():
         tolerance = (
-            ALIGNMENT_GRIPPER_MOTION_TOLERANCE
-            if key.endswith("_gripper.pos")
-            else ALIGNMENT_JOINT_MOTION_TOLERANCE
+            ALIGNMENT_GRIPPER_MOTION_TOLERANCE if key.endswith("_gripper.pos") else ALIGNMENT_JOINT_MOTION_TOLERANCE
         )
         if abs(float(current[key]) - float(reference_value)) > tolerance:
             moved.append(key)
@@ -179,10 +162,7 @@ def validate_remote_metadata(metadata: dict[str, Any]) -> None:
     acceleration = metadata.get("arm_acceleration_raw")
     if not isinstance(velocity, dict) or velocity.get("value") != DIRECT_FOLLOW_VELOCITY_RAW:
         raise RuntimeError("AGX is not using the direct-follow velocity preset")
-    if (
-        not isinstance(acceleration, dict)
-        or acceleration.get("value") != DIRECT_FOLLOW_ACCELERATION_RAW
-    ):
+    if not isinstance(acceleration, dict) or acceleration.get("value") != DIRECT_FOLLOW_ACCELERATION_RAW:
         raise RuntimeError("AGX is not using the direct-follow acceleration preset")
 
 
@@ -233,9 +213,7 @@ class LeaderReader:
         try:
             for side in ("left", "right"):
                 motors = {
-                    f"{side}_arm_{suffix}": self._motor_type(
-                        motor_id, "sts3215", self._norm_mode.RANGE_M100_100
-                    )
+                    f"{side}_arm_{suffix}": self._motor_type(motor_id, "sts3215", self._norm_mode.RANGE_M100_100)
                     for motor_id, suffix in enumerate(JOINT_SUFFIXES, start=1)
                 }
                 bus = self._bus_type(port=self.ports[side], motors=motors)
@@ -311,9 +289,7 @@ class LeaderReader:
                 num_retry=LEADER_READ_RETRIES,
             )
         except Exception as exc:
-            raise ConnectionError(
-                f"{side} leader failed to sync read {field} after retries: {exc}"
-            ) from exc
+            raise ConnectionError(f"{side} leader failed to sync read {field} after retries: {exc}") from exc
 
     def close(self) -> None:
         for bus in tuple(self.buses.values()):
@@ -359,9 +335,7 @@ class CollectionSettings:
             fps=float(value.get("fps", 15.0)),
             reconnect_delay_s=float(value.get("reconnect_delay_s", 2.0)),
             alignment_speed_deg_s=float(value.get("alignment_speed_deg_s", 90.0)),
-            alignment_gripper_speed_pct_s=float(
-                value.get("alignment_gripper_speed_pct_s", 200.0)
-            ),
+            alignment_gripper_speed_pct_s=float(value.get("alignment_gripper_speed_pct_s", 200.0)),
             alignment_timeout_s=float(value.get("alignment_timeout_s", 30.0)),
         )
 
@@ -412,9 +386,7 @@ class CollectionSupervisor:
         self.settings = settings
         self._remote_factory = remote_factory or self._default_remote
         self._leader_factory = leader_factory or self._default_leader
-        self._recorder_factory = recorder_factory or (
-            lambda: EpisodeRecorder(settings.output, fps=settings.fps)
-        )
+        self._recorder_factory = recorder_factory or (lambda: EpisodeRecorder(settings.output, fps=settings.fps))
         self._requests: queue.Queue[_Request] = queue.Queue()
         self._shutdown = threading.Event()
         self._thread: threading.Thread | None = None
@@ -592,9 +564,7 @@ class CollectionSupervisor:
     def _handle_request(self, request: _Request) -> None:
         try:
             if request.generation != self._connection_generation:
-                raise _CommandError(
-                    "hardware reconnected after this command; explicitly start again"
-                )
+                raise _CommandError("hardware reconnected after this command; explicitly start again")
             if request.kind == "begin":
                 if not (request.task or "").strip():
                     raise _CommandError("task description must not be blank")
@@ -679,9 +649,7 @@ class CollectionSupervisor:
             current, _ = clamp_to_remote_limits(current, self._remote.metadata)
             moved = moved_during_alignment(target, current)
             if moved:
-                raise RuntimeError(
-                    "leaders moved during initial alignment: " + ", ".join(moved)
-                )
+                raise RuntimeError("leaders moved during initial alignment: " + ", ".join(moved))
             commanded, aligned = step_toward_target(
                 commanded,
                 target,
@@ -714,9 +682,7 @@ class CollectionSupervisor:
         began = time.monotonic()
         observation, images = self._remote.read()
         self._validate_observation(observation, images)
-        leader_action = self._leader.read(
-            check_torque=self._iteration % max(1, round(self.settings.fps)) == 0
-        )
+        leader_action = self._leader.read(check_torque=self._iteration % max(1, round(self.settings.fps)) == 0)
         bounded, clamped = clamp_to_remote_limits(leader_action, self._remote.metadata)
         feedback = self._remote.command(bounded)
         self._validate_feedback(feedback)
@@ -749,9 +715,7 @@ class CollectionSupervisor:
         observation, images = self._remote.read()
         self._validate_observation(observation, images)
 
-    def _finish_episode(
-        self, success: bool | None, *, reason: str = "operator"
-    ) -> dict[str, Any]:
+    def _finish_episode(self, success: bool | None, *, reason: str = "operator") -> dict[str, Any]:
         if self._recorder is None or not self._recorder.active:
             raise RuntimeError("no episode is recording")
         result = self._recorder.finish(success=success, reason=reason)

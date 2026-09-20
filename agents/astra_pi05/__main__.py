@@ -15,17 +15,17 @@ fixtures for API composition, not a real Astra model or physical device.
 from __future__ import annotations
 
 import argparse
-from collections.abc import Mapping, Sequence
-import json
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib
+import json
 import math
-from pathlib import Path
 import socket
 import sys
 import tempfile
 import threading
 import time
+from collections.abc import Mapping, Sequence
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from types import ModuleType
 from typing import Any
 
@@ -36,8 +36,11 @@ from agents.astra_pi05.decision import (
     validate_decision,
     validate_proposal,
 )
+from embodirun.application.contracts import ControlServiceConfig
 from embodirun.bindings import BindingDefinition, binding_definition
 from embodirun.client import ControlClient
+from embodirun.devices import DeviceManager
+from embodirun.model_services import ImagePayload, PolicyObservation, PolicyResult
 from embodirun.robots import (
     RobotAction,
     RobotAdapter,
@@ -47,10 +50,7 @@ from embodirun.robots import (
 )
 from embodirun.robots.sensors import SensorInput
 from embodirun.robots.sensors.cameras import CameraFrame
-from embodirun.application.contracts import ControlServiceConfig
-from embodirun.devices import DeviceManager
 from embodirun.services.control.server import ControlHttpServer, ControlService
-from embodirun.model_services import ImagePayload, PolicyObservation, PolicyResult
 
 
 def _validate_only() -> dict[str, Any]:
@@ -102,9 +102,7 @@ class _DemoActionHandler(BaseHTTPRequestHandler):
         self.wfile.write(encoded)
 
     def do_GET(self) -> None:
-        self._send(
-            200, {"status": "ok"} if self.path == "/health" else {"error": "not found"}
-        )
+        self._send(200, {"status": "ok"} if self.path == "/health" else {"error": "not found"})
 
     def do_POST(self) -> None:
         if self.path != "/v1/actions/generations":
@@ -239,19 +237,9 @@ class _DemoMapper:
         instruction: str,
         frames: Sequence[CameraFrame],
     ) -> PolicyObservation:
-        state = (
-            observation.values.get("joint_positions")
-            if isinstance(observation.values, Mapping)
-            else None
-        )
-        if (
-            not isinstance(state, Sequence)
-            or len(state) != self.joint_count
-            or not frames
-        ):
-            raise ValueError(
-                "demo binding requires a complete joint state and camera frame"
-            )
+        state = observation.values.get("joint_positions") if isinstance(observation.values, Mapping) else None
+        if not isinstance(state, Sequence) or len(state) != self.joint_count or not frames:
+            raise ValueError("demo binding requires a complete joint state and camera frame")
         return PolicyObservation(
             session_id=session_id,
             request_id=request_id,
@@ -338,9 +326,7 @@ def _run_demo(joint_count: int) -> dict[str, Any]:
     """
 
     if joint_count != ACTION_DIM:
-        raise ValueError(
-            f"--joint-count must equal the Astra action dimension {ACTION_DIM} for this decision contract"
-        )
+        raise ValueError(f"--joint-count must equal the Astra action dimension {ACTION_DIM} for this decision contract")
     robot_kind, binding_kind = _register_demo_types(joint_count, HORIZON)
     model_server = _DemoActionServer(("127.0.0.1", 0), HORIZON)
     model_thread = threading.Thread(target=model_server.serve_forever, daemon=True)
@@ -358,9 +344,7 @@ def _run_demo(joint_count: int) -> dict[str, Any]:
             inference_transport="http",
             inference_endpoint=f"http://127.0.0.1:{model_server.server_port}",
             inference_options={
-                "action_feature_names": [
-                    f"joint_{index}" for index in range(joint_count)
-                ],
+                "action_feature_names": [f"joint_{index}" for index in range(joint_count)],
                 "output_action_dim": joint_count,
                 "state_fields": ["joint_positions"],
             },
@@ -429,9 +413,7 @@ def _run_demo(joint_count: int) -> dict[str, Any]:
                 post_observation_timeout_s=2.0,
             ).run_round(prompt="move demo joints")
             if result.post_observation is None:
-                raise RuntimeError(
-                    result.error or "demo did not receive a new observation"
-                )
+                raise RuntimeError(result.error or "demo did not receive a new observation")
             return {
                 "status": result.status,
                 "proposal_steps": HORIZON,
@@ -452,17 +434,13 @@ def _run_demo(joint_count: int) -> dict[str, Any]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--demo", action="store_true", help="run the local HTTP cooperative demo"
-    )
+    parser.add_argument("--demo", action="store_true", help="run the local HTTP cooperative demo")
     parser.add_argument(
         "--validate-only",
         action="store_true",
         help="validate the pure decision contract",
     )
-    parser.add_argument(
-        "--joint-count", type=int, default=ACTION_DIM, help="demo joint count"
-    )
+    parser.add_argument("--joint-count", type=int, default=ACTION_DIM, help="demo joint count")
     args = parser.parse_args(argv)
     if args.demo and args.validate_only:
         parser.error("--demo and --validate-only are mutually exclusive")

@@ -57,8 +57,8 @@ jobs:
 
       - name: Check
         run: |
-          .venv/bin/ruff check src tests
-          .venv/bin/ruff format --check src tests
+          .venv/bin/ruff check src tests benchmarks examples agents integrations scripts
+          .venv/bin/ruff format --check src tests benchmarks examples agents integrations scripts
 
   docs:
     name: Docs (strict)

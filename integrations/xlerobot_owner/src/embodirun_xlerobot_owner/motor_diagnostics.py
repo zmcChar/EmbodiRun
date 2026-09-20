@@ -21,14 +21,20 @@ def _word(data: list[int], offset: int = 0, *, signed: bool = False) -> int:
     return -(value & 0x7FFF) if signed and value & 0x8000 else value
 
 
-def _read(packet: Any, port: Any, motor_id: int, label: str,
-          address: int, length: int) -> dict[str, Any]:
+def _read(packet: Any, port: Any, motor_id: int, label: str, address: int, length: int) -> dict[str, Any]:
     record: dict[str, Any] = {
-        "name": label, "motor_id": motor_id, "address": address,
-        "length": length, "started_timestamp_ns": time.time_ns(),
+        "name": label,
+        "motor_id": motor_id,
+        "address": address,
+        "length": length,
+        "started_timestamp_ns": time.time_ns(),
         "started_monotonic_ns": time.monotonic_ns(),
-        "comm_result": None, "device_error": None, "raw_bytes": None,
-        "ok": False, "errors": [], "fields": {},
+        "comm_result": None,
+        "device_error": None,
+        "raw_bytes": None,
+        "ok": False,
+        "errors": [],
+        "fields": {},
     }
     try:
         data, comm, error = packet.readTxRx(port, motor_id, address, length)
@@ -41,8 +47,9 @@ def _read(packet: Any, port: Any, motor_id: int, label: str,
             record["errors"].append(f"communication failed: {comm!r}")
         if type(error) is not int or error != 0:
             record["errors"].append(f"device error: {error!r}")
-        if (not isinstance(data, (list, tuple, bytes, bytearray))
-                or any(type(byte) is not int or not 0 <= byte <= 255 for byte in data)):
+        if not isinstance(data, (list, tuple, bytes, bytearray)) or any(
+            type(byte) is not int or not 0 <= byte <= 255 for byte in data
+        ):
             record["errors"].append("invalid payload bytes")
         else:
             record["raw_bytes"] = list(data)
@@ -65,8 +72,10 @@ def read_sts3215_present_block(packet: Any, port: Any, motor_id: int) -> dict[st
             "Present_Position": _word(data, signed=True),
             "Present_Velocity": _word(data, 2, signed=True),
             "Present_Load": _word(data, 4),
-            "Present_Voltage": data[6], "Present_Temperature": data[7],
-            "Status": data[9], "Moving": data[10],
+            "Present_Voltage": data[6],
+            "Present_Temperature": data[7],
+            "Status": data[9],
+            "Moving": data[10],
         }
     return block
 
@@ -75,10 +84,15 @@ def read_sts3215_diagnostics(packet: Any, port: Any, motor_id: int) -> dict[str,
     """Eight fixed reads at most; no retries, register writes or state inference."""
     records = [_read(packet, port, motor_id, "identity", 3, 2)]
     result = {
-        "purpose": "diagnostic_only", "read_only": True, "register_writes": 0,
-        "cached": False, "atomic_snapshot": False, "field_units": "raw",
+        "purpose": "diagnostic_only",
+        "read_only": True,
+        "register_writes": 0,
+        "cached": False,
+        "atomic_snapshot": False,
+        "field_units": "raw",
         "packet_validation": "SDK packet ID/checksum plus comm/error/payload validation",
-        "transactions": records, "ok": False,
+        "transactions": records,
+        "ok": False,
     }
     identity = records[0]
     if not identity["ok"]:
@@ -103,8 +117,7 @@ def read_sts3215_diagnostics(packet: Any, port: Any, motor_id: int) -> dict[str,
         records.append(record)
         if record["ok"]:
             record["fields"] = {
-                label: (_word(record["raw_bytes"], signed=signed)
-                        if length == 2 else record["raw_bytes"][0]),
+                label: (_word(record["raw_bytes"], signed=signed) if length == 2 else record["raw_bytes"][0]),
             }
     for label, address, names in (
         ("firmware", 0, ("Firmware_Major_Version", "Firmware_Minor_Version")),

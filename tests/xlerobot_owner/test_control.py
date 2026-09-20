@@ -2,6 +2,7 @@ import copy
 import math
 
 import pytest
+
 from embodirun_xlerobot_owner.control import (
     InputClock,
     InputFrame,

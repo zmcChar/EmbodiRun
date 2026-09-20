@@ -57,9 +57,7 @@ class SO101PlanarCorrectionMapper:
         if len(set(names)) != 12:
             raise ValueError("feature_names must be unique")
         if not isinstance(calibration, Mapping) or set(calibration) != set(names):
-            raise ValueError(
-                "calibration must declare exactly the configured SO101 feature names"
-            )
+            raise ValueError("calibration must declare exactly the configured SO101 feature names")
         validated_calibration: dict[str, dict[str, Any]] = {}
         for name in names:
             item = calibration[name]
@@ -104,16 +102,12 @@ class SO101PlanarCorrectionMapper:
             raise TypeError("action_encoder must be callable")
         encoder_names = getattr(action_encoder, "feature_names", None)
         if encoder_names is not None and tuple(encoder_names) != names:
-            raise ValueError(
-                "action_encoder feature_names must match SO101 feature_names"
-            )
+            raise ValueError("action_encoder feature_names must match SO101 feature_names")
         self.feature_names = names
         self.calibration = validated_calibration
         self.control_hz = float(control_hz)
         self.max_waypoint_duration_s = float(max_waypoint_duration_s)
-        self.max_joint_delta_deg = (
-            float(max_joint_delta_deg) if max_joint_delta_deg is not None else None
-        )
+        self.max_joint_delta_deg = float(max_joint_delta_deg) if max_joint_delta_deg is not None else None
         self.action_encoder = action_encoder
 
     @staticmethod
@@ -137,9 +131,7 @@ class SO101PlanarCorrectionMapper:
             try:
                 values = [value[name] for name in names]
             except KeyError as error:
-                raise SO101CorrectionError(
-                    "observation does not contain all configured SO101 features"
-                ) from error
+                raise SO101CorrectionError("observation does not contain all configured SO101 features") from error
         elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
             if len(value) != 12:
                 raise SO101CorrectionError("observation robot state must contain 12 values")
@@ -153,15 +145,11 @@ class SO101PlanarCorrectionMapper:
             raise SO101CorrectionError("observation grippers must be in [0,100]")
         return result
 
-    def _inverse(
-        self, reach_m: float, height_m: float, reference: tuple[float, float]
-    ) -> tuple[float, float]:
+    def _inverse(self, reach_m: float, height_m: float, reference: tuple[float, float]) -> tuple[float, float]:
         radius = math.hypot(reach_m, height_m)
         if not abs(self._l1 - self._l2) + 1e-5 < radius < self._l1 + self._l2 - 1e-5:
             raise SO101CorrectionError("SO101 target is outside the reachable workspace")
-        cosine = (
-            radius * radius - self._l1 * self._l1 - self._l2 * self._l2
-        ) / (2 * self._l1 * self._l2)
+        cosine = (radius * radius - self._l1 * self._l1 - self._l2 * self._l2) / (2 * self._l1 * self._l2)
         theta2 = math.acos(max(-1.0, min(1.0, cosine)))
         candidates = []
         for bend in (theta2, -theta2):
@@ -214,9 +202,7 @@ class SO101PlanarCorrectionMapper:
             # Deploy exposes the calibrated arm position in degrees.  The
             # raw observed range gives a finite symmetric degree envelope;
             # the owner still performs the final binding validation.
-            limit = (
-                float(item["range_max"]) - float(item["range_min"])
-            ) * 180.0 / 4095.0
+            limit = (float(item["range_max"]) - float(item["range_min"])) * 180.0 / 4095.0
             if not -limit <= row[index] <= limit:
                 raise SO101CorrectionError(f"{name} target is outside calibration")
 
@@ -272,18 +258,12 @@ class SO101PlanarCorrectionMapper:
                     raise SO101CorrectionError(f"{side} correction fields are incomplete")
                 reach = self._number(target["reach_m"], f"{side}.reach_m")
                 height = self._number(target["height_m"], f"{side}.height_m")
-                shoulder, elbow = self._inverse(
-                    reach, height, (current[base + 1], current[base + 2])
-                )
+                shoulder, elbow = self._inverse(reach, height, (current[base + 1], current[base + 2]))
                 row[base] = self._number(target["pan_deg"], f"{side}.pan_deg")
                 row[base + 1] = shoulder
                 row[base + 2] = elbow
-                row[base + 3] = self._number(
-                    target["wrist_flex_deg"], f"{side}.wrist_flex_deg"
-                )
-                row[base + 4] = self._number(
-                    target["wrist_roll_deg"], f"{side}.wrist_roll_deg"
-                )
+                row[base + 3] = self._number(target["wrist_flex_deg"], f"{side}.wrist_flex_deg")
+                row[base + 4] = self._number(target["wrist_roll_deg"], f"{side}.wrist_roll_deg")
                 row[base + 5] = self._number(target["gripper"], f"{side}.gripper")
                 if not 0.0 <= row[base + 5] <= 100.0:
                     raise SO101CorrectionError(f"{side}.gripper must be in [0,100]")
@@ -310,42 +290,28 @@ class SO101PlanarCorrectionMapper:
                 result.append(
                     {
                         "timestamp_s": timestamp_s,
-                        "values": {
-                            name: value for name, value in zip(self.feature_names, row)
-                        },
+                        "values": dict(zip(self.feature_names, row)),
                         "metadata": action_metadata,
                     }
                 )
             else:
-                encoded = self.action_encoder(
-                    tuple(row), timestamp_s=timestamp_s, metadata=action_metadata
-                )
+                encoded = self.action_encoder(tuple(row), timestamp_s=timestamp_s, metadata=action_metadata)
                 if not isinstance(encoded, Mapping):
-                    raise SO101CorrectionError(
-                        "action_encoder must return a public action mapping"
-                    )
+                    raise SO101CorrectionError("action_encoder must return a public action mapping")
                 action = dict(encoded)
                 declared_timestamp = action.get("timestamp_s", timestamp_s)
                 if (
                     isinstance(declared_timestamp, bool)
                     or not isinstance(declared_timestamp, (int, float))
                     or not math.isfinite(float(declared_timestamp))
-                    or not math.isclose(
-                        float(declared_timestamp), timestamp_s, abs_tol=1e-9
-                    )
+                    or not math.isclose(float(declared_timestamp), timestamp_s, abs_tol=1e-9)
                 ):
-                    raise SO101CorrectionError(
-                        "action_encoder timestamp_s must match the public schedule"
-                    )
+                    raise SO101CorrectionError("action_encoder timestamp_s must match the public schedule")
                 if not isinstance(action.get("values"), Mapping):
-                    raise SO101CorrectionError(
-                        "action_encoder must return public values"
-                    )
+                    raise SO101CorrectionError("action_encoder must return public values")
                 encoded_metadata = action.get("metadata", {})
                 if not isinstance(encoded_metadata, Mapping):
-                    raise SO101CorrectionError(
-                        "action_encoder metadata must be a mapping"
-                    )
+                    raise SO101CorrectionError("action_encoder metadata must be a mapping")
                 merged_metadata = dict(action_metadata)
                 merged_metadata.update(dict(encoded_metadata))
                 action["timestamp_s"] = timestamp_s

@@ -16,34 +16,32 @@ checkpoint.  No conversion is performed here.
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
-from dataclasses import dataclass
 import http.client
 import json
 import math
 import mimetypes
-from pathlib import Path
-from queue import Empty
 import threading
 import time
 from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager, suppress
+from dataclasses import dataclass
+from pathlib import Path
+from queue import Empty
 from typing import Any
-from urllib.parse import urlsplit
 
 from embodirun.robots.sensors import SensorInput
-from embodirun.robots.sensors.cameras import CameraFrame, CameraSource
+from embodirun.robots.sensors.cameras import CameraFrame
 from embodirun.services.control.contracts import ControlServiceConfig
 from embodirun.services.control.devices import DeviceManager
+from embodirun.services.control.observation_values import ObservationSubscriptionClosed
 from embodirun.services.control.recordings import ObservationRecorder
 from embodirun.services.control.server import ControlHttpServer, ControlService
-from embodirun.services.control.observation_values import ObservationSubscriptionClosed
 from embodirun.services.inference import (
     PolicyObservation,
     PolicyResult,
     Session,
     VvlaHttpClient,
 )
-
 
 RUNTIME_ID = "pi05-policy-vector-replay"
 ROBOT_ID = "policy-vector-replay"
@@ -121,24 +119,16 @@ def native_state_from_record(record: ReplayRecord) -> tuple[float, ...]:
     else:
         candidate = value
     if isinstance(candidate, (str, bytes, bytearray)) or not isinstance(candidate, Sequence):
-        raise ReplayInputError(
-            f"record line {record.line_number} has no six-value measured present vector"
-        )
+        raise ReplayInputError(f"record line {record.line_number} has no six-value measured present vector")
     if len(candidate) != 6:
-        raise ReplayInputError(
-            f"record line {record.line_number} measured present vector must contain 6 values"
-        )
+        raise ReplayInputError(f"record line {record.line_number} measured present vector must contain 6 values")
     values: list[float] = []
     for index, item in enumerate(candidate):
         if isinstance(item, bool) or not isinstance(item, (int, float)):
-            raise ReplayInputError(
-                f"record line {record.line_number} present[{index}] must be numeric"
-            )
+            raise ReplayInputError(f"record line {record.line_number} present[{index}] must be numeric")
         number = float(item)
         if not math.isfinite(number):
-            raise ReplayInputError(
-                f"record line {record.line_number} present[{index}] must be finite"
-            )
+            raise ReplayInputError(f"record line {record.line_number} present[{index}] must be finite")
         values.append(number)
     return tuple(values)
 
@@ -204,8 +194,7 @@ def _image_ref(
                 (
                     item
                     for key in ("path", "file", "filename", "uri")
-                    if (item := value.get(key)) is not None
-                    and _path_value(item) is not None
+                    if (item := value.get(key)) is not None and _path_value(item) is not None
                 ),
                 None,
             )
@@ -323,15 +312,11 @@ def load_replay_records(
         wrist_path = (manifest.parent / wrist_ref).resolve()
         for label, value in (("front", front_path), ("wrist", wrist_path)):
             if not value.is_file():
-                raise ReplayInputError(
-                    f"line {line_number} {label} image does not exist: {value}"
-                )
+                raise ReplayInputError(f"line {line_number} {label} image does not exist: {value}")
         sequence = _integer(_first(payload, ("index", "frame_index", "sequence", "step")))
         if sequence is None:
             sequence = line_number
-        captured = _integer(
-            _first(payload, ("captured_timestamp_ns", "capture_timestamp_ns", "timestamp_ns"))
-        )
+        captured = _integer(_first(payload, ("captured_timestamp_ns", "capture_timestamp_ns", "timestamp_ns")))
         records.append(
             ReplayRecord(
                 line_number=line_number,
@@ -339,23 +324,17 @@ def load_replay_records(
                 front_path=front_path,
                 wrist_path=wrist_path,
                 captured_timestamp_ns=captured,
-                original_clock_domain=_first(
-                    payload, ("clock_domain", "timestamp_domain")
-                ),
+                original_clock_domain=_first(payload, ("clock_domain", "timestamp_domain")),
                 raw_timestamp=_first(payload, ("timestamp", "time")),
                 measured_state=_first(
                     payload,
                     ("present", "measured", "observation.state", "state"),
                 ),
-                commanded_action=_first(
-                    payload, ("action", "sent", "goal", "command")
-                ),
+                commanded_action=_first(payload, ("action", "sent", "goal", "command")),
             )
         )
     if not records:
-        raise ReplayInputError(
-            f"no front/wrist image pair found in {manifest}; use --front-key and --wrist-key"
-        )
+        raise ReplayInputError(f"no front/wrist image pair found in {manifest}; use --front-key and --wrist-key")
     return tuple(records)
 
 
@@ -432,8 +411,7 @@ def validate_model_units(value: str) -> str:
 
     if value != MODEL_UNITS:
         raise ExperimentError(
-            f"model units must be explicitly {MODEL_UNITS!r}; no degree or normalized "
-            "conversion is implemented"
+            f"model units must be explicitly {MODEL_UNITS!r}; no degree or normalized conversion is implemented"
         )
     return value
 
@@ -459,21 +437,13 @@ def validate_capabilities(capabilities: Mapping[str, Any]) -> dict[str, Any]:
     feature_names = _nested(capabilities, "action_feature_names", "feature_names")
     return_steps = _nested(capabilities, "return_steps", "horizon")
     if action_space != POLICY_ACTION_SPACE:
-        raise ExperimentError(
-            f"VVLA action_space {action_space!r} does not match {POLICY_ACTION_SPACE!r}"
-        )
+        raise ExperimentError(f"VVLA action_space {action_space!r} does not match {POLICY_ACTION_SPACE!r}")
     if tuple(state_fields or ()) != ("state_native",):
-        raise ExperimentError(
-            f"VVLA state_fields must be ['state_native'], got {state_fields!r}"
-        )
+        raise ExperimentError(f"VVLA state_fields must be ['state_native'], got {state_fields!r}")
     if tuple(feature_names or ()) != POLICY_FEATURE_NAMES:
-        raise ExperimentError(
-            "VVLA action_feature_names do not match the six SO feature names"
-        )
+        raise ExperimentError("VVLA action_feature_names do not match the six SO feature names")
     if isinstance(return_steps, bool) or not isinstance(return_steps, int) or return_steps < PROPOSED_STEPS:
-        raise ExperimentError(
-            f"VVLA return_steps must support the {PROPOSED_STEPS}-step proposal"
-        )
+        raise ExperimentError(f"VVLA return_steps must support the {PROPOSED_STEPS}-step proposal")
     return {
         "action_space": action_space,
         "state_fields": list(state_fields),
@@ -490,10 +460,7 @@ def _policy_result_payload(result: PolicyResult) -> dict[str, Any]:
         "step_id": result.step_id,
         "session_revision": result.session_revision,
         "action_space": result.action_space,
-        "actions": [
-            {"type": action.kind, "values": dict(action.values)}
-            for action in result.actions
-        ],
+        "actions": [{"type": action.kind, "values": dict(action.values)} for action in result.actions],
         "timing": dict(result.timing),
         "policy_revision": result.policy_revision,
     }
@@ -523,9 +490,7 @@ def _result_prefix_vector(result: Mapping[str, Any]) -> tuple[float, ...]:
     if not isinstance(data, Sequence) or isinstance(data, (str, bytes)):
         raise ExperimentError("raw VVLA action data must be a sequence")
     if len(data) != PROPOSED_STEPS:
-        raise ExperimentError(
-            f"raw VVLA proposal must contain {PROPOSED_STEPS} rows, got {len(data)}"
-        )
+        raise ExperimentError(f"raw VVLA proposal must contain {PROPOSED_STEPS} rows, got {len(data)}")
     row = data[PREFIX_STEPS - 1]
     if not isinstance(row, Sequence) or isinstance(row, (str, bytes)) or len(row) != 6:
         raise ExperimentError("raw VVLA prefix row must contain six values")
@@ -552,8 +517,7 @@ def _observed_native_state(payload: Mapping[str, Any]) -> tuple[float, ...]:
 
 def _same_vector(left: Sequence[float], right: Sequence[float]) -> bool:
     return len(left) == len(right) and all(
-        math.isclose(float(a), float(b), rel_tol=0.0, abs_tol=1e-9)
-        for a, b in zip(left, right)
+        math.isclose(float(a), float(b), rel_tol=0.0, abs_tol=1e-9) for a, b in zip(left, right)
     )
 
 
@@ -604,8 +568,7 @@ def _wait_for_readback(
         )
         if (
             last_status == 200
-            and _observation_identifier(last_payload)
-            != _observation_identifier(previous)
+            and _observation_identifier(last_payload) != _observation_identifier(previous)
             and _same_vector(_observed_native_state(last_payload), expected_state)
         ):
             return last_status, last_payload
@@ -627,9 +590,7 @@ class InferenceTrace:
         self.calls: list[dict[str, Any]] = []
 
     def _call(self, name: str, started_ns: int, **detail: Any) -> None:
-        self.calls.append(
-            {"name": name, "elapsed_ns": max(0, time.monotonic_ns() - started_ns), **detail}
-        )
+        self.calls.append({"name": name, "elapsed_ns": max(0, time.monotonic_ns() - started_ns), **detail})
 
     def write_raw(self, path: Path) -> None:
         path.write_text(
@@ -813,13 +774,11 @@ def running_experiment(
                     service.close()
                 finally:
                     if trace_path is not None:
-                        try:
+                        # Preserve the original experiment/cleanup error;
+                        # successful runs still fail loudly below if the
+                        # required raw trace is absent.
+                        with suppress(OSError):
                             trace.write_raw(Path(trace_path))
-                        except OSError:
-                            # Preserve the original experiment/cleanup error;
-                            # successful runs still fail loudly below if the
-                            # required raw trace is absent.
-                            pass
 
 
 def _configure_recording_frame_names(service: ControlService) -> tuple[str, ...]:
@@ -831,8 +790,7 @@ def _configure_recording_frame_names(service: ControlService) -> tuple[str, ...]
     names = tuple(frame.name for frame in frames)
     if len(names) < 2 or len(set(names)) != len(names):
         raise ExperimentError(
-            "recording requires one unambiguous front/wrist source pair; "
-            f"shared snapshot names were {names!r}"
+            f"recording requires one unambiguous front/wrist source pair; shared snapshot names were {names!r}"
         )
     recorder = getattr(service, "_recorder", None)
     if not isinstance(recorder, ObservationRecorder):
@@ -900,7 +858,9 @@ def _validate_recording_artifacts(
     }
 
 
-def _http_json(server: ControlHttpServer, method: str, path: str, body: Mapping[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
+def _http_json(
+    server: ControlHttpServer, method: str, path: str, body: Mapping[str, Any] | None = None
+) -> tuple[int, dict[str, Any]]:
     host, port = server.server_address[:2]
     # A first remote VVLA request may include model warm-up.  Keep this bounded
     # but longer than the per-request inference budget so the HTTP caller does
@@ -1066,9 +1026,7 @@ def run_experiment(
     if len(owner_ids) != 2 or owner_ids[0] != owner_ids[1]:
         raise ExperimentError("the two tasks did not reuse one robot owner")
     if camera_source_count != 1:
-        raise ExperimentError(
-            f"expected one shared camera source, got {camera_source_count}"
-        )
+        raise ExperimentError(f"expected one shared camera source, got {camera_source_count}")
     if not subscription_snapshots:
         raise ExperimentError("no shared observation reached the consumer subscription")
 

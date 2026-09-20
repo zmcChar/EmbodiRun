@@ -6,6 +6,7 @@ pytest.importorskip("aiohttp")
 pytest.importorskip("aiortc")
 from aiohttp.test_utils import TestClient, TestServer
 from aiortc import RTCBundlePolicy, RTCConfiguration, RTCPeerConnection, RTCSessionDescription
+
 from embodirun_xlerobot_owner.robot import DemoRobot
 from embodirun_xlerobot_owner.server import Platform, create_app
 from embodirun_xlerobot_owner.video import CameraVideoTrack

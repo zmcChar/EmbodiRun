@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import ClassVar
 
 import pytest
+
 from embodirun_xlerobot_owner.recording import (
     CAMERA_ROLES,
     DEFAULT_JOINT_NAMES,

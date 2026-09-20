@@ -9,10 +9,11 @@ returned bytes to :meth:`SessionRecorder.save_media`.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import threading
 import time
-from typing import Any, Mapping
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
 
 
 def _json_value(value: Any) -> Any:
@@ -136,7 +137,7 @@ class SessionRecorder:
             self._events.close()
             self._closed = True
 
-    def __enter__(self) -> "SessionRecorder":
+    def __enter__(self) -> SessionRecorder:
         return self
 
     def __exit__(self, _type: Any, _value: Any, _traceback: Any) -> None:
