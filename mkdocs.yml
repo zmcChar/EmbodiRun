@@ -35,6 +35,7 @@ nav:
   - Configuration: configuration.md
   - Architecture: architecture.md
   - Support Matrix: support-matrix.md
+  - License and relicensing: license.md
   - Control: control.md
   - Safety: safety.md
   - Inference API v1: http_api.md

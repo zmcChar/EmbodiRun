@@ -267,9 +267,10 @@ software examples, outside the installed core package.
 
 ## License
 
-Apache License 2.0. See [`LICENSE`](LICENSE), [`NOTICE`](NOTICE), and
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). Model checkpoints, datasets,
-robot SDKs, and simulators keep their own licenses and are not distributed here.
+Apache License 2.0. See [`LICENSE`](LICENSE), [`NOTICE`](NOTICE),
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), and the
+[relicensing rationale](docs/license.md). Model checkpoints, datasets, robot
+SDKs, and simulators keep their own licenses and are not distributed here.
 
 ---
 

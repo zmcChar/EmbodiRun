@@ -216,7 +216,7 @@ result = client.inspect(job.job_id)
 
 ## 许可证
 
-Apache License 2.0，见 [`LICENSE`](LICENSE)、[`NOTICE`](NOTICE) 与 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。模型 checkpoint、数据集、机器人 SDK 与仿真器各自保留其许可证，本仓库不再分发。
+Apache License 2.0，见 [`LICENSE`](LICENSE)、[`NOTICE`](NOTICE)、[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) 与[换 License 的原因](docs/license.md)。模型 checkpoint、数据集、机器人 SDK 与仿真器各自保留其许可证，本仓库不再分发。
 
 ---
 

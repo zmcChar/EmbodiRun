@@ -44,10 +44,12 @@ Documentation = "https://embodirun.readthedocs.io/"
 sglang = [
     "sglang[diffusion]==0.5.18; python_version >= '3.12' and sys_platform == 'linux'",
 ]
-# Optional WirelessComm data plane. WirelessComm is not published here, so this
-# extra stays empty: the default HTTP path and the public lock never require a
-# private repository. Install the transport separately on nodes that need it
-# (see docs/installation.md), then select it with this extra.
+# Optional WirelessComm data plane. WirelessComm will be published at
+# https://github.com/BUAA-CI-LAB/WirelessComm. Until that repository is public
+# this extra stays empty so the default HTTP path and the public lock never
+# require private access; install the transport separately (see
+# docs/installation.md). Once public, replace the empty list with the pinned
+# HTTPS requirement and re-lock.
 wireless = []
 
 [dependency-groups]
