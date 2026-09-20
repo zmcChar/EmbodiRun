@@ -78,6 +78,34 @@ User documentation lives in `docs/` and is published to ReadTheDocs from
 `mkdocs.yml`. Keep the English `README.md` and Chinese `README.zh-CN.md` in
 sync when you change positioning, install steps, or the support matrix.
 
+### Simplified Chinese documentation
+
+`docs/zh/` holds the Chinese pages and `mkdocs.zh.yml` builds them. Read the
+Docs serves the result as the `embodirun-zh` project, a **translation** of
+`embodirun`, from this same repository and branch: the language prefix and the
+flyout menu come from that relationship, not from the build. The `embodirun-zh`
+project selects `mkdocs.zh.yml` through the *Build configuration file* field
+under **Admin → Settings** (paths in that file are relative to the repository
+root, not to the file).
+
+Conventions:
+
+- **English is canonical.** If a Chinese page and an English page disagree, the
+  English one is correct and the Chinese one is a bug.
+- **Add the navigation entry last.** `nav` in `mkdocs.zh.yml` lists only pages
+  that exist; an entry pointing at an untranslated page fails the strict build
+  on purpose, so a short navigation is better than a broken link.
+- **Translate deliberately.** These pages carry scoped claims — what a result
+  does and does not establish — and a translation that smooths those into
+  confident statements is worse than no translation.
+- **Leave untranslated links absolute.** Point at
+  `https://embodirun.readthedocs.io/en/latest/<page>/` rather than at a relative
+  path, so the link resolves without an untranslated page.
+- `docs/zh/stylesheets` is a symlink to `docs/stylesheets`. `extra_css` cannot
+  point outside `docs_dir`, and MkDocs silently emits a `<link>` without copying
+  the file when it does, so both sites share the stylesheet this way. Keep
+  symlinks enabled in your checkout.
+
 The governance documents — this file, [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md),
 and [`SECURITY.md`](SECURITY.md) — are maintained in English only so that there
 is one authoritative text. The Chinese README links to them.

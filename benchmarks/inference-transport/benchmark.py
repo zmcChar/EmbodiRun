@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import hashlib
 import json
 import math
@@ -28,8 +29,7 @@ import zlib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-
-SCHEMA = "rlinf.so101.transport-benchmark.v1"
+SCHEMA = "embodirun.so101.transport-benchmark.v1"
 IMAGE_FIELDS = ("observation.images.front", "observation.images.wrist")
 
 
@@ -54,8 +54,9 @@ def load_observations(path):
         joints, gripper = state["joint_positions_deg"], state["gripper_position"]
         if not isinstance(joints, list) or len(joints) != 5:
             raise ValueError("SO101 observations require five joint positions")
-        if any(isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x)
-               for x in [*joints, gripper]):
+        if any(
+            isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x) for x in [*joints, gripper]
+        ):
             raise ValueError("SO101 joint and gripper values must be finite numbers")
         if set(row["images"]) != set(IMAGE_FIELDS):
             raise ValueError(f"images must contain exactly {IMAGE_FIELDS}")
@@ -69,10 +70,15 @@ def load_observations(path):
                 mime_type = "image/png"
             else:
                 raise ValueError(f"not an encoded JPEG or PNG: {image_path}")
-            images.append({"name": name, "mime_type": mime_type,
-                           "data": base64.b64encode(data).decode("ascii")})
-        rows.append({"instruction": row["instruction"], "state": state,
-                     "images": images, "source": row.get("source", "user-supplied")})
+            images.append({"name": name, "mime_type": mime_type, "data": base64.b64encode(data).decode("ascii")})
+        rows.append(
+            {
+                "instruction": row["instruction"],
+                "state": state,
+                "images": images,
+                "source": row.get("source", "user-supplied"),
+            }
+        )
     if not rows:
         raise ValueError("observation manifest is empty")
     return rows
@@ -89,8 +95,7 @@ def distribution(values):
         upper = min(lower + 1, len(values) - 1)
         return values[lower] + (values[upper] - values[lower]) * (position - lower)
 
-    return {"mean": statistics.mean(values), "p50": percentile(0.5),
-            "p95": percentile(0.95), "p99": percentile(0.99)}
+    return {"mean": statistics.mean(values), "p50": percentile(0.5), "p95": percentile(0.95), "p99": percentile(0.99)}
 
 
 def measure(client, mapper, session, row, frames, *, step_id, request_id, expected_actions):
@@ -98,8 +103,12 @@ def measure(client, mapper, session, row, frames, *, step_id, request_id, expect
 
     start = time.perf_counter_ns()
     request = mapper.map_observation(
-        RobotObservation(time.time(), row["state"]), session_id=session.session_id,
-        request_id=request_id, step_id=step_id, instruction=row["instruction"], frames=frames,
+        RobotObservation(time.time(), row["state"]),
+        session_id=session.session_id,
+        request_id=request_id,
+        step_id=step_id,
+        instruction=row["instruction"],
+        frames=frames,
     )
     rpc_start = time.perf_counter_ns()
     result = client.step(request)
@@ -108,9 +117,13 @@ def measure(client, mapper, session, row, frames, *, step_id, request_id, expect
     if len(actions) != expected_actions:
         raise ValueError(f"expected {expected_actions} actions, received {len(actions)}")
     end = time.perf_counter_ns()
-    return {"e2e_ms": (end - start) / 1e6, "rpc_ms": (rpc_end - rpc_start) / 1e6,
-            "action_rows": len(actions), "server_timing_ms": dict(result.timing),
-            "policy_revision": result.policy_revision}
+    return {
+        "e2e_ms": (end - start) / 1e6,
+        "rpc_ms": (rpc_end - rpc_start) / 1e6,
+        "action_rows": len(actions),
+        "server_timing_ms": dict(result.timing),
+        "policy_revision": result.policy_revision,
+    }
 
 
 def worker(payload, emit, wait_start, wait_shutdown=None):
@@ -119,9 +132,13 @@ def worker(payload, emit, wait_start, wait_shutdown=None):
     from embodirun.services.inference.factory import build_inference_client
 
     rows = payload["observations"]
-    frames = [tuple(CameraFrame(image["name"], image["mime_type"],
-                                base64.b64decode(image["data"], validate=True))
-                    for image in row["images"]) for row in rows]
+    frames = [
+        tuple(
+            CameraFrame(image["name"], image["mime_type"], base64.b64decode(image["data"], validate=True))
+            for image in row["images"]
+        )
+        for row in rows
+    ]
     mapper = Pi05SO101Mapper()
     inference = payload["inference"]
     # The measured path is the device LAN for both protocols, never an HTTP proxy.
@@ -134,24 +151,40 @@ def worker(payload, emit, wait_start, wait_shutdown=None):
             path.write_text(canonical(payload["wireless_config"]))
             options["comm_config"] = str(path)
         client = build_inference_client(
-            inference["transport"], inference["endpoint"], options,
-            backend=inference["backend"], timeout_s=payload["timeout_s"],
+            inference["transport"],
+            inference["endpoint"],
+            options,
+            backend=inference["backend"],
+            timeout_s=payload["timeout_s"],
         )
         session = None
         report = None
         try:
             capabilities = client.capabilities()
-            session = client.open_session(robot_id=payload["robot_id"],
-                                          action_space=mapper.policy_action_space)
+            session = client.open_session(robot_id=payload["robot_id"], action_space=mapper.policy_action_space)
             run_id = uuid.uuid4().hex
             for index in range(payload["warmup"]):
                 sample = index % len(rows)
-                measure(client, mapper, session, rows[sample], frames[sample],
-                        step_id=index, request_id=f"{run_id}-warmup-{index}",
-                        expected_actions=payload["expected_actions"])
-            emit({"event": "ready", "runtime": payload["runtime"],
-                  "hostname": platform.node(), "python": platform.python_version(),
-                  "dataset_sha256": digest(rows), "capabilities": capabilities})
+                measure(
+                    client,
+                    mapper,
+                    session,
+                    rows[sample],
+                    frames[sample],
+                    step_id=index,
+                    request_id=f"{run_id}-warmup-{index}",
+                    expected_actions=payload["expected_actions"],
+                )
+            emit(
+                {
+                    "event": "ready",
+                    "runtime": payload["runtime"],
+                    "hostname": platform.node(),
+                    "python": platform.python_version(),
+                    "dataset_sha256": digest(rows),
+                    "capabilities": capabilities,
+                }
+            )
             wait_start()
             samples = []
             start = time.perf_counter()
@@ -160,31 +193,46 @@ def worker(payload, emit, wait_start, wait_shutdown=None):
                 attempt_start = time.perf_counter()
                 try:
                     result = measure(
-                        client, mapper, session, rows[sample], frames[sample],
-                        step_id=payload["warmup"] + index, request_id=f"{run_id}-measure-{index}",
+                        client,
+                        mapper,
+                        session,
+                        rows[sample],
+                        frames[sample],
+                        step_id=payload["warmup"] + index,
+                        request_id=f"{run_id}-measure-{index}",
                         expected_actions=payload["expected_actions"],
                     )
                     samples.append({"index": index, "sample": sample, "status": "ok", **result})
                 except Exception as error:
-                    samples.append({"index": index, "sample": sample, "status": "error",
-                                    "elapsed_ms": (time.perf_counter() - attempt_start) * 1000,
-                                    "error": f"{type(error).__name__}: {error}"})
+                    samples.append(
+                        {
+                            "index": index,
+                            "sample": sample,
+                            "status": "error",
+                            "elapsed_ms": (time.perf_counter() - attempt_start) * 1000,
+                            "error": f"{type(error).__name__}: {error}",
+                        }
+                    )
                     # A timed-out request may already have advanced the server session.
                     # Stop instead of retrying or discarding failed attempts.
                     break
             elapsed = time.perf_counter() - start
             successful = [row for row in samples if row["status"] == "ok"]
-            emit({"event": "done", "runtime": payload["runtime"],
-                  "elapsed_s": elapsed, "completed": len(successful)})
-            report = {"event": "report", "runtime": payload["runtime"],
-                  "status": "ok" if len(successful) == payload["requests"] else "failed",
-                  "attempted": len(samples), "completed": len(successful),
-                  "failed": len(samples) - len(successful), "elapsed_s": elapsed,
-                  "calls_per_s": len(successful) / elapsed,
-                  "e2e_ms": distribution([row["e2e_ms"] for row in successful]),
-                  "rpc_ms": distribution([row["rpc_ms"] for row in successful]),
-                  "encoded_image_bytes": [sum(len(frame.data) for frame in item) for item in frames],
-                  "samples": samples}
+            emit({"event": "done", "runtime": payload["runtime"], "elapsed_s": elapsed, "completed": len(successful)})
+            report = {
+                "event": "report",
+                "runtime": payload["runtime"],
+                "status": "ok" if len(successful) == payload["requests"] else "failed",
+                "attempted": len(samples),
+                "completed": len(successful),
+                "failed": len(samples) - len(successful),
+                "elapsed_s": elapsed,
+                "calls_per_s": len(successful) / elapsed,
+                "e2e_ms": distribution([row["e2e_ms"] for row in successful]),
+                "rpc_ms": distribution([row["rpc_ms"] for row in successful]),
+                "encoded_image_bytes": [sum(len(frame.data) for frame in item) for item in frames],
+                "samples": samples,
+            }
         finally:
             try:
                 if session is not None:
@@ -244,11 +292,22 @@ def read_event(process, expected, timeout):
 
 
 def ssh_command(connection, python, source, extra_options):
-    argv = ["ssh", "-T", "-o", "BatchMode=yes", "-o",
-            f"ConnectTimeout={connection.connect_timeout_s:g}",
-            "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3",
-            "-o", "StrictHostKeyChecking=" + ("accept-new" if connection.accept_new_host_key else "yes"),
-            "-p", str(connection.port)]
+    argv = [
+        "ssh",
+        "-T",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        f"ConnectTimeout={connection.connect_timeout_s:g}",
+        "-o",
+        "ServerAliveInterval=10",
+        "-o",
+        "ServerAliveCountMax=3",
+        "-o",
+        "StrictHostKeyChecking=" + ("accept-new" if connection.accept_new_host_key else "yes"),
+        "-p",
+        str(connection.port),
+    ]
     if connection.identity_file:
         argv += ["-i", os.path.expanduser(connection.identity_file)]
     for option in extra_options:
@@ -256,8 +315,7 @@ def ssh_command(connection, python, source, extra_options):
     if connection.proxy_command:
         argv += ["-o", "ProxyCommand=" + connection.proxy_command]
     # shlex protects the remote shell; observations travel over stdin, not argv.
-    return [*argv, f"{connection.username}@{connection.host}",
-            shlex.join([python, "-u", "-c", source, "worker"])]
+    return [*argv, f"{connection.username}@{connection.host}", shlex.join([python, "-u", "-c", source, "worker"])]
 
 
 def run(args):
@@ -271,8 +329,7 @@ def run(args):
     state = StateStore(state_path(args.state_dir, plan.name)).load()
     if state is None or state.config_digest != config_digest(config):
         raise ValueError("initialize this exact configuration with embodirun init first")
-    runtimes = [runtime for runtime in plan.runtimes
-                if not args.runtime or runtime.runtime_id in args.runtime]
+    runtimes = [runtime for runtime in plan.runtimes if not args.runtime or runtime.runtime_id in args.runtime]
     if not runtimes or (args.runtime and set(args.runtime) != {r.runtime_id for r in runtimes}):
         raise ValueError("unknown or empty runtime selection")
     if any(r.binding != "lerobot.so101.pi05" for r in runtimes):
@@ -299,41 +356,58 @@ def run(args):
             raise ValueError("workers must execute on the configured control nodes via SSH")
         service = services[runtime.service_id]
         control = json.loads(service.control_config_json)
-        payload = {"runtime": runtime.runtime_id, "robot_id": runtime.target_id,
-                   "inference": control["inference"], "observations": rows,
-                   "wireless_config": json.loads(service.wireless_config_json)
-                   if service.wireless_config_json else None,
-                   "warmup": args.warmup, "requests": args.requests,
-                   "timeout_s": args.timeout, "expected_actions": 50}
-        argv = ssh_command(node.connection, environment.path + "/bin/python",
-                           source, args.ssh_option)
+        payload = {
+            "runtime": runtime.runtime_id,
+            "robot_id": runtime.target_id,
+            "inference": control["inference"],
+            "observations": rows,
+            "wireless_config": json.loads(service.wireless_config_json) if service.wireless_config_json else None,
+            "warmup": args.warmup,
+            "requests": args.requests,
+            "timeout_s": args.timeout,
+            "expected_actions": 50,
+        }
+        argv = ssh_command(node.connection, environment.path + "/bin/python", source, args.ssh_option)
         jobs.append((runtime, payload, argv))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     if args.output.exists():
         raise ValueError(f"output already exists: {args.output}")
-    comparable_model = {key: value for key, value in model.options.items()
-                        if key not in {"transport", "transport_options", "server"}}
-    comparison = {"dataset_sha256": digest(rows), "requests_per_client": args.requests,
-                  "warmup_per_client": args.warmup, "timeout_s": args.timeout,
-                  "model": comparable_model, "deploy_commit": state.deploy_commit,
-                  "inference_commit": state.inference_commit,
-                  "benchmark_sha256": hashlib.sha256(source.encode()).hexdigest(),
-                  "clients": {r.runtime_id: config.nodes[r.node].connection.host for r in runtimes}}
-    report = {"schema": SCHEMA, "transport": model.transport, "status": "failed",
-              "comparison": comparison, "dataset_samples": len(rows),
-              "configuration_sha256": config_digest(config),
-              "transport_options": model.transport_options,
-              "ready": [], "clients": [], "errors": []}
+    comparable_model = {
+        key: value for key, value in model.options.items() if key not in {"transport", "transport_options", "server"}
+    }
+    comparison = {
+        "dataset_sha256": digest(rows),
+        "requests_per_client": args.requests,
+        "warmup_per_client": args.warmup,
+        "timeout_s": args.timeout,
+        "model": comparable_model,
+        "deploy_commit": state.deploy_commit,
+        "inference_commit": state.inference_commit,
+        "benchmark_sha256": hashlib.sha256(source.encode()).hexdigest(),
+        "clients": {r.runtime_id: config.nodes[r.node].connection.host for r in runtimes},
+    }
+    report = {
+        "schema": SCHEMA,
+        "transport": model.transport,
+        "status": "failed",
+        "comparison": comparison,
+        "dataset_samples": len(rows),
+        "configuration_sha256": config_digest(config),
+        "transport_options": model.transport_options,
+        "ready": [],
+        "clients": [],
+        "errors": [],
+    }
     processes, logs = [], []
     pool = ThreadPoolExecutor(max_workers=len(jobs))
     cancelling = threading.Event()
     try:
+
         def launch(job):
             runtime, payload, argv = job
             log = args.output.with_name(args.output.stem + "." + runtime.runtime_id + ".stderr.log").open("x")
             logs.append(log)
-            process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                       stderr=log)
+            process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log)
             processes.append(process)
             if cancelling.is_set():
                 process.terminate()
@@ -392,10 +466,8 @@ def run(args):
                     process.kill()
                     process.wait()
             if process.stdin and not process.stdin.closed:
-                try:
+                with contextlib.suppress(BrokenPipeError):
                     process.stdin.close()
-                except BrokenPipeError:
-                    pass
         pool.shutdown(wait=True, cancel_futures=True)
         for process in processes:
             process.stdout.close()
@@ -419,9 +491,11 @@ def compare(args):
     for report in reports:
         for client in report["clients"]:
             latency = client["e2e_ms"]
-            print(f"| {report['transport']} | {client['runtime']} | {client['completed']} | "
-                  f"{latency['mean']:.2f} | {latency['p50']:.2f} | {latency['p95']:.2f} | "
-                  f"{latency['p99']:.2f} | {client['calls_per_s']:.3f} |")
+            print(
+                f"| {report['transport']} | {client['runtime']} | {client['completed']} | "
+                f"{latency['mean']:.2f} | {latency['p50']:.2f} | {latency['p95']:.2f} | "
+                f"{latency['p99']:.2f} | {client['calls_per_s']:.3f} |"
+            )
     for report in reports:
         print(f"\n{report['transport']} aggregate: {report['aggregate_calls_per_s']:.3f} calls/s")
     return 0
@@ -438,14 +512,21 @@ def fixture(args):
         def chunk(kind, body):
             return struct.pack("!I", len(body)) + kind + body + struct.pack("!I", zlib.crc32(kind + body))
 
-        return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack("!2I5B", 640, 480, 8, 2, 0, 0, 0))
-                + chunk(b"IDAT", zlib.compress(pixels)) + chunk(b"IEND", b""))
+        return (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack("!2I5B", 640, 480, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(pixels))
+            + chunk(b"IEND", b"")
+        )
 
     for index, name in enumerate(("front.png", "wrist.png")):
         (args.output / name).write_bytes(png(index))
-    row = {"instruction": "Pick up the cube.", "source": "synthetic transport fixture, not a public dataset",
-           "state": {"joint_positions_deg": [0.0] * 5, "gripper_position": 0.0},
-           "images": dict(zip(IMAGE_FIELDS, ("front.png", "wrist.png")))}
+    row = {
+        "instruction": "Pick up the cube.",
+        "source": "synthetic transport fixture, not a public dataset",
+        "state": {"joint_positions_deg": [0.0] * 5, "gripper_position": 0.0},
+        "images": dict(zip(IMAGE_FIELDS, ("front.png", "wrist.png"))),
+    }
     path = args.output / "observations.jsonl"
     path.write_text(canonical(row) + "\n")
     print(path)
@@ -480,8 +561,9 @@ def main():
     p.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
-        return {"run": run, "compare": compare, "fixture": fixture,
-                "worker": lambda _: worker_main()}[args.command](args)
+        return {"run": run, "compare": compare, "fixture": fixture, "worker": lambda _: worker_main()}[args.command](
+            args
+        )
     except (OSError, ValueError, RuntimeError) as error:
         print(str(error), file=sys.stderr)
         return 1

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import ipaddress
 import json
 import logging
@@ -40,8 +41,8 @@ def xr_diagnostics(value: Any) -> dict:
     if not isinstance(value, dict):
         return {}
     result = {
-        name: value[name] for name in
-        ("active", "document_hidden", "viewer_tracked", "safety_tripped")
+        name: value[name]
+        for name in ("active", "document_hidden", "viewer_tracked", "safety_tripped")
         if type(value.get(name)) is bool
     }
     if value.get("visibility") in ("visible", "visible-blurred", "hidden", "none"):
@@ -54,9 +55,11 @@ def xr_diagnostics(value: Any) -> dict:
                 "gamepad": source.get("gamepad") is True,
                 "grip_space": source.get("grip_space") is True,
                 "profiles": [p[:80] for p in source.get("profiles", [])[:4] if isinstance(p, str)]
-                if isinstance(source.get("profiles"), list) else [],
+                if isinstance(source.get("profiles"), list)
+                else [],
             }
-            for source in sources[:6] if isinstance(source, dict)
+            for source in sources[:6]
+            if isinstance(source, dict)
         ]
     return result
 
@@ -91,9 +94,7 @@ class LeaderProcess:
                 state = "aligning"
             else:
                 state = "starting"
-        elif self.error or (
-            self.last_exit_code not in (None, 0) and not self.stop_requested
-        ):
+        elif self.error or (self.last_exit_code not in (None, 0) and not self.stop_requested):
             state = "failed"
         else:
             state = "stopped"
@@ -152,25 +153,19 @@ class LeaderProcess:
         self.stop_requested = True
         # Signal only the Python leader process first. Its finally block needs
         # the child SSH tunnel alive long enough to issue and verify arm Stop.
-        try:
+        with contextlib.suppress(ProcessLookupError):
             process.send_signal(signal.SIGINT)
-        except ProcessLookupError:
-            pass
         try:
             await asyncio.wait_for(process.wait(), timeout=20)
         except asyncio.TimeoutError:
             self.error = "dual-leader process did not stop after SIGINT"
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
             try:
                 await asyncio.wait_for(process.wait(), timeout=3)
             except asyncio.TimeoutError:
-                try:
+                with contextlib.suppress(ProcessLookupError):
                     os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
                 await process.wait()
         if self.reader_task is not None:
             await self.reader_task
@@ -200,10 +195,11 @@ class Platform:
             if robot_api or robot.mode == "hardware":
                 raise ValueError("token-free browser access is not allowed on the robot endpoint")
             network = ipaddress.ip_network(browser_no_token_cidr, strict=True)
-            private = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8",
-                       "fc00::/7", "::1/128")
-            if not any(network.version == allowed.version and network.subnet_of(allowed)
-                       for allowed in map(ipaddress.ip_network, private)):
+            private = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "fc00::/7", "::1/128")
+            if not any(
+                network.version == allowed.version and network.subnet_of(allowed)
+                for allowed in map(ipaddress.ip_network, private)
+            ):
                 raise ValueError("token-free browser network must be private or loopback")
             self.browser_network = network
         self.mapper = QuestMapper(mapping)
@@ -265,11 +261,7 @@ class Platform:
             return False
         if secrets.compare_digest(candidate.encode(), self.token.encode()):
             return True
-        if (
-            self.pairing_code is None
-            or time.monotonic() >= self.pairing_expires_at
-            or self.pairing_attempts >= 5
-        ):
+        if self.pairing_code is None or time.monotonic() >= self.pairing_expires_at or self.pairing_attempts >= 5:
             return False
         if secrets.compare_digest(candidate.encode(), self.pairing_code.encode()):
             self.pairing_code = None
@@ -312,9 +304,16 @@ class Platform:
             "control_owner": "self"
             if self.owner is not None and self.owner is client
             else "other"
-            if (self.owner is not None or self.robot_owner or self.robot_owners
-                or (self.robot.mode == "remote" and not self.robot.armed
-                    and self.observation.get("control_state", {}).get(getattr(self.robot, "scope", "all"))))
+            if (
+                self.owner is not None
+                or self.robot_owner
+                or self.robot_owners
+                or (
+                    self.robot.mode == "remote"
+                    and not self.robot.armed
+                    and self.observation.get("control_state", {}).get(getattr(self.robot, "scope", "all"))
+                )
+            )
             else None,
             "recording": self.recorder.active,
             "recording_path": self.last_recording_path,
@@ -347,8 +346,7 @@ class Platform:
                 if latest and isinstance(latest[0], InputFrame)
                 else {},
                 "kind": latest[1].get("type") if latest else None,
-                "keys": sorted(latest[0].keys)
-                if latest and isinstance(latest[0], KeyboardFrame) else [],
+                "keys": sorted(latest[0].keys) if latest and isinstance(latest[0], KeyboardFrame) else [],
                 "seq": latest[0].seq if latest else None,
                 "xr": xr_diagnostics(last_seen[1].get("xr")) if last_seen else {},
                 "xr_age_ms": round((now - last_seen[2]) * 1000) if last_seen else None,
@@ -362,9 +360,7 @@ class Platform:
                         "orientation": list(controller.orientation),
                         "thumbstick": list(controller.thumbstick),
                         "buttons": [bool(value) for value in buttons[:8]]
-                        if isinstance(
-                            buttons := latest[1]["controllers"][side].get("buttons", []), list
-                        )
+                        if isinstance(buttons := latest[1]["controllers"][side].get("buttons", []), list)
                         else [],
                     }
                     for side, controller in latest[0].controllers.items()
@@ -375,12 +371,8 @@ class Platform:
             "stats": {
                 "skipped_duplicate_samples": self.skipped_duplicate_samples,
                 "samples": self.sample_count,
-                "sample_hz": round(
-                    self.sample_count / max(1, time.monotonic() - self.started_at), 2
-                ),
-                "observation_age_ms": round((time.monotonic() - self.received_at) * 1000)
-                if self.received_at
-                else None,
+                "sample_hz": round(self.sample_count / max(1, time.monotonic() - self.started_at), 2),
+                "observation_age_ms": round((time.monotonic() - self.received_at) * 1000) if self.received_at else None,
                 "input_age_ms": round((time.monotonic() - self.frames[self.owner][2]) * 1000)
                 if self.owner in self.frames
                 else None,
@@ -438,8 +430,11 @@ class Platform:
             return "AGX 未开放底盘；需先核对轮向、轮径、轮距和停止行为"
         if metadata.get("allow_motion") is not True:
             return "AGX 动作权限已关闭"
-        if (self.robot.mode == "remote" and not self.robot.armed
-                and self.observation.get("control_state", {}).get("base")):
+        if (
+            self.robot.mode == "remote"
+            and not self.robot.armed
+            and self.observation.get("control_state", {}).get("base")
+        ):
             return "底盘由其他操作端控制；可继续观看，等待对方释放后再接管"
         return None
 
@@ -461,13 +456,15 @@ class Platform:
         self.last_action = None
 
     def keyboard_speed_limits(self) -> dict[str, float]:
-        limits = {"linear_m_s": self.mapper.config.max_linear_m_s,
-                  "angular_deg_s": self.mapper.config.max_angular_deg_s}
+        limits = {
+            "linear_m_s": self.mapper.config.max_linear_m_s,
+            "angular_deg_s": self.mapper.config.max_angular_deg_s,
+        }
         if self.robot.metadata.get("source") == "physical":
             # Older endpoints did not advertise their configured caps. Never
             # assume that raising the Mac setting raises the AGX limit too.
             remote = self.robot.metadata.get("base_velocity_limits", {})
-            for key, fallback in (("linear_m_s", .05), ("angular_deg_s", 10.0)):
+            for key, fallback in (("linear_m_s", 0.05), ("angular_deg_s", 10.0)):
                 value = remote.get(key, fallback) if isinstance(remote, dict) else fallback
                 try:
                     value = finite(value, key)
@@ -479,7 +476,7 @@ class Platform:
         return limits
 
     def keyboard_speed(self, client: web.WebSocketResponse | None) -> dict[str, float]:
-        selected = self.keyboard_speeds.get(client, {"linear_m_s": .05, "angular_deg_s": 10.0})
+        selected = self.keyboard_speeds.get(client, {"linear_m_s": 0.05, "angular_deg_s": 10.0})
         return {key: min(selected[key], limit) for key, limit in self.keyboard_speed_limits().items()}
 
     def set_keyboard_speed(self, client: web.WebSocketResponse, data: dict) -> dict:
@@ -489,13 +486,16 @@ class Platform:
             raise RuntimeError(reason)
         if self.stop_unconfirmed:
             raise RuntimeError("停止尚未确认，暂不能调速")
-        if ((self.owner is not None and self.owner is not client)
-                or self.robot_owner or self.robot_owners):
+        if (self.owner is not None and self.owner is not client) or self.robot_owner or self.robot_owners:
             raise RuntimeError("另一个操作端正在驾驶，不能修改速度")
         if self.armed:
             record = self.frames.get(client)
-            if (not record or not isinstance(record[0], KeyboardFrame)
-                    or time.monotonic() - record[2] > .35 or not record[0].neutral):
+            if (
+                not record
+                or not isinstance(record[0], KeyboardFrame)
+                or time.monotonic() - record[2] > 0.35
+                or not record[0].neutral
+            ):
                 raise RuntimeError("请先松开 WASD，再应用速度")
         selected = {key: finite(data.get(key), key) for key in ("linear_m_s", "angular_deg_s")}
         for key, limit in self.keyboard_speed_limits().items():
@@ -508,10 +508,14 @@ class Platform:
     def keyboard_drive_unavailable_reason(self) -> str | None:
         if reason := self.drive_unavailable_reason():
             return reason
-        if (self.robot.metadata.get("source") == "physical"
-                and self.robot.metadata.get("enabled_arms") != []
-                and (getattr(self.robot, "scope", "all") != "base"
-                     or "base" not in self.robot.metadata.get("control_scopes", []))):
+        if (
+            self.robot.metadata.get("source") == "physical"
+            and self.robot.metadata.get("enabled_arms") != []
+            and (
+                getattr(self.robot, "scope", "all") != "base"
+                or "base" not in self.robot.metadata.get("control_scopes", [])
+            )
+        ):
             return "键盘开车需使用独立底盘通道；请更新 AGX 服务和本机网关"
         return None
 
@@ -536,15 +540,16 @@ class Platform:
         self.last_action = None
         try:
             method = "stop_all" if all_scopes and hasattr(self.robot, "stop_all") else "stop"
-            if (not all_scopes and isinstance(self.robot, RemoteRobot)
-                    and self.robot.scope != "all"):
+            if not all_scopes and isinstance(self.robot, RemoteRobot) and self.robot.scope != "all":
                 method = "release"
             self.last_feedback = await self.call(method)
         except Exception as exc:  # noqa: BLE001 -- any SDK failure leaves stop unconfirmed
             self.last_feedback = {"stop_confirmed": False, "error": str(exc)}
             self.error = f"stop unconfirmed: {exc}"
-        self.stop_unconfirmed = (self.last_feedback.get("control_owned") is not False
-                                 and self.last_feedback.get("stop_confirmed") is not True)
+        self.stop_unconfirmed = (
+            self.last_feedback.get("control_owned") is not False
+            and self.last_feedback.get("stop_confirmed") is not True
+        )
         self.stop_unconfirmed |= bool(getattr(self.robot, "stop_unconfirmed", False))
         if interrupt_recording and self.recorder.active:
             try:
@@ -555,12 +560,14 @@ class Platform:
 
     async def stop_scope(self, scope: str) -> dict:
         """Caller holds control_lock; finish even if the HTTP request disconnects."""
+
         async def finish():
             self.robot_owners.pop(scope, None)
             result = await self.call("stop", scope)
             self.last_feedback = result
             self.stop_unconfirmed = self.stop_unconfirmed or result.get("stop_confirmed") is not True
             return result
+
         work = asyncio.create_task(finish())
         try:
             return await asyncio.shield(work)
@@ -583,13 +590,10 @@ class Platform:
         timestamps = self.observation.get("camera_timestamps_ns", {})
         source = self.observation.get("source_timestamp_ns")
         if self.robot.metadata.get("source") == "physical":
-            if not source or not all(
-                name in self.images and name in timestamps for name in CAMERAS
-            ):
+            if not source or not all(name in self.images and name in timestamps for name in CAMERAS):
                 raise RuntimeError("three current camera frames required before motion")
             if any(
-                not isinstance(timestamps.get(name), int)
-                or abs(source - timestamps[name]) > 500_000_000
+                not isinstance(timestamps.get(name), int) or abs(source - timestamps[name]) > 500_000_000
                 for name in CAMERAS
             ):
                 raise RuntimeError("robot camera frames are stale")
@@ -623,9 +627,7 @@ class Platform:
                         if keyboard and age > 0.35:
                             self.keyboard_paused = True
                         self.validate_observation()
-                        if self.mapper.control_mode == "drive" and (
-                            reason := self.drive_unavailable_reason()
-                        ):
+                        if self.mapper.control_mode == "drive" and (reason := self.drive_unavailable_reason()):
                             raise RuntimeError(reason)
                         frame, raw_input, _ = record
                         now = time.monotonic()
@@ -681,17 +683,13 @@ class Platform:
             for client in list(self.clients):
                 if not client.closed:
                     try:
-                        await asyncio.wait_for(
-                            client.send_json({"type": "status", **self.status(client)}), 0.03
-                        )
+                        await asyncio.wait_for(client.send_json({"type": "status", **self.status(client)}), 0.03)
                     except (asyncio.TimeoutError, ConnectionError, RuntimeError):
                         # Abort the slow socket instead of waiting for a close
                         # handshake in the robot loop.
                         if client._req and client._req.transport:
                             client._req.transport.close()
-            await asyncio.sleep(
-                max(0 if self.connected else 0.5, 1 / self.fps - (time.monotonic() - began))
-            )
+            await asyncio.sleep(max(0 if self.connected else 0.5, 1 / self.fps - (time.monotonic() - began)))
 
     async def record_frame(self, *, observation: dict, **values: Any) -> None:
         source = observation.get("source_timestamp_ns")
@@ -733,8 +731,11 @@ class Platform:
             name: value
             for name, value in action.items()
             if any(name.startswith(side + "_arm_") for side in enabled)
-            or (name in ("x.vel", "theta.vel") and self.robot.metadata.get("enable_base", False)
-                and getattr(self.robot, "scope", "all") != "arms")
+            or (
+                name in ("x.vel", "theta.vel")
+                and self.robot.metadata.get("enable_base", False)
+                and getattr(self.robot, "scope", "all") != "arms"
+            )
         }
 
     @staticmethod
@@ -776,8 +777,9 @@ async def auth(request: web.Request, handler):
         valid_cookie = request.cookies.get("teleop_session") in platform.session_tokens
         # Numeric LAN host only: a foreign site's DNS rebinding must not turn
         # a matching Origin/Host pair into unauthenticated local control.
-        valid_network = (platform.browser_address_allowed(request.remote)
-                         and platform.browser_address_allowed(request.url.host))
+        valid_network = platform.browser_address_allowed(request.remote) and platform.browser_address_allowed(
+            request.url.host
+        )
         if request.path.startswith("/robot/"):
             valid_cookie = False
             valid_network = False
@@ -839,11 +841,7 @@ async def video_offer(request: web.Request) -> web.Response:
 async def camera(request: web.Request) -> web.Response:
     platform = request.app[PLATFORM]
     name = request.match_info["name"]
-    if (
-        not platform.connected
-        or time.monotonic() - platform.received_at > 0.5
-        or name not in platform.images
-    ):
+    if not platform.connected or time.monotonic() - platform.received_at > 0.5 or name not in platform.images:
         return web.json_response({"error": "camera unavailable or stale"}, status=503)
     stamps = platform.observation.get("camera_timestamps_ns", {})
     source = platform.observation.get("source_timestamp_ns", 0)
@@ -875,11 +873,9 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
                     raise TypeError("websocket JSON object required")
                 kind = data.get("type")
                 if kind in ("input", "keyboard_input"):
-                    frame = (KeyboardFrame.parse(data) if kind == "keyboard_input"
-                             else InputFrame.parse(data))
+                    frame = KeyboardFrame.parse(data) if kind == "keyboard_input" else InputFrame.parse(data)
                     previous = platform.frames.get(ws)
-                    if (platform.owner is ws and previous
-                            and type(frame) is not type(previous[0])):
+                    if platform.owner is ws and previous and type(frame) is not type(previous[0]):
                         raise ValueError("Stop before changing input device")
                     try:
                         sampled_at = clock.accept(frame, time.monotonic())
@@ -892,8 +888,10 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
                             platform.keyboard_paused = True
                             platform.delayed_keyboard_packets += 1
                         continue
-                    platform.frames[ws] = frame, data, (
-                        sampled_at if isinstance(frame, KeyboardFrame) else time.monotonic()
+                    platform.frames[ws] = (
+                        frame,
+                        data,
+                        (sampled_at if isinstance(frame, KeyboardFrame) else time.monotonic()),
                     )
                     if platform.owner is ws:
                         if isinstance(frame, KeyboardFrame):
@@ -910,9 +908,7 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
                 elif kind == "arm":
                     async with platform.control_lock:
                         if platform.owner is not None or platform.robot_owner or platform.robot_owners:
-                            raise RuntimeError(
-                                "control already owned; stop before arming another browser"
-                            )
+                            raise RuntimeError("control already owned; stop before arming another browser")
                         frame_info = platform.frames.get(ws)
                         activation = data.get("activation", "neutral")
                         if activation not in ("neutral", "grip", "keyboard"):
@@ -929,16 +925,15 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
                         if (
                             not frame_info
                             or time.monotonic() - frame_info[2] > 0.35
-                            or not (frame_info[0].grip_activation_ready if activation == "grip"
-                                    else frame_info[0].neutral)
+                            or not (
+                                frame_info[0].grip_activation_ready if activation == "grip" else frame_info[0].neutral
+                            )
                         ):
                             raise RuntimeError(
                                 "fresh neutral input required; release WASD / grips, triggers and sticks"
                             )
                         platform.validate_observation()
-                        if platform.mapper.control_mode == "drive" and (
-                            reason := platform.drive_unavailable_reason()
-                        ):
+                        if platform.mapper.control_mode == "drive" and (reason := platform.drive_unavailable_reason()):
                             raise RuntimeError(reason)
                         result = await platform.call("arm")
                         if result.get("armed") is not True:
@@ -952,12 +947,10 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
                     try:
                         async with platform.control_lock:
                             speed = platform.set_keyboard_speed(ws, data)
-                        await ws.send_json({"type": "drive_speed_result", "ok": True,
-                                            "speed": speed})
+                        await ws.send_json({"type": "drive_speed_result", "ok": True, "speed": speed})
                     except (ValueError, TypeError, RuntimeError) as exc:
                         # A refused setting is not a broken controller packet.
-                        await ws.send_json({"type": "drive_speed_result", "ok": False,
-                                            "error": str(exc)})
+                        await ws.send_json({"type": "drive_speed_result", "ok": False, "error": str(exc)})
                 elif kind == "leader_start":
                     try:
                         await platform.start_leader(ws)
@@ -1030,9 +1023,7 @@ async def record_stop(request: web.Request) -> web.Response:
     if success is not None and type(success) is not bool:
         raise ValueError("success must be true, false, or null")
     async with platform.control_lock:
-        result = await asyncio.to_thread(
-            platform.recorder.finish, success=success, reason="operator"
-        )
+        result = await asyncio.to_thread(platform.recorder.finish, success=success, reason="operator")
     return web.json_response(result)
 
 
@@ -1049,8 +1040,9 @@ async def robot_endpoint(request: web.Request) -> web.Response:
         raise RuntimeError("robot does not support independent control scopes")
     if request.method == "GET":
         if endpoint == "diagnostics":
-            if (platform.robot.mode != "hardware"
-                    or not callable(getattr(platform.robot, "read_motor_diagnostics", None))):
+            if platform.robot.mode != "hardware" or not callable(
+                getattr(platform.robot, "read_motor_diagnostics", None)
+            ):
                 raise web.HTTPNotFound()
             if list(request.query) != ["motor"]:
                 raise ValueError("diagnostics require exactly one motor query parameter")
@@ -1062,21 +1054,28 @@ async def robot_endpoint(request: web.Request) -> web.Response:
         if endpoint == "status":
             # Never take the synchronous SDK lock on the event-loop thread.
             async with platform.control_lock:
-                safety = (await platform.call("safety_state")
-                          if hasattr(platform.robot, "safety_state") else None)
-                return web.json_response({**platform.status(), "metadata": platform.robot.metadata,
-                                          "hardware_safety": safety})
+                safety = await platform.call("safety_state") if hasattr(platform.robot, "safety_state") else None
+                return web.json_response(
+                    {**platform.status(), "metadata": platform.robot.metadata, "hardware_safety": safety}
+                )
         if endpoint == "observe":
             if not platform.connected or time.monotonic() - platform.received_at > 0.5:
                 raise RuntimeError("robot observation stale")
             async with platform.control_lock:
                 active = await platform.refresh_robot_owners()
-                owned = (platform.robot_owner == owner and bool(owner) and platform.robot.armed
-                         if scope == "all" else platform.robot_owners.get(scope) == owner and bool(owner))
+                owned = (
+                    platform.robot_owner == owner and bool(owner) and platform.robot.armed
+                    if scope == "all"
+                    else platform.robot_owners.get(scope) == owner and bool(owner)
+                )
             return web.json_response(
                 {
-                    "observation": {**platform.observation, "armed": platform.robot.armed,
-                                    "control_state": active, "control_owned": owned},
+                    "observation": {
+                        **platform.observation,
+                        "armed": platform.robot.armed,
+                        "control_state": active,
+                        "control_owned": owned,
+                    },
                     "images": {k: base64.b64encode(v).decode() for k, v in platform.images.items()},
                 }
             )
@@ -1086,8 +1085,11 @@ async def robot_endpoint(request: web.Request) -> web.Response:
         async with platform.control_lock:
             await platform.refresh_robot_owners()
             if endpoint == "arm":
-                if (platform.owner is not None or platform.robot_owner
-                        or (platform.robot_owners if scope == "all" else scope in platform.robot_owners)):
+                if (
+                    platform.owner is not None
+                    or platform.robot_owner
+                    or (platform.robot_owners if scope == "all" else scope in platform.robot_owners)
+                ):
                     raise RuntimeError("robot already controlled")
                 platform.validate_observation()
                 try:
@@ -1110,8 +1112,7 @@ async def robot_endpoint(request: web.Request) -> web.Response:
                     raise ValueError("owner-scoped release requires arms or base scope")
                 if platform.robot_owners.get(scope) != owner:
                     return web.json_response({"released": False, "control_owned": False})
-                return web.json_response({**await platform.stop_scope(scope),
-                                          "released": True, "control_owned": True})
+                return web.json_response({**await platform.stop_scope(scope), "released": True, "control_owned": True})
             if endpoint in ("stop", "stop_all"):
                 if scope == "all" or endpoint == "stop_all":
                     return web.json_response(await platform.stop("Mac requested whole-robot stop", all_scopes=True))

@@ -9,6 +9,7 @@ control-table values on this SDK.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import errno
 import inspect
@@ -57,15 +58,8 @@ ARM_JOINT_SUFFIXES = (
     "wrist_roll",
     "gripper",
 )
-JOINT_NAMES = tuple(
-    f"{side}_arm_{suffix}.pos"
-    for side in ("left", "right")
-    for suffix in ARM_JOINT_SUFFIXES
-)
-ARM_NAMES = {
-    side: tuple(f"{side}_arm_{suffix}" for suffix in ARM_JOINT_SUFFIXES)
-    for side in ("left", "right")
-}
+JOINT_NAMES = tuple(f"{side}_arm_{suffix}.pos" for side in ("left", "right") for suffix in ARM_JOINT_SUFFIXES)
+ARM_NAMES = {side: tuple(f"{side}_arm_{suffix}" for suffix in ARM_JOINT_SUFFIXES) for side in ("left", "right")}
 WHEEL_NAMES = ("base_left_wheel", "base_right_wheel")
 HEAD_TILT_NAME = "head_motor_2"
 POSITION_FIELDS = (
@@ -161,9 +155,10 @@ def _normalise_calibration_entry(name: str, value: Any) -> dict[str, int]:
     if isinstance(value, Mapping):
         source = value
     else:
-        source = {field: getattr(value, field, None) for field in (
-            "id", "drive_mode", "homing_offset", "range_min", "range_max"
-        )}
+        source = {
+            field: getattr(value, field, None)
+            for field in ("id", "drive_mode", "homing_offset", "range_min", "range_max")
+        }
     fields: dict[str, int] = {}
     for field in ("id", "drive_mode", "homing_offset", "range_min", "range_max"):
         if field not in source or source[field] is None:
@@ -222,16 +217,12 @@ def _load_sdk(sdk_src: Any) -> tuple[Any, Any, Any, Any, Any]:
         from lerobot.motors.feetech import FeetechMotorsBus as sdk_bus
         from lerobot.motors.feetech import OperatingMode
     except ImportError as exc:
-        raise HardwareDependencyError(
-            f"could not import FeetechMotorsBus from requested SDK {source_path}"
-        ) from exc
+        raise HardwareDependencyError(f"could not import FeetechMotorsBus from requested SDK {source_path}") from exc
 
     module = sys.modules.get("lerobot")
     module_file = getattr(module, "__file__", None)
     if not module_file or source_path not in Path(module_file).resolve().parents:
-        raise HardwareDependencyError(
-            f"lerobot resolved outside sdk_src: {module_file or '<unknown>'}"
-        )
+        raise HardwareDependencyError(f"lerobot resolved outside sdk_src: {module_file or '<unknown>'}")
     FeetechMotorsBus, Motor, MotorCalibration, MotorNormMode = (
         sdk_bus,
         sdk_motor,
@@ -250,7 +241,7 @@ class _PortLock:
         self.port = port
         encoded_path = os.path.realpath(port).encode("utf-8").hex()
         lock_root = Path(tempfile.gettempdir()) / "embodied-runtime-xlerobot-locks"
-        components = [encoded_path[index:index + 64] for index in range(0, len(encoded_path), 64)]
+        components = [encoded_path[index : index + 64] for index in range(0, len(encoded_path), 64)]
         self.path = lock_root.joinpath(*components[:-1], f"{components[-1]}.lock")
         self.fd: int | None = None
 
@@ -311,12 +302,17 @@ class _CameraWorker:
         capture: Any = None
         try:
             import cv2  # lazy optional dependency
+
             while not self._stop.is_set():
                 try:
                     if capture is None:
                         # Reopen the stable by-path link, not an obsolete fd
                         # or a cached /dev/video number after USB reconnect.
-                        capture = cv2.VideoCapture(self.path, cv2.CAP_V4L2) if str(self.path).startswith("/dev/") else cv2.VideoCapture(self.path)
+                        capture = (
+                            cv2.VideoCapture(self.path, cv2.CAP_V4L2)
+                            if str(self.path).startswith("/dev/")
+                            else cv2.VideoCapture(self.path)
+                        )
                         if capture is None or not capture.isOpened():
                             raise RuntimeError(f"could not open {self.path!r}")
                         capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
@@ -399,27 +395,23 @@ class HardwareRobot:
         self.enable_head_tilt = bool(self.config.get("enable_head_tilt", False))
         if self.enable_head_tilt and not self.config.get("enable_base", False):
             raise ValueError("enable_head_tilt requires the base control scope")
-        self._max_head_speed = _positive(
-            self.config.get("max_head_speed_deg_s", 5), "max_head_speed_deg_s"
-        )
+        self._max_head_speed = _positive(self.config.get("max_head_speed_deg_s", 5), "max_head_speed_deg_s")
         if self._max_head_speed > 15:
             raise ValueError("max_head_speed_deg_s exceeds the camera profile's 15 deg/s limit")
-        if (type(self.config.get("head_tilt_up_sign", 1)) is not int
-                or self.config.get("head_tilt_up_sign", 1) not in (-1, 1)):
+        if type(self.config.get("head_tilt_up_sign", 1)) is not int or self.config.get("head_tilt_up_sign", 1) not in (
+            -1,
+            1,
+        ):
             raise ValueError("head_tilt_up_sign must be -1 or 1")
         self._last_head_target_mono = 0.0
 
         ports = self.config.get("ports", {})
         if not isinstance(ports, Mapping):
             raise TypeError("ports must be a mapping")
-        self._ports = {
-            side: ports.get(side)
-            for side in ("left", "right")
-            if ports.get(side) not in (None, "")
-        }
+        self._ports = {side: ports.get(side) for side in ("left", "right") if ports.get(side) not in (None, "")}
         cameras = self.config.get("cameras")
         if cameras is None:
-            cameras = {name: None for name in ("front", "left_wrist", "right_wrist")}
+            cameras = dict.fromkeys(("front", "left_wrist", "right_wrist"))
         if not isinstance(cameras, Mapping):
             raise TypeError("cameras must be a mapping of camera name to path")
         self._camera_paths = dict(cameras)
@@ -455,9 +447,7 @@ class HardwareRobot:
                 if requested <= 0:
                     raise ValueError("arm_velocity_raw must be greater than zero")
                 if requested != int(requested) or requested > MAX_ARM_VELOCITY_RAW:
-                    raise ValueError(
-                        f"arm_velocity_raw must be an integer within [1, {MAX_ARM_VELOCITY_RAW}]"
-                    )
+                    raise ValueError(f"arm_velocity_raw must be an integer within [1, {MAX_ARM_VELOCITY_RAW}]")
                 self._arm_velocity_raw = int(requested)
             except (TypeError, ValueError) as exc:
                 self._motion_config_error = str(exc)
@@ -466,25 +456,16 @@ class HardwareRobot:
                 self.config.get("arm_acceleration_raw", MAX_ARM_ACCELERATION_RAW),
                 "arm_acceleration_raw",
             )
-            if (
-                acceleration != int(acceleration)
-                or not 0 <= acceleration <= MAX_ARM_ACCELERATION_RAW
-            ):
-                raise ValueError(
-                    f"arm_acceleration_raw must be an integer within [0, {MAX_ARM_ACCELERATION_RAW}]"
-                )
+            if acceleration != int(acceleration) or not 0 <= acceleration <= MAX_ARM_ACCELERATION_RAW:
+                raise ValueError(f"arm_acceleration_raw must be an integer within [0, {MAX_ARM_ACCELERATION_RAW}]")
             self._arm_acceleration_raw = int(acceleration)
         except (TypeError, ValueError) as exc:
             self._motion_config_error = str(exc)
 
         self._wheel_radius = _positive(self.config.get("wheel_radius", 0.05), "wheel_radius")
         self._wheelbase = _positive(self.config.get("wheelbase", 0.25), "wheelbase")
-        self._max_joint_speed = _positive(
-            self.config.get("max_joint_speed_deg_s", 15), "max_joint_speed_deg_s"
-        )
-        self._max_gripper_speed = _positive(
-            self.config.get("max_gripper_speed_pct_s", 25), "max_gripper_speed_pct_s"
-        )
+        self._max_joint_speed = _positive(self.config.get("max_joint_speed_deg_s", 15), "max_joint_speed_deg_s")
+        self._max_gripper_speed = _positive(self.config.get("max_gripper_speed_pct_s", 25), "max_gripper_speed_pct_s")
         feedback_tolerance = _finite(
             self.config.get("position_feedback_tolerance_raw", 0),
             "position_feedback_tolerance_raw",
@@ -492,25 +473,13 @@ class HardwareRobot:
         if feedback_tolerance != int(feedback_tolerance) or not 0 <= feedback_tolerance <= 64:
             raise ValueError("position_feedback_tolerance_raw must be an integer within [0, 64]")
         self._position_feedback_tolerance_raw = int(feedback_tolerance)
-        self._max_linear = _positive(
-            self.config.get("max_linear_m_s", 0.05), "max_linear_m_s"
-        )
-        self._max_angular = _positive(
-            self.config.get("max_angular_deg_s", 10), "max_angular_deg_s"
-        )
+        self._max_linear = _positive(self.config.get("max_linear_m_s", 0.05), "max_linear_m_s")
+        self._max_angular = _positive(self.config.get("max_angular_deg_s", 10), "max_angular_deg_s")
         self._read_interval_s = _finite(self.config.get("read_interval_s", 0.02), "read_interval_s")
-        self._camera_stale_s = _positive(
-            self.config.get("camera_stale_after_s", 0.5), "camera_stale_after_s"
-        )
-        self._stop_timeout_s = _positive(
-            self.config.get("stop_timeout_s", 0.4), "stop_timeout_s"
-        )
-        self._stop_poll_s = _positive(
-            self.config.get("stop_poll_interval_s", 0.02), "stop_poll_interval_s"
-        )
-        self._cleanup_timeout_s = _positive(
-            self.config.get("cleanup_timeout_s", 0.5), "cleanup_timeout_s"
-        )
+        self._camera_stale_s = _positive(self.config.get("camera_stale_after_s", 0.5), "camera_stale_after_s")
+        self._stop_timeout_s = _positive(self.config.get("stop_timeout_s", 0.4), "stop_timeout_s")
+        self._stop_poll_s = _positive(self.config.get("stop_poll_interval_s", 0.02), "stop_poll_interval_s")
+        self._cleanup_timeout_s = _positive(self.config.get("cleanup_timeout_s", 0.5), "cleanup_timeout_s")
         if self._read_interval_s < 0:
             raise ValueError("read_interval_s must not be negative")
 
@@ -526,26 +495,28 @@ class HardwareRobot:
             "enabled_arms": list(self.enabled_arms),
             "enable_base": bool(self.config.get("enable_base", False)),
             "allow_motion": self._allow_motion,
-            "arm_velocity_raw_configured": self._arm_velocity_raw is not None
-            and self._motion_config_error is None,
+            "arm_velocity_raw_configured": self._arm_velocity_raw is not None and self._motion_config_error is None,
             "arm_velocity_raw": {
-                "configured": self._arm_velocity_raw is not None
-                and self._motion_config_error is None,
+                "configured": self._arm_velocity_raw is not None and self._motion_config_error is None,
                 "value": self._arm_velocity_raw,
             },
             "arm_acceleration_raw": {
-                "configured": self._arm_acceleration_raw is not None
-                and self._motion_config_error is None,
+                "configured": self._arm_acceleration_raw is not None and self._motion_config_error is None,
                 "value": self._arm_acceleration_raw,
             },
             "read_only_startup": True,
             "watchdog_timeout_s": WATCHDOG_TIMEOUT_S,
-            "base_velocity_limits": {"linear_m_s": self._max_linear,
-                                     "angular_deg_s": self._max_angular},
-            "head_tilt": ({"joint": HEAD_TILT_NAME + ".pos", "scope": "base",
-                           "max_speed_deg_s": self._max_head_speed,
-                           "up_sign": self.config.get("head_tilt_up_sign", 1)}
-                          if self.enable_head_tilt else None),
+            "base_velocity_limits": {"linear_m_s": self._max_linear, "angular_deg_s": self._max_angular},
+            "head_tilt": (
+                {
+                    "joint": HEAD_TILT_NAME + ".pos",
+                    "scope": "base",
+                    "max_speed_deg_s": self._max_head_speed,
+                    "up_sign": self.config.get("head_tilt_up_sign", 1),
+                }
+                if self.enable_head_tilt
+                else None
+            ),
             "position_feedback_tolerance_raw": self._position_feedback_tolerance_raw,
         }
 
@@ -601,11 +572,13 @@ class HardwareRobot:
     def safety_state(self) -> dict:
         """Read-only in-memory ownership/fault evidence, not a stop confirmation."""
         with self._io_lock:
-            return {"stop_unconfirmed": self._stop_uncertain,
-                    "torque_ownership_uncertain": self._torque_ownership_uncertain,
-                    "owned_motors": sorted(self._owned_torque_names),
-                    "held_goals": dict(self._held_raw),
-                    "gripper_goals": dict(self._last_gripper_goal_raw)}
+            return {
+                "stop_unconfirmed": self._stop_uncertain,
+                "torque_ownership_uncertain": self._torque_ownership_uncertain,
+                "owned_motors": sorted(self._owned_torque_names),
+                "held_goals": dict(self._held_raw),
+                "gripper_goals": dict(self._last_gripper_goal_raw),
+            }
 
     def _parse_base_directions(self) -> dict[str, int] | None:
         if not bool(self.config.get("enable_base", False)):
@@ -653,10 +626,8 @@ class HardwareRobot:
                     ]
         if self.enable_head_tilt:
             calibration = self._calibration.get(HEAD_TILT_NAME)
-            half_range = ((calibration["range_max"] - calibration["range_min"]) * 180 / 4095
-                          if calibration else None)
-            result[HEAD_TILT_NAME + ".pos"] = ([-half_range, half_range]
-                                               if half_range is not None else None)
+            half_range = (calibration["range_max"] - calibration["range_min"]) * 180 / 4095 if calibration else None
+            result[HEAD_TILT_NAME + ".pos"] = [-half_range, half_range] if half_range is not None else None
         return result
 
     def _motor_specs(self, side: str, *, include_base: bool = False) -> dict[str, dict[str, Any]]:
@@ -677,8 +648,7 @@ class HardwareRobot:
     def _motor_names_for_control(self, scope: str = "all") -> tuple[str, ...]:
         if scope not in ("all", "arms", "base"):
             raise ValueError("scope must be all, arms or base")
-        names = (() if scope == "base" else
-                 tuple(name for side in self.enabled_arms for name in ARM_NAMES[side]))
+        names = () if scope == "base" else tuple(name for side in self.enabled_arms for name in ARM_NAMES[side])
         if scope != "arms" and bool(self.config.get("enable_base", False)):
             names += WHEEL_NAMES
             if self.enable_head_tilt:
@@ -705,30 +675,23 @@ class HardwareRobot:
                 "port": port,
                 "motors": specs,
                 "motor_specs": specs,
-                "calibration": {
-                    name: self._calibration[name]
-                    for name in specs
-                    if name in self._calibration
-                },
+                "calibration": {name: self._calibration[name] for name in specs if name in self._calibration},
             }
             try:
                 signature = inspect.signature(self._bus_factory)
                 accepts_kwargs = any(
-                    parameter.kind is inspect.Parameter.VAR_KEYWORD
-                    for parameter in signature.parameters.values()
+                    parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in signature.parameters.values()
                 )
-                kwargs = values if accepts_kwargs else {
-                    name: values[name]
-                    for name in signature.parameters
-                    if name in values
-                }
+                kwargs = (
+                    values
+                    if accepts_kwargs
+                    else {name: values[name] for name in signature.parameters if name in values}
+                )
                 return self._bus_factory(**kwargs)
             except (TypeError, ValueError):
                 return self._bus_factory(side, port, specs, values["calibration"])
 
-        sdk_bus, sdk_motor, sdk_calibration, sdk_norm_mode, _ = _load_sdk(
-            self.config.get("sdk_src")
-        )
+        sdk_bus, sdk_motor, sdk_calibration, sdk_norm_mode, _ = _load_sdk(self.config.get("sdk_src"))
         motor_objects: dict[str, Any] = {}
         calibration_objects: dict[str, Any] = {}
         for name, spec in specs.items():
@@ -748,9 +711,7 @@ class HardwareRobot:
         for side, port in self._ports.items():
             canonical = os.path.realpath(str(port))
             if canonical in paths.values():
-                raise HardwareRobotError(
-                    f"left and right motor buses cannot share serial port {port!r}"
-                )
+                raise HardwareRobotError(f"left and right motor buses cannot share serial port {port!r}")
             paths[side] = canonical
         acquired: list[_PortLock] = []
         try:
@@ -767,10 +728,8 @@ class HardwareRobot:
 
     def _release_port_locks(self) -> None:
         for lock in tuple(self._port_locks.values()):
-            try:
+            with contextlib.suppress(OSError):
                 lock.release()
-            except OSError:
-                pass
         self._port_locks.clear()
 
     def _configure_local_bus(self, bus: Any) -> None:
@@ -847,7 +806,7 @@ class HardwareRobot:
                 raise HardwareRobotError("hardware robot is not connected")
             if self.armed or self._active_scopes:
                 raise HardwareSafetyError("motor diagnostics require all control scopes inactive")
-            if (name not in WHEEL_NAMES or not self.config.get("enable_base", False)):
+            if name not in WHEEL_NAMES or not self.config.get("enable_base", False):
                 raise ValueError("motor diagnostics accept only enabled base wheels")
             bus = self._buses.get("right")
             if bus is None or not getattr(bus, "is_connected", False):
@@ -862,24 +821,20 @@ class HardwareRobot:
             if port is None or not callable(getattr(packet, "readTxRx", None)):
                 raise HardwareDependencyError("single-device diagnostic READ is unavailable")
             result = read_sts3215_diagnostics(packet, port, actual_id)
-            return {**result, "motor": name, "motor_id": actual_id,
-                    "port": str(self._ports["right"])}
+            return {**result, "motor": name, "motor_id": actual_id, "port": str(self._ports["right"])}
 
     def _snapshot_motor(self, side: str, bus: Any, name: str) -> dict[str, Any]:
         spec = self._motor_specs(side, include_base=True)[name]
         record: dict[str, Any] = {"id": spec["id"], "fields": {}, "errors": {}}
         try:
-            record["model_number"] = bus.ping(
-                spec["id"], num_retry=0, raise_on_error=False
-            )
+            record["model_number"] = bus.ping(spec["id"], num_retry=0, raise_on_error=False)
         except Exception as exc:  # noqa: BLE001 - report arbitrary SDK ping failures
             record["model_number"] = None
             record["errors"]["Model_Number"] = f"{type(exc).__name__}: {exc}"
         block_fields = set()
         packet = getattr(bus, "packet_handler", None)
         port = getattr(bus, "port_handler", None)
-        if (name in WHEEL_NAMES and port is not None
-                and callable(getattr(packet, "readTxRx", None))):
+        if name in WHEEL_NAMES and port is not None and callable(getattr(packet, "readTxRx", None)):
             # The production STS adapter supports a single reply for position,
             # velocity and Moving. Never replace failed block data with a later
             # scalar read: that could turn a transport error into apparent zero.
@@ -911,31 +866,36 @@ class HardwareRobot:
 
     def _wait_stopped_wheel(self, bus: Any, record: dict) -> list[str]:
         """Bounded read-only settling; every invalid reply is a hard failure."""
-        trace = {"read_only": True, "required_consecutive_zero": 3,
-                 "settled": False, "samples": [record["present_block"]]}
+        trace = {
+            "read_only": True,
+            "required_consecutive_zero": 3,
+            "settled": False,
+            "samples": [record["present_block"]],
+        }
         record["stationary_wait"] = trace
         consecutive = 0
         # At most 40 additional reads and 1.6 s of spacing. Never use during
         # active control: this holds the serial lock shared with the watchdog.
         for _ in range(40):
-            time.sleep(.04)
+            time.sleep(0.04)
             block = read_sts3215_present_block(bus.packet_handler, bus.port_handler, record["id"])
             trace["samples"].append(block)
             if not block["ok"]:
                 return ["wheel stationary wait transport/device failure: " + "; ".join(block["errors"])]
             fields = block["fields"]
-            consecutive = (consecutive + 1 if fields["Present_Velocity"] == 0
-                           and fields["Moving"] == 0 else 0)
+            consecutive = consecutive + 1 if fields["Present_Velocity"] == 0 and fields["Moving"] == 0 else 0
             if consecutive == 3:
                 trace["settled"] = True
                 record["present_block"] = block
-                record["fields"].update({k: fields[k] for k in
-                                         ("Present_Position", "Present_Velocity", "Moving")})
+                record["fields"].update({k: fields[k] for k in ("Present_Position", "Present_Velocity", "Moving")})
                 return []
         return ["wheel did not provide three consecutive strictly stationary samples"]
 
     def _preflight(
-        self, expected_hold: dict[str, int] | None = None, *, scope: str = "all",
+        self,
+        expected_hold: dict[str, int] | None = None,
+        *,
+        scope: str = "all",
         expected_zero_wheels: dict[str, int] | None = None,
     ) -> tuple[dict[str, int], dict[str, dict[str, Any]], list[str]]:
         positions: dict[str, int] = {}
@@ -950,8 +910,7 @@ class HardwareRobot:
         if any(name in WHEEL_NAMES for name in selected_names) and self._base_directions is None:
             errors.append("enable_base requires explicit wheel_directions of -1 or 1")
 
-        selected = [(self._motor_side(name), name)
-                    for name in selected_names]
+        selected = [(self._motor_side(name), name) for name in selected_names]
         for side, name in selected:
             prior_error_count = len(errors)
             bus = self._buses.get(side)
@@ -962,28 +921,19 @@ class HardwareRobot:
             records[name] = record
             expected_id = self._motor_specs(side, include_base=True)[name]["id"]
             if record.get("model_number") != MODEL_NUMBER_STS3215:
-                errors.append(
-                    f"{name}: model ID {record.get('model_number')!r}, expected {MODEL_NUMBER_STS3215}"
-                )
+                errors.append(f"{name}: model ID {record.get('model_number')!r}, expected {MODEL_NUMBER_STS3215}")
             calibration = self._calibration.get(name)
             if calibration is None:
                 errors.append(f"{name}: saved calibration is missing")
             elif calibration["id"] != expected_id:
-                errors.append(
-                    f"{name}: saved calibration ID {calibration['id']} does not match expected {expected_id}"
-                )
+                errors.append(f"{name}: saved calibration ID {calibration['id']} does not match expected {expected_id}")
             fields = record["fields"]
             field_errors = record["errors"]
             required_field_errors = {
-                field: message
-                for field, message in field_errors.items()
-                if field in PREFLIGHT_FIELDS
+                field: message for field, message in field_errors.items() if field in PREFLIGHT_FIELDS
             }
             if required_field_errors:
-                errors.extend(
-                    f"{name}.{field}: {message}"
-                    for field, message in required_field_errors.items()
-                )
+                errors.extend(f"{name}.{field}: {message}" for field, message in required_field_errors.items())
                 continue
             if calibration is not None:
                 mismatches = [
@@ -1001,9 +951,7 @@ class HardwareRobot:
             expected_mode = VELOCITY_MODE if name in WHEEL_NAMES else POSITION_MODE
             if fields.get("Operating_Mode") != expected_mode:
                 mode_name = "velocity" if expected_mode == VELOCITY_MODE else "position"
-                errors.append(
-                    f"{name}: Operating_Mode is not expected {mode_name} mode {expected_mode}"
-                )
+                errors.append(f"{name}: Operating_Mode is not expected {mode_name} mode {expected_mode}")
             torque = fields.get("Torque_Enable")
             internally_owned = (
                 name in self._owned_torque_names
@@ -1016,12 +964,19 @@ class HardwareRobot:
                     errors.append(f"{name}: held restart Goal_Position did not match")
                 if torque != 1:
                     errors.append(f"{name}: held restart requires existing torque=1")
-                if calibration is None or expected is None or not calibration["range_min"] <= expected <= calibration["range_max"]:
+                if (
+                    calibration is None
+                    or expected is None
+                    or not calibration["range_min"] <= expected <= calibration["range_max"]
+                ):
                     errors.append(f"{name}: held restart target outside calibration")
                 internally_owned = fields.get("Goal_Position") == expected and torque == 1
             if expected_zero_wheels is not None and name in expected_zero_wheels:
-                if (fields.get("Goal_Velocity") != 0 or "Goal_Velocity" in field_errors
-                        or torque != expected_zero_wheels[name]):
+                if (
+                    fields.get("Goal_Velocity") != 0
+                    or "Goal_Velocity" in field_errors
+                    or torque != expected_zero_wheels[name]
+                ):
                     errors.append(f"{name}: stopped wheel handoff torque/zero goal changed")
                 else:
                     internally_owned = True
@@ -1037,12 +992,18 @@ class HardwareRobot:
             )
             owned_stopped_wheel = internally_owned and torque == 1
             zero_goal_wheel = fields.get("Goal_Velocity") == 0
-            if (name in WHEEL_NAMES and record.get("present_block", {}).get("ok")
-                    and (fields.get("Present_Velocity") != 0 or fields.get("Moving") != 0)
-                    and zero_goal_wheel and (owned_stopped_wheel or cold_wheel)
-                    and "Goal_Velocity" not in field_errors and not self._active_scopes
-                    and not self._stop_uncertain and not self._torque_ownership_uncertain
-                    and len(errors) == prior_error_count):
+            if (
+                name in WHEEL_NAMES
+                and record.get("present_block", {}).get("ok")
+                and (fields.get("Present_Velocity") != 0 or fields.get("Moving") != 0)
+                and zero_goal_wheel
+                and (owned_stopped_wheel or cold_wheel)
+                and "Goal_Velocity" not in field_errors
+                and not self._active_scopes
+                and not self._stop_uncertain
+                and not self._torque_ownership_uncertain
+                and len(errors) == prior_error_count
+            ):
                 errors.extend(f"{name}: {error}" for error in self._wait_stopped_wheel(bus, record))
             try:
                 present_position = int(fields["Present_Position"])
@@ -1095,13 +1056,18 @@ class HardwareRobot:
                 confirmed = status.get("metadata", {}).get("holding_resume", {})
                 if confirmed.get("restored") is not True or confirmed.get("register_writes") != 0:
                     raise ValueError("prior service has no confirmed stop or held restore")
-            if (status.get("connected") is not True or status.get("armed") is not False
-                    or status.get("control_owner") is not None
-                    or status.get("control_state") != {"arms": False, "base": False}
-                    or status.get("stop_unconfirmed") is not False
-                    or status.get("recording") is not False
-                    or status.get("error") or status.get("observation_errors")
-                    or confirmed.get("stop_confirmed") is not True or confirmed.get("errors")):
+            if (
+                status.get("connected") is not True
+                or status.get("armed") is not False
+                or status.get("control_owner") is not None
+                or status.get("control_state") != {"arms": False, "base": False}
+                or status.get("stop_unconfirmed") is not False
+                or status.get("recording") is not False
+                or status.get("error")
+                or status.get("observation_errors")
+                or confirmed.get("stop_confirmed") is not True
+                or confirmed.get("errors")
+            ):
                 raise ValueError("prior service is not unowned with confirmed stop")
         samples = evidence.get("samples", [])
         if not isinstance(samples, list) or len(samples) < 3:
@@ -1110,12 +1076,15 @@ class HardwareRobot:
         for sample in samples:
             stamp = sample.get("state_timestamp_ns")
             raw = sample.get("raw", {})
-            if (type(stamp) is not int or stamp <= previous
-                    or sample.get("state_cached") is not False or sample.get("errors")
-                    or set(raw) != set(self._motor_names_for_control("all"))):
+            if (
+                type(stamp) is not int
+                or stamp <= previous
+                or sample.get("state_cached") is not False
+                or sample.get("errors")
+                or set(raw) != set(self._motor_names_for_control("all"))
+            ):
                 raise ValueError("prior service observations incomplete or stale")
-            if any(fields.get("Present_Velocity") != 0 or fields.get("Moving") != 0
-                   for fields in raw.values()):
+            if any(fields.get("Present_Velocity") != 0 or fields.get("Moving") != 0 for fields in raw.values()):
                 raise ValueError("prior service did not observe strict stationary feedback")
             previous = stamp
 
@@ -1133,8 +1102,13 @@ class HardwareRobot:
         from .stop_fault_handoff import validate_snapshot
 
         with self._io_lock:
-            if (not self._inherited_stop_fault or not self._stop_uncertain
-                    or not self.connected or self.armed or self._owned_torque_names):
+            if (
+                not self._inherited_stop_fault
+                or not self._stop_uncertain
+                or not self.connected
+                or self.armed
+                or self._owned_torque_names
+            ):
                 raise HardwareSafetyError("fault restore requires a new blocked connected instance")
             state = validate_snapshot(self, snapshot)
             if self._calibration_error or self._calibration_errors or self._motion_config_error:
@@ -1143,16 +1117,23 @@ class HardwareRobot:
             for name in self._motor_names_for_control():
                 record = self._last_audit["buses"][self._motor_side(name)][name]
                 fields, calibration = record["fields"], self._calibration.get(name)
-                if (record["errors"] or record.get("model_number") != MODEL_NUMBER_STS3215
-                        or calibration is None or calibration["id"] != record["id"]):
+                if (
+                    record["errors"]
+                    or record.get("model_number") != MODEL_NUMBER_STS3215
+                    or calibration is None
+                    or calibration["id"] != record["id"]
+                ):
                     raise HardwareSafetyError(f"{name}: invalid fault handoff device/calibration read")
-                expected = {"Torque_Enable": 1,
-                            "Operating_Mode": VELOCITY_MODE if name in WHEEL_NAMES else POSITION_MODE,
-                            "Homing_Offset": calibration["homing_offset"],
-                            "Min_Position_Limit": calibration["range_min"],
-                            "Max_Position_Limit": calibration["range_max"]}
+                expected = {
+                    "Torque_Enable": 1,
+                    "Operating_Mode": VELOCITY_MODE if name in WHEEL_NAMES else POSITION_MODE,
+                    "Homing_Offset": calibration["homing_offset"],
+                    "Min_Position_Limit": calibration["range_min"],
+                    "Max_Position_Limit": calibration["range_max"],
+                }
                 expected["Goal_Velocity" if name in WHEEL_NAMES else "Goal_Position"] = (
-                    0 if name in WHEEL_NAMES else state["held_goals"][name])
+                    0 if name in WHEEL_NAMES else state["held_goals"][name]
+                )
                 if any(type(fields.get(k)) is not int or fields[k] != v for k, v in expected.items()):
                     raise HardwareSafetyError(f"{name}: fault handoff mode/torque/goal/calibration changed")
                 position = fields.get("Present_Position")
@@ -1162,8 +1143,11 @@ class HardwareRobot:
                     goal = state["held_goals"][name]
                     if not calibration["range_min"] <= goal <= calibration["range_max"]:
                         raise HardwareSafetyError(f"{name}: inherited goal outside calibration")
-                    if not (calibration["range_min"] - self._position_feedback_tolerance_raw
-                            <= position <= calibration["range_max"] + self._position_feedback_tolerance_raw):
+                    if not (
+                        calibration["range_min"] - self._position_feedback_tolerance_raw
+                        <= position
+                        <= calibration["range_max"] + self._position_feedback_tolerance_raw
+                    ):
                         raise HardwareSafetyError(f"{name}: current position outside calibration")
                 # Nonzero velocity/Moving remain evidence of the inherited fault.
                 if any(type(fields.get(k)) is not int for k in ("Present_Velocity", "Moving")):
@@ -1176,8 +1160,11 @@ class HardwareRobot:
             self._fault_handoff = _copy_result(snapshot)
             self._last_stop = _copy_result(snapshot["failed_stop"])
             self.metadata["stop_fault_resume"] = {
-                "restored": True, "armed": False, "register_writes": 0,
-                "inherited_stop_unconfirmed": True, "initial_readback": current,
+                "restored": True,
+                "armed": False,
+                "register_writes": 0,
+                "inherited_stop_unconfirmed": True,
+                "initial_readback": current,
                 "inherited_safety": self.safety_state(),
             }
 
@@ -1191,8 +1178,13 @@ class HardwareRobot:
         with self._io_lock:
             result = {"restored": False, "armed": False, "register_writes": 0, "errors": []}
             try:
-                if (self.armed or self._owned_torque_names or not self._connected
-                        or self._stop_uncertain or self._torque_ownership_uncertain):
+                if (
+                    self.armed
+                    or self._owned_torque_names
+                    or not self._connected
+                    or self._stop_uncertain
+                    or self._torque_ownership_uncertain
+                ):
                     raise ValueError("held restore requires a new connected, unarmed instance")
                 if not isinstance(snapshot, dict) or snapshot.get("stop_confirmed") is not True:
                     raise ValueError("confirmed stopped snapshot required")
@@ -1205,26 +1197,31 @@ class HardwareRobot:
                     raise ValueError("held restart must not resume active base control")
                 wheels = snapshot.get("wheel_torque")
                 if wheels is not None:
-                    if (not self.config.get("enable_base") or not isinstance(wheels, dict)
-                            or set(wheels) != set(WHEEL_NAMES)
-                            or any(type(t) is not int or t not in (0, 1) for t in wheels.values())):
+                    if (
+                        not self.config.get("enable_base")
+                        or not isinstance(wheels, dict)
+                        or set(wheels) != set(WHEEL_NAMES)
+                        or any(type(t) is not int or t not in (0, 1) for t in wheels.values())
+                    ):
                         raise ValueError("wheel handoff must cover both configured wheels")
                     self._validate_prior_idle(snapshot.get("prior_idle"))
                 names = tuple(n for n in self._motor_names_for_control("all") if n not in WHEEL_NAMES)
                 goals = snapshot.get("goals")
                 cold = snapshot.get("cold_motors", [])
-                if (not isinstance(cold, list) or not all(isinstance(n, str) for n in cold)
-                        or len(set(cold)) != len(cold)):
+                if (
+                    not isinstance(cold, list)
+                    or not all(isinstance(n, str) for n in cold)
+                    or len(set(cold)) != len(cold)
+                ):
                     raise ValueError("cold_motors must list unique joint names")
-                if (not isinstance(goals, dict) or set(goals) & set(cold)
-                        or set(goals) | set(cold) != set(names)):
+                if not isinstance(goals, dict) or set(goals) & set(cold) or set(goals) | set(cold) != set(names):
                     raise ValueError("held restart must cover exactly the controlled joints")
                 if any(type(v) is not int or not 0 <= v <= 4095 for v in goals.values()):
                     raise ValueError("held restart goals must be integer raw positions")
-                _, records, errors = self._preflight(expected_hold=goals, scope="all",
-                                                     expected_zero_wheels=wheels)
-                result["stationary_wait"] = {n: r["stationary_wait"] for n, r in records.items()
-                                             if "stationary_wait" in r}
+                _, records, errors = self._preflight(expected_hold=goals, scope="all", expected_zero_wheels=wheels)
+                result["stationary_wait"] = {
+                    n: r["stationary_wait"] for n, r in records.items() if "stationary_wait" in r
+                }
                 if self.config.get("enable_base") and wheels is None:
                     # Adding previously unowned wheels is a read-only cold
                     # start, never an adoption of an active base controller.
@@ -1375,9 +1372,7 @@ class HardwareRobot:
                 base["errors"] = [self._motion_config_error]
                 return base
             if self._stop_uncertain:
-                base["errors"] = [
-                    "previous stop was not confirmed stationary; explicit external recovery is required"
-                ]
+                base["errors"] = ["previous stop was not confirmed stationary; explicit external recovery is required"]
                 return base
             if self._torque_ownership_uncertain:
                 base["errors"] = [
@@ -1386,8 +1381,7 @@ class HardwareRobot:
                 return base
 
             positions, records, errors = self._preflight(scope=scope)
-            base["stationary_wait"] = {n: r["stationary_wait"] for n, r in records.items()
-                                       if "stationary_wait" in r}
+            base["stationary_wait"] = {n: r["stationary_wait"] for n, r in records.items() if "stationary_wait" in r}
             if errors:
                 base["errors"] = errors
                 base["preflight"] = _copy_result(self._last_preflight)
@@ -1449,8 +1443,7 @@ class HardwareRobot:
                     bus = self._bus_for_name(HEAD_TILT_NAME)
                     self._write_and_confirm_motion_profile(bus, "Goal_Velocity", HEAD_TILT_NAME, 64, writes)
                     self._held_raw[HEAD_TILT_NAME] = hold_positions[HEAD_TILT_NAME]
-                    self._write(bus, "Goal_Position", HEAD_TILT_NAME,
-                                hold_positions[HEAD_TILT_NAME], writes)
+                    self._write(bus, "Goal_Position", HEAD_TILT_NAME, hold_positions[HEAD_TILT_NAME], writes)
                 for name in controlled:
                     # The SDK write may reach the servo and then raise (for
                     # example, on a lost reply). Treat the ownership as
@@ -1459,13 +1452,9 @@ class HardwareRobot:
                     self._owned_torque_names.add(name)
                     self._write(self._bus_for_name(name), "Torque_Enable", name, 1, writes)
                 for name in controlled:
-                    value, error = self._read_register(
-                        self._bus_for_name(name), "Torque_Enable", name
-                    )
+                    value, error = self._read_register(self._bus_for_name(name), "Torque_Enable", name)
                     if error is not None or int(value) != 1:
-                        raise HardwareSafetyError(
-                            f"{name}: Torque_Enable readback did not confirm enabled"
-                        )
+                        raise HardwareSafetyError(f"{name}: Torque_Enable readback did not confirm enabled")
             except Exception as exc:  # noqa: BLE001 - any SDK write/read failure fails closed
                 rollback_errors = self._best_effort_hold_locked({**self._held_raw, **hold_positions}, writes)
                 self.armed = False
@@ -1490,24 +1479,29 @@ class HardwareRobot:
             self._stopped_by_us = False
             self._stop_uncertain = False
             self._torque_ownership_uncertain = False
-            self._last_command_targets.update({
-                name: self._raw_to_joint_value(name, hold_positions[name])
-                for name in controlled
-                if name not in WHEEL_NAMES
-            })
+            self._last_command_targets.update(
+                {
+                    name: self._raw_to_joint_value(name, hold_positions[name])
+                    for name in controlled
+                    if name not in WHEEL_NAMES
+                }
+            )
             if selected_arms:
                 self._last_target_mono = time.monotonic()
             if HEAD_TILT_NAME in controlled:
                 self._last_head_target_mono = time.monotonic()
             self._last_command_mono = time.monotonic()
-            self._scope_command_mono.update({s: self._last_command_mono for s in requested})
+            self._scope_command_mono.update(dict.fromkeys(requested, self._last_command_mono))
             base.update(
                 {
                     "status": "armed",
                     "armed": True,
                     "held_positions_raw": dict(hold_positions),
-                    "held_positions": {name + ".pos": self._raw_to_joint_value(name, value)
-                                       for name, value in hold_positions.items() if name not in WHEEL_NAMES},
+                    "held_positions": {
+                        name + ".pos": self._raw_to_joint_value(name, value)
+                        for name, value in hold_positions.items()
+                        if name not in WHEEL_NAMES
+                    },
                     "goal_velocity_raw": self._arm_velocity_raw,
                     "goal_acceleration_raw": self._arm_acceleration_raw,
                 }
@@ -1574,17 +1568,14 @@ class HardwareRobot:
                 actual = self._raw_to_joint_value(name, present_raw)
                 target = float(applied[f"{name}.pos"])
                 previous = self._last_command_targets.get(name, actual)
-                speed = self._max_head_speed if name == HEAD_TILT_NAME else (
-                    self._max_gripper_speed
-                    if name.endswith("_gripper")
-                    else self._max_joint_speed
+                speed = (
+                    self._max_head_speed
+                    if name == HEAD_TILT_NAME
+                    else (self._max_gripper_speed if name.endswith("_gripper") else self._max_joint_speed)
                 )
-                target_elapsed = (max(0, now_mono - self._last_head_target_mono)
-                                  if name == HEAD_TILT_NAME else elapsed)
+                target_elapsed = max(0, now_mono - self._last_head_target_mono) if name == HEAD_TILT_NAME else elapsed
                 maximum_delta = speed * target_elapsed
-                if name.endswith("_gripper") and math.isclose(
-                    target, previous, rel_tol=0.0, abs_tol=1e-6
-                ):
+                if name.endswith("_gripper") and math.isclose(target, previous, rel_tol=0.0, abs_tol=1e-6):
                     bounded = target
                 else:
                     bounded = max(
@@ -1690,9 +1681,7 @@ class HardwareRobot:
 
             command_start_mono = time.monotonic()
             if not errors:
-                errors.extend(
-                    self._bound_position_rate(raw_positions, applied, command_start_mono)
-                )
+                errors.extend(self._bound_position_rate(raw_positions, applied, command_start_mono))
 
             wheel_raw: dict[str, int] = {}
             if has_base and not errors:
@@ -1717,8 +1706,13 @@ class HardwareRobot:
                         if name in raw_positions:
                             self._write(bus, "Goal_Position", name, raw_positions[name], writes)
                 if HEAD_TILT_NAME in raw_positions:
-                    self._write(self._bus_for_name(HEAD_TILT_NAME), "Goal_Position", HEAD_TILT_NAME,
-                                raw_positions[HEAD_TILT_NAME], writes)
+                    self._write(
+                        self._bus_for_name(HEAD_TILT_NAME),
+                        "Goal_Position",
+                        HEAD_TILT_NAME,
+                        raw_positions[HEAD_TILT_NAME],
+                        writes,
+                    )
                 if wheel_raw:
                     bus = self._buses["right"]
                     for name, value in wheel_raw.items():
@@ -1764,8 +1758,9 @@ class HardwareRobot:
                 "writes": writes,
             }
 
-    def _stop_locked(self, reason: str, *, write_commands: bool = True, scope: str = "all",
-                     recover_inherited_fault: bool = False) -> dict[str, Any]:
+    def _stop_locked(
+        self, reason: str, *, write_commands: bool = True, scope: str = "all", recover_inherited_fault: bool = False
+    ) -> dict[str, Any]:
         controlled = self._motor_names_for_control(scope)
         scopes = {self._motor_scope(n) for n in controlled}
         self._active_scopes.difference_update(scopes)
@@ -1825,9 +1820,13 @@ class HardwareRobot:
         stationary = False
         samples: list[dict[str, Any]] = []
         confirmation_timeout_s = self._stop_timeout_s
-        if (write_commands and not errors and not self._active_scopes
-                and reason in ("operator", "operator_retry")
-                and any(name in WHEEL_NAMES for name in controlled)):
+        if (
+            write_commands
+            and not errors
+            and not self._active_scopes
+            and reason in ("operator", "operator_retry")
+            and any(name in WHEEL_NAMES for name in controlled)
+        ):
             confirmation_timeout_s = 1.5
         deadline = time.monotonic() + confirmation_timeout_s
         while time.monotonic() <= deadline:
@@ -1836,10 +1835,10 @@ class HardwareRobot:
             for name in controlled:
                 bus = self._bus_for_name(name)
                 packet, port = getattr(bus, "packet_handler", None), getattr(bus, "port_handler", None)
-                if (name in WHEEL_NAMES and port is not None
-                        and callable(getattr(packet, "readTxRx", None))):
+                if name in WHEEL_NAMES and port is not None and callable(getattr(packet, "readTxRx", None)):
                     block = read_sts3215_present_block(
-                        packet, port, self._motor_specs("right", include_base=True)[name]["id"])
+                        packet, port, self._motor_specs("right", include_base=True)[name]["id"]
+                    )
                     sample.setdefault("wheel_present_blocks", {})[name] = block
                     velocity = block["fields"].get("Present_Velocity")
                     moving = block["fields"].get("Moving")
@@ -1872,26 +1871,23 @@ class HardwareRobot:
                 consecutive = 0
             time.sleep(min(self._stop_poll_s, max(0.0, deadline - time.monotonic())))
 
-        writes_succeeded = (
-            not write_commands and not writes
-        ) or (
-            write_commands
-            and bool(writes)
-            and all(entry.get("status") == "accepted" for entry in writes)
+        writes_succeeded = (not write_commands and not writes) or (
+            write_commands and bool(writes) and all(entry.get("status") == "accepted" for entry in writes)
         )
-        stop_confirmed = bool(
-            controlled
-            and stationary
-            and feedback_available
-            and not errors
-            and writes_succeeded
-        )
+        stop_confirmed = bool(controlled and stationary and feedback_available and not errors and writes_succeeded)
         command_accepted = bool(write_commands and not errors)
-        if (self._inherited_stop_fault and recover_inherited_fault and scope == "all" and write_commands
-                and reason in ("operator", "operator_retry") and stop_confirmed):
+        if (
+            self._inherited_stop_fault
+            and recover_inherited_fault
+            and scope == "all"
+            and write_commands
+            and reason in ("operator", "operator_retry")
+            and stop_confirmed
+        ):
             self._inherited_stop_fault = False
-        self._stop_uncertain = (self._inherited_stop_fault
-                                or (self._stop_uncertain and scope != "all") or not stop_confirmed)
+        self._stop_uncertain = (
+            self._inherited_stop_fault or (self._stop_uncertain and scope != "all") or not stop_confirmed
+        )
         self._stopped_by_us = stop_confirmed and not self.armed
         if stop_confirmed:
             self._stopped_scopes.update(scopes)
@@ -1954,8 +1950,9 @@ class HardwareRobot:
             owned = bool(set(controlled) & self._owned_torque_names)
             active = any(self._motor_scope(n) in self._active_scopes for n in controlled)
             reason = "operator" if active else "operator_retry" if owned else "no_control"
-            result = self._stop_locked(reason, write_commands=owned, scope=scope,
-                                       recover_inherited_fault=_recover_inherited_fault)
+            result = self._stop_locked(
+                reason, write_commands=owned, scope=scope, recover_inherited_fault=_recover_inherited_fault
+            )
             if not result["stop_confirmed"] and self._active_scopes:
                 result["whole_robot_fallback"] = self._stop_locked("scoped stop unconfirmed")
             return result
@@ -1982,8 +1979,11 @@ class HardwareRobot:
             with self._io_lock:
                 if self._closed:
                     return
-                expired = [scope for scope in self._active_scopes
-                           if time.monotonic() - self._scope_command_mono.get(scope, 0) > WATCHDOG_TIMEOUT_S]
+                expired = [
+                    scope
+                    for scope in self._active_scopes
+                    if time.monotonic() - self._scope_command_mono.get(scope, 0) > WATCHDOG_TIMEOUT_S
+                ]
                 for scope in expired:
                     try:
                         self._last_stop = self._stop_locked("watchdog", scope=scope)
@@ -2039,8 +2039,7 @@ class HardwareRobot:
                         packet = getattr(bus, "packet_handler", None)
                         port = getattr(bus, "port_handler", None)
                         block = None
-                        if (name in WHEEL_NAMES and port is not None
-                                and callable(getattr(packet, "readTxRx", None))):
+                        if name in WHEEL_NAMES and port is not None and callable(getattr(packet, "readTxRx", None)):
                             # Same validated single reply as wheel preflight.
                             # No settling/retry here: reads also run while
                             # control is active and share the watchdog lock.
@@ -2091,9 +2090,7 @@ class HardwareRobot:
                 if bool(self.config.get("enable_base", False)):
                     if set(wheel_values) == set(WHEEL_NAMES) and self._base_directions is not None:
                         state.update(
-                            self._wheel_raw_to_body(
-                                wheel_values["base_left_wheel"], wheel_values["base_right_wheel"]
-                            )
+                            self._wheel_raw_to_body(wheel_values["base_left_wheel"], wheel_values["base_right_wheel"])
                         )
                         state_timestamp_ns = state_timestamp_ns or motor_timestamp_ns
                     elif self._base_directions is None:
@@ -2154,9 +2151,7 @@ class HardwareRobot:
         if calibration is None:
             raise HardwareSafetyError(f"{name}: saved calibration is missing")
         if name.endswith("_gripper"):
-            value = (raw - calibration["range_min"]) * 100.0 / (
-                calibration["range_max"] - calibration["range_min"]
-            )
+            value = (raw - calibration["range_min"]) * 100.0 / (calibration["range_max"] - calibration["range_min"])
             return 100.0 - value if calibration["drive_mode"] else value
         mid = (calibration["range_min"] + calibration["range_max"]) / 2.0
         return (raw - mid) * 360.0 / 4095.0
@@ -2201,9 +2196,7 @@ class HardwareRobot:
                 try:
                     errors.extend(self._disconnect_buses_read_only())
                 except Exception as exc:  # noqa: BLE001 - close must continue cleanup
-                    errors.append(
-                        f"close disconnect failed: {type(exc).__name__}: {exc}"
-                    )
+                    errors.append(f"close disconnect failed: {type(exc).__name__}: {exc}")
                 self._connected = False
                 self._closed = True
                 self.armed = False

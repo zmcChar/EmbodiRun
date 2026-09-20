@@ -100,11 +100,7 @@ def hid_module():
 
 
 def devices() -> list[dict]:
-    return [
-        item
-        for item in hid_module().enumerate(VENDOR, 0)
-        if item["product_id"] in PRODUCTS.values()
-    ]
+    return [item for item in hid_module().enumerate(VENDOR, 0) if item["product_id"] in PRODUCTS.values()]
 
 
 class JoyconDevice:
@@ -114,9 +110,7 @@ class JoyconDevice:
         try:
             self.device.open_path(descriptor["path"])
             # Select the standard full input report; do not enable rumble or IMU.
-            self.device.write(
-                bytes([0x01, 0]) + bytes.fromhex("0001404000014040") + bytes([0x03, 0x30])
-            )
+            self.device.write(bytes([0x01, 0]) + bytes.fromhex("0001404000014040") + bytes([0x03, 0x30]))
             deadline = time.monotonic() + 3
             while time.monotonic() < deadline:
                 report = bytes(self.device.read(64, 50))
@@ -147,10 +141,7 @@ class JoyconDevice:
         if self.centre is not None:
             sample = replace(
                 sample,
-                stick=tuple(
-                    normalize_axis(raw, centre)
-                    for raw, centre in zip(sample.raw_stick, self.centre)
-                ),
+                stick=tuple(normalize_axis(raw, centre) for raw, centre in zip(sample.raw_stick, self.centre)),
             )
         return sample
 

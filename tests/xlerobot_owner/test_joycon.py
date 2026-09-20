@@ -1,6 +1,7 @@
 from dataclasses import replace
 
 import pytest
+
 from embodirun_xlerobot_owner.control import CAMERAS, JOINT_NAMES, MappingConfig
 from embodirun_xlerobot_owner.joycon_input import (
     JoyconDevice,

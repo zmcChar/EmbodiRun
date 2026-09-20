@@ -35,7 +35,7 @@ models:
     environment_packages:
       - ".[sglang]"
     source: /models/pi05_libero_finetuned
-    server_executable: rlinf-sglang-serve
+    server_executable: embodirun-sglang-serve
     pipeline: LeRobotPi05Pipeline
     image_keys:
       observation.images.image: image

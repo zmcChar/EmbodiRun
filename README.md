@@ -1,4 +1,6 @@
-# EmbodiRun
+<p align="center">
+  <img src="https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/logo.png" alt="EmbodiRun" width="440">
+</p>
 
 **English** | [简体中文](README.zh-CN.md)
 
@@ -94,20 +96,19 @@ Clipping is a per-row rate limit, not collision avoidance.
 
 ## How it works
 
-```text
-Application / agent
-        │  public client: observe · propose · execute · inspect · cancel · stop
-        ▼
-EmbodiRun
-├─ Deployment runtime — configuration, environments, nodes, lifecycle
-├─ Application runtime — jobs, proposals, execution coordination
-├─ Device runtime — connection ownership, shared observations, arbitration
-├─ Model services — versioned inference contracts and provider registry
-└─ Robot / simulator adapters + policy bindings
-        │  HTTP or WirelessComm (versioned policy API)
-        ▼
-EmbodiInfer, or an external backend such as SGLang
-```
+An agent or application drives the runtime through one public client
+(`observe`, `propose`, `execute`, `inspect`, `cancel`, `stop`). Inside EmbodiRun:
+
+| Layer | Responsibility |
+|---|---|
+| Deployment runtime | Configuration, environments, nodes, lifecycle |
+| Application runtime | Jobs, proposals, execution coordination |
+| Device runtime | Connection ownership, shared observations, arbitration |
+| Model services | Versioned inference contracts and provider registry |
+| Robots, bindings, simulators | Hardware adapters, policy-to-robot mappings |
+
+Model services reach EmbodiInfer — or an external backend such as SGLang — over
+the versioned policy API, carried by HTTP or WirelessComm.
 
 Three processes, deliberately separated: **Host** runs on the operator machine,
 **Control** runs beside the robot and owns the hardware, and **Inference**

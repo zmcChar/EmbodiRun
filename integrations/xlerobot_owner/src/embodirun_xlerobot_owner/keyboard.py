@@ -22,9 +22,12 @@ class KeyboardFrame:
         keys = data.get("keys")
         if type(seq) is not int or seq < 0 or stamp < 0:
             raise ValueError("invalid keyboard sequence or timestamp")
-        if (not isinstance(keys, list) or len(keys) > 4
-                or any(k not in ("KeyW", "KeyA", "KeyS", "KeyD") for k in keys)
-                or len(set(keys)) != len(keys)):
+        if (
+            not isinstance(keys, list)
+            or len(keys) > 4
+            or any(k not in ("KeyW", "KeyA", "KeyS", "KeyD") for k in keys)
+            or len(set(keys)) != len(keys)
+        ):
             raise ValueError("keys must be unique WASD codes")
         if type(data.get("focused")) is not bool or type(data.get("video_ready")) is not bool:
             raise ValueError("keyboard focus and video_ready must be booleans")
@@ -38,8 +41,9 @@ class KeyboardFrame:
     def neutral(self) -> bool:
         return self.ready and not self.keys
 
-    def action(self, config: MappingConfig, *, linear_m_s: float | None = None,
-               angular_deg_s: float | None = None) -> dict[str, float]:
+    def action(
+        self, config: MappingConfig, *, linear_m_s: float | None = None, angular_deg_s: float | None = None
+    ) -> dict[str, float]:
         if not config.enable_base or not self.ready:
             raise ValueError("keyboard drive requires base, focus and live video")
         linear = config.max_linear_m_s if linear_m_s is None else finite(linear_m_s)

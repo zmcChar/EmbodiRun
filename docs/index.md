@@ -1,75 +1,97 @@
-# EmbodiRun Documentation
+<div class="hero" markdown>
+
+<h1 class="hero-title">
+  <img src="https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/logo.png" alt="EmbodiRun" class="hero-logo">
+</h1>
 
 **Embodied AI, Ready to Run.**
 
-EmbodiRun is the deployment and execution runtime for embodied AI. It connects
-model inference, service deployment, cross-node communication, and robot
-execution into one reproducible system: configure a model, a compute node, and a
-robot or simulator, then start the services and run a task.
+Configure a model, a compute node, and a robot or simulator — then run the whole
+loop from one file.
 
-High-performance inference is provided by
-[EmbodiInfer](https://github.com/BUAA-CI-LAB/EmbodiInfer), which stays an
-independent engine and can also be used on its own.
+[Quick start](quickstart.md){ .md-button .md-button--primary }
+[Architecture](architecture.md){ .md-button }
+[GitHub](https://github.com/BUAA-CI-LAB/EmbodiRun){ .md-button }
 
-> **Deploy Models. Accelerate Inference. Run Robots.**
+</div>
+
+EmbodiRun connects model inference, service deployment, cross-node communication,
+and robot execution into one reproducible system. High-performance inference is
+provided by [EmbodiInfer](https://github.com/BUAA-CI-LAB/EmbodiInfer), which stays
+an independent engine and can also be used on its own.
 
 ## Choose a path
 
-### Run a deployment
+<div class="grid cards" markdown>
 
-1. [Installation](installation.md) — install from source with uv and pick a
-   capability group.
-2. [Quick start](quickstart.md) — a device-free example first, then a real
-   deployment.
-3. [Configuration](configuration.md) — the deployment YAML reference.
+-   :material-rocket-launch:{ .lg .middle } __Deploy__
 
-### Operate a robot
+    ---
 
-- [Control](control.md) — manual input, control authority, arbitration, and the
-  software stop.
-- [Safety](safety.md) — operator checklist and failure semantics. Read this
-  before a physical deployment.
-- [Support matrix](support-matrix.md) — what is tested, experimental, or
-  planned, and what evidence each status requires.
+    Install from source, run a device-free example, then write a deployment YAML.
 
-### Integrate a model or an agent
+    [:octicons-arrow-right-24: Quick start](quickstart.md)
 
-- [Inference API v1](http_api.md) — the versioned policy API carried over HTTP
-  or WirelessComm.
-- [RPent integration](rpent-integration.md) — the Agent boundary, and a
-  reproducible software chain against a real π0.5 service.
-- [π0.5 with two SO-101 followers](pi05-bi-so101.md) — a dual-arm deployment
-  guide.
-- [`agents/CLIENT.md`](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/agents/CLIENT.md)
-  — the public Agent client.
+    [:octicons-arrow-right-24: Configuration](configuration.md)
 
-### Understand the runtime
+-   :material-robot:{ .lg .middle } __Operate a robot__
 
-- [Architecture](architecture.md) — runtime domains, process boundaries, and
-  non-goals.
+    ---
 
-### Read the engineering notes
+    Control authority, bounded execution, manual takeover, and the software stop.
 
-- [Experiments](experiments.md) — opt-in hardware experiments. These are
-  evidence records, not user guides.
+    [:octicons-arrow-right-24: Control](control.md)
 
-## Documentation map
+    [:octicons-arrow-right-24: Safety](safety.md)
 
-| Section | Pages | What it covers |
-|---|---|---|
-| Getting started | Installation, Quick start, Configuration | Install, run a device-free example, write a deployment YAML |
-| Operating | Control, Safety, Support matrix | Running and stopping a deployment, what is verified |
-| Integrating | Inference API v1, RPent integration, π0.5 with two SO-101 | The policy API and reference integrations |
-| Concepts | Architecture | Domains, ownership, and boundaries |
-| Experiments | Experiments overview and notes | Opt-in hardware measurements, with their limits |
-| Project | Contributing, Code of Conduct, License and relicensing | How to contribute, community rules, licensing |
+-   :material-connection:{ .lg .middle } __Integrate a model or agent__
+
+    ---
+
+    Connect policies and agents through the versioned inference API.
+
+    [:octicons-arrow-right-24: Inference API v1](http_api.md)
+
+    [:octicons-arrow-right-24: RPent](rpent-integration.md)
+
+-   :material-sitemap:{ .lg .middle } __Understand the runtime__
+
+    ---
+
+    Runtime domains, process boundaries, ownership, and non-goals.
+
+    [:octicons-arrow-right-24: Architecture](architecture.md)
+
+    [:octicons-arrow-right-24: Support matrix](support-matrix.md)
+
+</div>
+
+## How it fits together
+
+```mermaid
+flowchart TB
+  agent["Agent / application"]
+  subgraph embodirun["EmbodiRun"]
+    runtime["Deployment · Application · Devices<br/>configuration, coordination, arbitration, recording, safety"]
+    services["Model services<br/>versioned inference contracts"]
+  end
+  engine["EmbodiInfer, or an external backend such as SGLang"]
+  robot["robot or simulator"]
+
+  agent -- "observe · propose · execute · inspect · cancel · stop" --> runtime
+  runtime --> services
+  services -- "HTTP or WirelessComm" --> engine
+  runtime -- "validated actions" --> robot
+  robot -- "observations" --> runtime
+```
 
 ## Status
 
-The support matrix distinguishes source adapters, CPU-verified software,
-real-model runs, and real-robot cases; a combination is never marked **Tested**
-from code presence alone. Claims on the experiment pages are scoped to the
-configuration that was measured, and an unverified path is labelled as such.
+The [support matrix](support-matrix.md) distinguishes source adapters,
+CPU-verified software, real-model runs, and real-robot cases; a combination is
+never marked **Tested** from code presence alone. Claims on the
+[experiment pages](experiments.md) are scoped to the configuration that was
+measured, and an unverified path is labelled as such.
 
 ## Community
 

@@ -36,11 +36,11 @@ nodes:
     type: jetson.agx-thor-128gb
     connection:
       type: ssh
-      host: 192.168.10.10
+      host: 10.0.0.10          # management address used for SSH
       port: 22
       username: operator
       accept_new_host_key: false
-    address: 192.168.10.10
+    address: 192.168.1.20      # data-plane address advertised to peers
 ```
 
 `connection.type` is `local` or `ssh`. SSH supports `identity_file`,

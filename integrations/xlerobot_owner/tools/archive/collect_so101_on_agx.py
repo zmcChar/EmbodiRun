@@ -28,8 +28,7 @@ def _print_status(status: dict) -> None:
     if status.get("last_episode"):
         episode = status["last_episode"]
         print(
-            f"上一条：{episode.get('status')}，{episode.get('frame_count')} 帧，"
-            f"{episode.get('episode_path')}",
+            f"上一条：{episode.get('status')}，{episode.get('frame_count')} 帧，{episode.get('episode_path')}",
             flush=True,
         )
     if status.get("last_error"):
@@ -42,8 +41,7 @@ def _print_status(status: dict) -> None:
 
 def _menu() -> None:
     print(
-        "\n[n] 开始新一条  [y] 本条成功  [f] 本条失败  [a] 中断本条\n"
-        "[s] 查看状态    [x] 停止跟随  [q] 安全退出",
+        "\n[n] 开始新一条  [y] 本条成功  [f] 本条失败  [a] 中断本条\n[s] 查看状态    [x] 停止跟随  [q] 安全退出",
         flush=True,
     )
 
@@ -82,9 +80,7 @@ def main() -> int:
                         _print_status(status)
                         continue
                     if last_task:
-                        entered_task = input(
-                            f"本条任务名（直接回车沿用“{last_task}”）："
-                        ).strip()
+                        entered_task = input(f"本条任务名（直接回车沿用“{last_task}”）：").strip()
                         task = entered_task or last_task
                     else:
                         task = input("本条任务名：").strip()
@@ -92,9 +88,9 @@ def main() -> int:
                         print("任务名不能为空。", flush=True)
                         continue
                     last_task = task
-                    confirm = input(
-                        "确认两只从臂周围无人和障碍物，主臂保持静止；按回车开始，输入 c 取消："
-                    ).strip().lower()
+                    confirm = (
+                        input("确认两只从臂周围无人和障碍物，主臂保持静止；按回车开始，输入 c 取消：").strip().lower()
+                    )
                     if confirm == "c":
                         print("已取消。", flush=True)
                         continue

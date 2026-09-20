@@ -1,4 +1,6 @@
-# EmbodiRun
+<p align="center">
+  <img src="https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/logo.png" alt="EmbodiRun" width="440">
+</p>
 
 [English](README.md) | **简体中文**
 
@@ -71,20 +73,17 @@ uv run embodirun --config my-deployment.yaml down
 
 ## 工作原理
 
-```text
-Application / agent
-        │  public client: observe · propose · execute · inspect · cancel · stop
-        ▼
-EmbodiRun
-├─ Deployment runtime — configuration, environments, nodes, lifecycle
-├─ Application runtime — jobs, proposals, execution coordination
-├─ Device runtime — connection ownership, shared observations, arbitration
-├─ Model services — versioned inference contracts and provider registry
-└─ Robot / simulator adapters + policy bindings
-        │  HTTP or WirelessComm (versioned policy API)
-        ▼
-EmbodiInfer, or an external backend such as SGLang
-```
+Agent 或应用通过同一个公共客户端（`observe`、`propose`、`execute`、`inspect`、`cancel`、`stop`）驱动整个运行时。EmbodiRun 内部：
+
+| 层 | 职责 |
+|---|---|
+| Deployment runtime | 配置、环境、节点、生命周期 |
+| Application runtime | 作业、提案、执行协调 |
+| Device runtime | 连接归属、共享观测、仲裁 |
+| Model services | 版本化推理契约与 provider 注册表 |
+| Robots、bindings、simulators | 硬件适配器、策略到机器人的映射 |
+
+Model services 通过版本化策略 API（由 HTTP 或 WirelessComm 承载）访问 EmbodiInfer，或 SGLang 之类的外部后端。
 
 三个进程刻意分离：**Host** 运行在操作员机器上，**Control** 运行在机器人旁边并掌管硬件，**Inference** 负责模型计算。它们可以共用一台机器，也可以跨节点拆分；部署位置由配置决定，自动放置属于未来工作。
 

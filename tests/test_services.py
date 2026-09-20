@@ -656,18 +656,21 @@ def load_document(tmp_path, document):
 
 
 def test_wireless_example_generates_complementary_endpoints() -> None:
+    document = yaml.safe_load(WIRELESS_EXAMPLE.read_text())
     model, control = build_plan(load_config(WIRELESS_EXAMPLE)).services
     server = json.loads(model.wireless_config_json)
     client = json.loads(control.wireless_config_json)
+    model_host = document["nodes"][document["models"]["pi05-01"]["node"]]["connection"]["host"]
+    client_host = document["nodes"][document["robots"]["so101-2"]["node"]]["connection"]["host"]
     assert server["local"] == {
         "node_id": "model.pi05-01",
-        "host": "192.168.10.10",
+        "host": model_host,
         "bind_host": "0.0.0.0",
         "port": 9300,
     }
     assert client["local"] == {
         "node_id": "runtime.so101-2-runtime",
-        "host": "192.168.10.12",
+        "host": client_host,
         "bind_host": "0.0.0.0",
         "port": 9300,
     }

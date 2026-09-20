@@ -11,8 +11,8 @@ from __future__ import annotations
 import asyncio
 import inspect
 import math
-from collections.abc import Callable, Mapping, Sequence
 import threading
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 from uuid import uuid4
 
@@ -41,11 +41,7 @@ def _to_list(value: Any) -> Any:
 
 def _finite_row(value: Any, *, label: str) -> list[float]:
     value = _to_list(value)
-    if (
-        not isinstance(value, Sequence)
-        or isinstance(value, (str, bytes))
-        or len(value) != 12
-    ):
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or len(value) != 12:
         raise ValueError(f"{label} must contain 12 values")
     result = [float(item) for item in value]
     if any(not math.isfinite(item) for item in result):
@@ -98,20 +94,22 @@ def _normalize_rows(
     nested = payload.get("proposal")
     nested = nested if isinstance(nested, Mapping) else {}
     actions = _action_source(payload, nested)
-    if isinstance(actions, Sequence) and not isinstance(actions, (str, bytes)):
-        # The Deploy policy payload commonly wraps a 50x12 chunk as one
-        # action's ``values.data``.  Unwrap that container first.
-        if len(actions) == 1 and isinstance(actions[0], Mapping):
-            item = actions[0]
-            values = item.get("values", item)
-            if isinstance(values, Mapping):
-                chunk = values.get("data", values.get("actions"))
-                if chunk is not None:
-                    actions = _to_list(chunk)
+    # The Deploy policy payload commonly wraps a 50x12 chunk as one action's
+    # ``values.data``.  Unwrap that container first.
+    if (
+        isinstance(actions, Sequence)
+        and not isinstance(actions, (str, bytes))
+        and len(actions) == 1
+        and isinstance(actions[0], Mapping)
+    ):
+        item = actions[0]
+        values = item.get("values", item)
+        if isinstance(values, Mapping):
+            chunk = values.get("data", values.get("actions"))
+            if chunk is not None:
+                actions = _to_list(chunk)
 
-    names: tuple[str, ...] | None = (
-        tuple(feature_names) if feature_names is not None else None
-    )
+    names: tuple[str, ...] | None = tuple(feature_names) if feature_names is not None else None
     if names is None:
         raw_names = payload.get("feature_names", nested.get("feature_names"))
         if raw_names is None:
@@ -121,11 +119,7 @@ def _normalize_rows(
             names = tuple(str(name) for name in raw_names)
 
     actions = _to_list(actions)
-    if (
-        not isinstance(actions, Sequence)
-        or isinstance(actions, (str, bytes))
-        or len(actions) != 50
-    ):
+    if not isinstance(actions, Sequence) or isinstance(actions, (str, bytes)) or len(actions) != 50:
         raise ValueError("Deploy proposal must contain exactly 50 action rows")
 
     rows: list[list[float]] = []
@@ -149,18 +143,14 @@ def _normalize_rows(
                     try:
                         values = [values[name] for name in inferred_names]
                     except KeyError as error:
-                        raise ValueError(
-                            f"proposal action {index} is missing a declared feature"
-                        ) from error
+                        raise ValueError(f"proposal action {index} is missing a declared feature") from error
                 else:
                     keys = tuple(values)
                     if len(keys) == 12 and all(isinstance(key, str) for key in keys):
                         inferred_names = keys
                         values = [values[key] for key in keys]
                     else:
-                        raise ValueError(
-                            "mapped proposal actions require explicit feature_names"
-                        )
+                        raise ValueError("mapped proposal actions require explicit feature_names")
             rows.append(_finite_row(values, label=f"proposal.actions[{index}]"))
         else:
             rows.append(_finite_row(item, label=f"proposal.actions[{index}]"))
@@ -186,9 +176,7 @@ def normalize_public_proposal(
     declared_observation = payload.get("observation_id", nested.get("observation_id"))
     if declared_observation is not None and declared_observation != observation_id:
         raise ValueError("Deploy proposal observation_id does not match observation")
-    rows, names = _normalize_rows(
-        payload, feature_names=feature_names, action_decoder=action_decoder
-    )
+    rows, names = _normalize_rows(payload, feature_names=feature_names, action_decoder=action_decoder)
     proposal_metadata = _metadata_from(payload, nested)
     if metadata is not None:
         if not isinstance(metadata, Mapping):
@@ -230,10 +218,7 @@ def _sync_review(reviewer: Any, packet: Mapping[str, Any]) -> Mapping[str, Any]:
         except RuntimeError:
             result = asyncio.run(result)
         else:
-            raise RuntimeError(
-                "an async reviewer cannot run inside an active event loop; "
-                "use an async session wrapper"
-            )
+            raise RuntimeError("an async reviewer cannot run inside an active event loop; use an async session wrapper")
     if not isinstance(result, Mapping):
         raise ValueError("reviewer must return a mapping")
     return result
@@ -294,16 +279,9 @@ class PublicCooperativeSession:
         if proposal_metadata is not None:
             self.proposal_metadata.update(dict(proposal_metadata))
         self.feature_names = tuple(feature_names) if feature_names is not None else None
-        encoder_names = (
-            getattr(action_encoder, "feature_names", None)
-            if action_encoder is not None
-            else None
-        )
-        if encoder_names is not None and self.feature_names is not None:
-            if tuple(encoder_names) != self.feature_names:
-                raise ValueError(
-                    "action_encoder feature_names must match session feature_names"
-                )
+        encoder_names = getattr(action_encoder, "feature_names", None) if action_encoder is not None else None
+        if encoder_names is not None and self.feature_names is not None and tuple(encoder_names) != self.feature_names:
+            raise ValueError("action_encoder feature_names must match session feature_names")
         self.max_rounds = max_rounds
         self.recorder = recorder
         self._active_request_id: str | None = None
@@ -401,8 +379,10 @@ class PublicCooperativeSession:
                 rounds.append(result.to_dict())
                 if result.status != "completed" or result.execution_evidence_unknown:
                     break
-            status = "completed" if rounds and rounds[-1]["status"] == "completed" else (
-                rounds[-1]["status"] if rounds else "failed"
+            status = (
+                "completed"
+                if rounds and rounds[-1]["status"] == "completed"
+                else (rounds[-1]["status"] if rounds else "failed")
             )
             summary = {
                 "status": status,
@@ -435,9 +415,7 @@ class PublicCooperativeSession:
         """Compatibility name for the old RPent session entrypoint."""
 
         if skill not in self.supported_skills:
-            raise ValueError(
-                f"unsupported skill {skill!r}; configure supported_skills explicitly"
-            )
+            raise ValueError(f"unsupported skill {skill!r}; configure supported_skills explicitly")
         return self.run(prompt=prompt, context=context)
 
     def cancel(self) -> dict[str, Any]:

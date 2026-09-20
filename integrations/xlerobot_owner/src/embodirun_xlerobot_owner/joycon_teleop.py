@@ -19,10 +19,7 @@ from .robot import RemoteRobot
 
 
 def neutral(samples: dict[str, JoyconSample]) -> bool:
-    return all(
-        not (sample.buttons - {"minus", "plus"}) and not any(sample.stick)
-        for sample in samples.values()
-    )
+    return all(not (sample.buttons - {"minus", "plus"}) and not any(sample.stick) for sample in samples.values())
 
 
 class EnableGesture:
@@ -57,12 +54,12 @@ class JoyconMapper:
         self.solver = QuestMapper(config or MappingConfig(max_joint_speed_deg_s=10))
         self.targets = None
         self.previous = {side: frozenset() for side in PRODUCTS}
-        self.gripper_direction = {side: 1 for side in PRODUCTS}
+        self.gripper_direction = dict.fromkeys(PRODUCTS, 1)
 
     def reset(self):
         self.targets = None
         self.previous = {side: frozenset() for side in PRODUCTS}
-        self.gripper_direction = {side: 1 for side in PRODUCTS}
+        self.gripper_direction = dict.fromkeys(PRODUCTS, 1)
 
     def map(self, samples, state, dt, limits):
         if not 0 < finite(dt) <= 0.25:
@@ -103,8 +100,7 @@ class JoyconMapper:
                     self.gripper_direction[side] *= -1
                 low, high = limits[names[-1]]
                 result[names[-1]] = clamp(
-                    result[names[-1]]
-                    + self.gripper_direction[side] * cfg.max_gripper_speed_pct_s * dt,
+                    result[names[-1]] + self.gripper_direction[side] * cfg.max_gripper_speed_pct_s * dt,
                     low,
                     high,
                 )
@@ -126,11 +122,7 @@ def validate_observation(observation, images, metadata, previous_timestamp=None)
     if metadata.get("joint_unit") != "degrees" or metadata.get("gripper_unit") != "range_0_100":
         raise RuntimeError("需要 degrees 关节与 range_0_100 夹爪配置")
     source = observation.get("source_timestamp_ns")
-    if (
-        not isinstance(source, int)
-        or source <= 0
-        or (previous_timestamp is not None and source <= previous_timestamp)
-    ):
+    if not isinstance(source, int) or source <= 0 or (previous_timestamp is not None and source <= previous_timestamp):
         raise RuntimeError("机器人观测没有更新")
     timestamps = observation.get("camera_timestamps_ns", {})
     state_stamp = observation.get("state_timestamp_ns")
@@ -163,11 +155,7 @@ def run(args):
             json.dumps(
                 [
                     {
-                        "side": next(
-                            side
-                            for side, product in PRODUCTS.items()
-                            if product == item["product_id"]
-                        ),
+                        "side": next(side for side, product in PRODUCTS.items() if product == item["product_id"]),
                         "name": item.get("product_string"),
                         "path": str(item["path"]),
                     }
@@ -178,8 +166,7 @@ def run(args):
         )
         return
     if args.mode == "control" and (
-        urlparse(args.robot_url).hostname not in ("127.0.0.1", "localhost", "::1")
-        or args.token_file is None
+        urlparse(args.robot_url).hostname not in ("127.0.0.1", "localhost", "::1") or args.token_file is None
     ):
         raise ValueError("控制模式需要本机 robot URL 和 --token-file；跨机器使用 SSH 隧道")
     pair, robot = None, None
@@ -187,9 +174,7 @@ def run(args):
         pair = JoyconPair()
         print("摇杆中心: " + json.dumps(pair.calibrate()), flush=True)
         mapper = JoyconMapper(
-            MappingConfig(**json.loads(args.mapping_config.read_text()))
-            if args.mapping_config
-            else None
+            MappingConfig(**json.loads(args.mapping_config.read_text())) if args.mapping_config else None
         )
         gesture = EnableGesture()
         if args.mode == "control":
@@ -213,9 +198,7 @@ def run(args):
             samples = pair.read()
             if any(now - sample.received_at > 0.25 for sample in samples.values()):
                 raise RuntimeError("手柄输入过期")
-            stop_pressed = (
-                "capture" in samples["left"].buttons or "home" in samples["right"].buttons
-            )
+            stop_pressed = "capture" in samples["left"].buttons or "home" in samples["right"].buttons
             if robot and stop_pressed:
                 break
             if robot:
@@ -223,9 +206,7 @@ def run(args):
                 observation, images = robot.read()
                 if was_armed and not robot.armed:
                     raise RuntimeError("机器人侧已停止，请检查原因后重新运行")
-                stamp = validate_observation(
-                    observation, images, robot.metadata, previous_timestamp
-                )
+                stamp = validate_observation(observation, images, robot.metadata, previous_timestamp)
                 previous_timestamp = stamp
                 # Reading the cameras/network may have blocked. Read HID again
                 # before enabling or commanding; expired input can never move.

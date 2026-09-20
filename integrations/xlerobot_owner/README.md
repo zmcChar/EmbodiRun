@@ -1,4 +1,4 @@
-# RLinf Deploy XLeRobot owner integration
+# EmbodiRun XLeRobot owner integration
 
 This optional package is the namespace migration of the recovered
 `embodied_runtime.teleop` owner. It preserves the legacy hardware/server
@@ -12,7 +12,7 @@ support are separate extras:
 
 ```bash
 # Run this from the repository root in the selected uv environment.  The
-# integration depends on the local rlinf-deploy checkout; installing only from
+# integration depends on the local EmbodiRun checkout; installing only from
 # this directory would make uv search for an unpublished distribution.
 uv pip install -e . -e 'integrations/xlerobot_owner[hardware,hid,camera,recording,video,web]'
 ```

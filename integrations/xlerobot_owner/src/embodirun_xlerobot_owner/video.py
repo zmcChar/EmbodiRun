@@ -98,9 +98,7 @@ class VideoService:
             raise ValueError("offer must contain exactly three receive-only video tracks")
         if len(self.peers) >= self.max_viewers:
             raise RuntimeError("at most three video viewers; close another viewer and retry")
-        peer = RTCPeerConnection(
-            RTCConfiguration(iceServers=[], bundlePolicy=RTCBundlePolicy.MAX_BUNDLE)
-        )
+        peer = RTCPeerConnection(RTCConfiguration(iceServers=[], bundlePolicy=RTCBundlePolicy.MAX_BUNDLE))
         self.peers.add(peer)
         self.tracks[peer] = []
 

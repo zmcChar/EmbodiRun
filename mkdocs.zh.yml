@@ -1,0 +1,101 @@
+# Simplified Chinese site. Read the Docs builds this as a translation of the
+# `embodirun` project, from the same repository and branch; see
+# .readthedocs.zh.yaml.
+#
+# Keep this file in step with mkdocs.yml: only the language, the docs_dir, the
+# navigation and the page set differ.
+site_name: EmbodiRun
+site_description: 面向具身智能的高效部署与执行运行时
+site_url: https://embodirun.readthedocs.io/zh-cn/latest/
+repo_url: https://github.com/BUAA-CI-LAB/EmbodiRun
+repo_name: BUAA-CI-LAB/EmbodiRun
+
+# The Chinese pages are their own documentation root, so that the landing page
+# is the version root rather than /zh/ underneath it. `docs/zh/stylesheets` is a
+# symlink to `docs/stylesheets`, which is how both builds share one brand
+# stylesheet: `extra_css` may not point outside `docs_dir`, and MkDocs silently
+# emits a <link> without copying the file when it does. Check out with symlinks
+# enabled (`git config core.symlinks true`) to build this site locally.
+docs_dir: docs/zh
+site_dir: site-zh
+
+theme:
+  name: material
+  language: zh
+  logo: https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/mark.png
+  favicon: https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/favicon.png
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - navigation.instant.progress
+    - content.code.copy
+    - content.tabs.link
+    - search.suggest
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: 切换到深色模式
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: 切换到浅色模式
+
+# Add a page here only once docs/zh/<page>.md exists. A navigation entry that
+# points at an untranslated page fails the strict build, which is the intent:
+# better a short navigation than a link to a page that does not exist.
+nav:
+  - 首页: index.md
+  - 快速开始: quickstart.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      # Material bundles the Mermaid runtime and initialises it for any page
+      # that contains a `mermaid` block, so no extra_javascript is needed.
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            show_source: false
+            show_root_heading: false
+            heading_level: 3
+            members_order: source
+            merge_init_into_class: true
+            separate_signature: true
+            show_signature_annotations: true
+            filters: ["!^_"]

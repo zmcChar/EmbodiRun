@@ -57,9 +57,7 @@ def decode_report(report: bytes, now: float) -> DualSenseSample:
         triggers = data[7:9]
         sequence = buttons[2] >> 2
         report_format = "bluetooth-simple"
-    elif (len(report) == 78 and report[0] == 0x31) or (
-        len(report) == 64 and report[0] == 0x01
-    ):
+    elif (len(report) == 78 and report[0] == 0x31) or (len(report) == 64 and report[0] == 0x01):
         bluetooth = report[0] == 0x31
         if bluetooth:
             # The HID protocol's existing CRC includes the input transaction byte.
@@ -89,12 +87,18 @@ def decode_report(report: bytes, now: float) -> DualSenseSample:
     hat = buttons[0] & 15
     if hat > 8:
         raise ValueError("invalid DualSense direction pad")
-    for name, values in (("up", (7, 0, 1)), ("right", (1, 2, 3)),
-                         ("down", (3, 4, 5)), ("left", (5, 6, 7))):
+    for name, values in (("up", (7, 0, 1)), ("right", (1, 2, 3)), ("down", (3, 4, 5)), ("left", (5, 6, 7))):
         if hat in values:
             names.add(name)
-    return DualSenseSample(raw, tuple(axis(v) for v in raw), tuple(v / 255 for v in triggers),
-                           frozenset(names), now, sequence, report_format)
+    return DualSenseSample(
+        raw,
+        tuple(axis(v) for v in raw),
+        tuple(v / 255 for v in triggers),
+        frozenset(names),
+        now,
+        sequence,
+        report_format,
+    )
 
 
 def hid_module():
@@ -109,16 +113,23 @@ def linux_devices(root: Path = Path("/sys/class/hidraw")) -> list[dict]:
     found = []
     for node in sorted(root.glob("hidraw*")):
         try:
-            fields = dict(line.split("=", 1) for line in
-                          (node / "device/uevent").read_text().splitlines() if "=" in line)
+            fields = dict(
+                line.split("=", 1) for line in (node / "device/uevent").read_text().splitlines() if "=" in line
+            )
             bus, vendor, product = (int(v, 16) for v in fields.get("HID_ID", "").split(":"))
         except (OSError, ValueError):
             continue
         if (vendor, product) == (VENDOR, PRODUCT) and bus in (3, 5):
-            found.append({"path": "/dev/" + node.name, "vendor_id": vendor,
-                          "product_id": product, "product_string": fields.get("HID_NAME"),
-                          "serial_number": fields.get("HID_UNIQ"),
-                          "transport": "bluetooth" if bus == 5 else "usb"})
+            found.append(
+                {
+                    "path": "/dev/" + node.name,
+                    "vendor_id": vendor,
+                    "product_id": product,
+                    "product_string": fields.get("HID_NAME"),
+                    "serial_number": fields.get("HID_UNIQ"),
+                    "transport": "bluetooth" if bus == 5 else "usb",
+                }
+            )
     return found
 
 
@@ -177,7 +188,8 @@ class DualSenseDevice:
             sample = decode_report(report, time.monotonic())
             self.reports += 1
             if self.last is None or (sample.report_format, sample.sequence) != (
-                self.last.report_format, self.last.sequence
+                self.last.report_format,
+                self.last.sequence,
             ):
                 self.last = sample
         else:
@@ -229,9 +241,20 @@ def main():
             time.sleep(0.01)
     finally:
         device.close()
-        print(json.dumps({"summary": {"reports": device.reports, "buttons_seen": sorted(seen),
-                                     "axis_min": low, "axis_max": high}}, ensure_ascii=False),
-              flush=True)
+        print(
+            json.dumps(
+                {
+                    "summary": {
+                        "reports": device.reports,
+                        "buttons_seen": sorted(seen),
+                        "axis_min": low,
+                        "axis_max": high,
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
 
 
 if __name__ == "__main__":

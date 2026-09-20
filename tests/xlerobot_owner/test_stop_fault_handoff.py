@@ -7,12 +7,13 @@ import pytest
 
 pytest.importorskip("aiohttp")
 
-from embodirun_xlerobot_owner.hardware import HEAD_TILT_NAME, WHEEL_NAMES, HardwareRobot
-from embodirun_xlerobot_owner.server import Platform
-from embodirun_xlerobot_owner.stop_fault_handoff import validate_snapshot
 from tests.xlerobot_owner.test_hardware import FakeBus, _config
 from tests.xlerobot_owner.test_motor_diagnostics import Packet
 from tests.xlerobot_owner.test_server import HEADERS, TOKEN, station
+
+from embodirun_xlerobot_owner.hardware import HEAD_TILT_NAME, WHEEL_NAMES, HardwareRobot
+from embodirun_xlerobot_owner.server import Platform
+from embodirun_xlerobot_owner.stop_fault_handoff import validate_snapshot
 
 
 def prepared(tmp_path, monkeypatch, *, legacy=False, torque_fault=False):
@@ -299,6 +300,7 @@ def test_capture_only_reads_existing_api_no_device_access(tmp_path, monkeypatch)
 
 def test_cli_consumes_fault_file_once_without_fallback(tmp_path, monkeypatch):
     from aiohttp import web
+
     from embodirun_xlerobot_owner import __main__ as cli
     from embodirun_xlerobot_owner import hardware
     from embodirun_xlerobot_owner.server import PLATFORM
@@ -347,8 +349,9 @@ def test_cli_consumes_fault_file_once_without_fallback(tmp_path, monkeypatch):
 
 def test_fault_launcher_bypasses_old_cli_and_refuses_reuse(tmp_path, monkeypatch):
     from aiohttp import web
-    from embodirun_xlerobot_owner.server import PLATFORM
     from integrations.xlerobot_owner.tools.archive import start_orin_shared_teleop as launcher
+
+    from embodirun_xlerobot_owner.server import PLATFORM
 
     robot, buses, snapshot = prepared(tmp_path, monkeypatch)
     source, config, token = (tmp_path / n for n in ("fault.json", "config.json", "token"))

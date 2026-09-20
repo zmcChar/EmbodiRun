@@ -9,8 +9,8 @@ layers at the Deploy boundary.
 from __future__ import annotations
 
 import math
-from copy import deepcopy
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from typing import Any
 
 HORIZON = 50
@@ -44,11 +44,7 @@ _WAYPOINT_KEYS = {
 
 
 def _finite_number(value: Any) -> bool:
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(float(value))
-    )
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
 
 
 def _mapping(value: Any, label: str) -> Mapping[str, Any]:
@@ -58,19 +54,11 @@ def _mapping(value: Any, label: str) -> Mapping[str, Any]:
 
 
 def _rows(value: Any) -> tuple[tuple[float, ...], ...]:
-    if (
-        not isinstance(value, Sequence)
-        or isinstance(value, (str, bytes))
-        or len(value) != HORIZON
-    ):
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or len(value) != HORIZON:
         raise ValueError("proposal actions must be a 50-step sequence")
     result: list[tuple[float, ...]] = []
     for index, row in enumerate(value):
-        if (
-            not isinstance(row, Sequence)
-            or isinstance(row, (str, bytes))
-            or len(row) != ACTION_DIM
-        ):
+        if not isinstance(row, Sequence) or isinstance(row, (str, bytes)) or len(row) != ACTION_DIM:
             raise ValueError(f"proposal actions[{index}] must contain 12 values")
         if not all(_finite_number(item) for item in row):
             raise ValueError(f"proposal actions[{index}] contains a non-finite value")
@@ -78,9 +66,7 @@ def _rows(value: Any) -> tuple[tuple[float, ...], ...]:
     return tuple(result)
 
 
-def validate_proposal(
-    actions: Any, metadata: Mapping[str, Any]
-) -> tuple[tuple[float, ...], ...]:
+def validate_proposal(actions: Any, metadata: Mapping[str, Any]) -> tuple[tuple[float, ...], ...]:
     """Validate and copy one reviewable 50x12 BiSO101 proposal.
 
     The returned tuple is a value-only snapshot. It is still a proposal, not an
@@ -92,10 +78,7 @@ def validate_proposal(
         if metadata.get(key) != expected:
             raise ValueError(f"proposal metadata {key} must be {expected!r}")
     if metadata.get("joint_position_unit") not in {"degrees", "range_m100_100"}:
-        raise ValueError(
-            "proposal metadata joint_position_unit must explicitly declare "
-            "degrees or range_m100_100"
-        )
+        raise ValueError("proposal metadata joint_position_unit must explicitly declare degrees or range_m100_100")
     if "horizon" in metadata and metadata["horizon"] != HORIZON:
         raise ValueError(f"proposal metadata horizon must be {HORIZON}")
     return _rows(actions)
@@ -103,9 +86,7 @@ def validate_proposal(
 
 def _validate_waypoint(value: Any, label: str) -> None:
     waypoint = _mapping(value, label)
-    if set(waypoint) != _WAYPOINT_KEYS or not all(
-        _finite_number(waypoint[key]) for key in _WAYPOINT_KEYS
-    ):
+    if set(waypoint) != _WAYPOINT_KEYS or not all(_finite_number(waypoint[key]) for key in _WAYPOINT_KEYS):
         raise ValueError(f"{label} is invalid")
 
 
@@ -126,9 +107,7 @@ def _validate_correction(value: Any) -> None:
             _validate_waypoint(correction[side], f"correction.{side}")
 
 
-def validate_decision(
-    raw: Mapping[str, Any], *, proposal_id: str, observation_id: str
-) -> dict[str, Any]:
+def validate_decision(raw: Mapping[str, Any], *, proposal_id: str, observation_id: str) -> dict[str, Any]:
     """Validate one Astra branch and return a deep value copy.
 
     This function checks branch shape and declared units only. The correction

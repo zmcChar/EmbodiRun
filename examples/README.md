@@ -70,7 +70,7 @@ no-inference message. The Control `execute` command is the bounded direct
 action path for this fake robot; attach a model and binding in a separate
 runtime when model inference tasks are required.
 
-For the full bounded action, inspect, cancellation, and timeout guidance, use
-the repository skill at [`skills/deploy-robot/SKILL.md`](../skills/deploy-robot/SKILL.md).
+For the full bounded action, inspect, cancellation, and timeout guidance, see
+[Agent execution workflow](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/docs/agent-workflow.md).
 It keeps the fake action workflow software-only and requires inspecting the
 original request ID after an uncertain transport result.

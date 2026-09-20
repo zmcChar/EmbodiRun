@@ -9,14 +9,15 @@ is not a model-serving API or a second scheduler.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
 import inspect
 import math
 import time
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
+from agents.astra_pi05.decision import validate_decision, validate_proposal
 from embodirun.client import (
     ControlClient,
     ControlHTTPError,
@@ -25,11 +26,7 @@ from embodirun.client import (
     UnsupportedOperation,
 )
 
-from agents.astra_pi05.decision import validate_decision, validate_proposal
-
-ReviewPacketBuilder = Callable[
-    [Observation, "Proposal", Mapping[str, Any]], Mapping[str, Any]
-]
+ReviewPacketBuilder = Callable[[Observation, "Proposal", Mapping[str, Any]], Mapping[str, Any]]
 RequestStarted = Callable[[str], None]
 ActionEncoder = Callable[..., Mapping[str, Any]]
 
@@ -59,7 +56,7 @@ class Proposal:
         *,
         observation_id: str,
         proposal_id: str | None = None,
-    ) -> "Proposal":
+    ) -> Proposal:
         """Validate a proposal while preserving the caller's snapshot ID."""
 
         if not isinstance(payload, Mapping):
@@ -69,10 +66,7 @@ class Proposal:
             raise ValueError("proposal.metadata must be an object")
         actions = validate_proposal(payload.get("actions"), metadata)
         declared_observation_id = payload.get("observation_id")
-        if (
-            declared_observation_id is not None
-            and declared_observation_id != observation_id
-        ):
+        if declared_observation_id is not None and declared_observation_id != observation_id:
             raise ValueError("proposal.observation_id does not match the observation")
         value = proposal_id if proposal_id is not None else payload.get("proposal_id")
         if not isinstance(value, str) or not value.strip():
@@ -121,9 +115,7 @@ class CooperativeResult:
             "discarded_steps": self.discarded_steps,
             "execution": dict(self.execution) if self.execution is not None else None,
             "post_observation_id": (
-                self.post_observation.observation_id
-                if self.post_observation is not None
-                else None
+                self.post_observation.observation_id if self.post_observation is not None else None
             ),
             "error": self.error,
             "request_id": self.request_id,
@@ -151,24 +143,16 @@ def rows_to_actions(
         raise ValueError("feature_names must contain 12 non-empty names")
     if len(set(names)) != len(names):
         raise ValueError("feature_names must be unique")
-    if (
-        isinstance(timestamp_step_s, bool)
-        or not math.isfinite(timestamp_step_s)
-        or timestamp_step_s <= 0
-    ):
+    if isinstance(timestamp_step_s, bool) or not math.isfinite(timestamp_step_s) or timestamp_step_s <= 0:
         raise ValueError("timestamp_step_s must be finite and positive")
     result = []
     shared_metadata = dict(metadata or {})
     for index, row in enumerate(rows):
         if len(row) != len(names) or any(
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(float(value))
+            isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value))
             for value in row
         ):
-            raise ValueError(
-                "action rows must contain finite values matching feature_names"
-            )
+            raise ValueError("action rows must contain finite values matching feature_names")
         timestamp_s = index * float(timestamp_step_s)
         if action_encoder is None:
             result.append(
@@ -271,9 +255,7 @@ class CooperativeLoop:
         self.review_packet_builder = review_packet_builder
         self.request_started = request_started
 
-    def run_round(
-        self, *, prompt: str = "", context: Mapping[str, Any] | None = None
-    ) -> CooperativeResult:
+    def run_round(self, *, prompt: str = "", context: Mapping[str, Any] | None = None) -> CooperativeResult:
         """Run observe, proposal validation, review, execute, and fresh read.
 
         The proposal and reviewer are callbacks supplied by the external
@@ -298,9 +280,7 @@ class CooperativeLoop:
             packet.update(dict(extra))
         raw_decision = self.reviewer(packet)
         if inspect.isawaitable(raw_decision):
-            raise RuntimeError(
-                "reviewer returned an awaitable; wrap async reviewers with a synchronous adapter"
-            )
+            raise RuntimeError("reviewer returned an awaitable; wrap async reviewers with a synchronous adapter")
         decision = validate_decision(
             raw_decision,
             proposal_id=proposal.proposal_id,
@@ -325,22 +305,16 @@ class CooperativeLoop:
                 actions = rows_to_actions(
                     rows,
                     feature_names=names,
-                    timestamp_step_s=(
-                        1.0 / self.control_hz if self.control_hz else 0.1
-                    ),
+                    timestamp_step_s=(1.0 / self.control_hz if self.control_hz else 0.1),
                     metadata={
                         "proposal_id": proposal.proposal_id,
-                        "joint_position_unit": proposal.metadata.get(
-                            "joint_position_unit"
-                        ),
+                        "joint_position_unit": proposal.metadata.get("joint_position_unit"),
                     },
                     action_encoder=self.action_encoder,
                 )
             else:
                 if self.correction_mapper is None:
-                    raise CorrectionUnsupported(
-                        "correction requires an explicit robot-specific mapper"
-                    )
+                    raise CorrectionUnsupported("correction requires an explicit robot-specific mapper")
                 mapped = _call_correction_mapper(
                     self.correction_mapper,
                     decision["corrections"],
@@ -352,9 +326,7 @@ class CooperativeLoop:
                     mapped_rows = mapped.get("actions")
                     raw_names = mapped.get("feature_names")
                     if raw_names is not None:
-                        if not isinstance(raw_names, Sequence) or isinstance(
-                            raw_names, (str, bytes)
-                        ):
+                        if not isinstance(raw_names, Sequence) or isinstance(raw_names, (str, bytes)):
                             raise ValueError("correction mapper feature_names must be a sequence")
                         mapper_names = tuple(raw_names)
                     raw_metadata = mapped.get("metadata")
@@ -374,9 +346,7 @@ class CooperativeLoop:
                     for item in mapped:
                         action = dict(item)
                         if not isinstance(action.get("values"), Mapping):
-                            raise ValueError(
-                                "mapped correction action must contain public values"
-                            )
+                            raise ValueError("mapped correction action must contain public values")
                         if mapper_metadata:
                             metadata_value = dict(action.get("metadata", {}))
                             metadata_value.update(mapper_metadata)
@@ -388,17 +358,11 @@ class CooperativeLoop:
                     rows = tuple(tuple(float(value) for value in row) for row in mapped)
                     if not 1 <= len(rows) <= 5:
                         raise ValueError("correction mapper must return 1..5 action rows")
-                    names = (
-                        self.feature_names
-                        or mapper_names
-                        or _declared_feature_names(proposal.metadata)
-                    )
+                    names = self.feature_names or mapper_names or _declared_feature_names(proposal.metadata)
                     actions = rows_to_actions(
                         rows,
                         feature_names=names,
-                        timestamp_step_s=(
-                            1.0 / self.control_hz if self.control_hz else 0.1
-                        ),
+                        timestamp_step_s=(1.0 / self.control_hz if self.control_hz else 0.1),
                         metadata={
                             "proposal_id": proposal.proposal_id,
                             "correction": True,
@@ -406,9 +370,7 @@ class CooperativeLoop:
                         },
                         action_encoder=self.action_encoder,
                     )
-            execution_control_hz = _resolve_execution_control_hz(
-                actions, requested=self.control_hz
-            )
+            execution_control_hz = _resolve_execution_control_hz(actions, requested=self.control_hz)
             if self.request_started is not None:
                 self.request_started(request_id)
             execution = self.client.execute(
@@ -449,16 +411,8 @@ class CooperativeLoop:
                 error=str(error),
             )
         except ControlHTTPError as error:
-            payload_status = (
-                error.payload.get("status")
-                if isinstance(error.payload, Mapping)
-                else None
-            )
-            payload_code = (
-                error.payload.get("code")
-                if isinstance(error.payload, Mapping)
-                else None
-            )
+            payload_status = error.payload.get("status") if isinstance(error.payload, Mapping) else None
+            payload_code = error.payload.get("code") if isinstance(error.payload, Mapping) else None
             if payload_code == "job_cancelled" or payload_status == "cancelled":
                 error_status = "cancelled"
             elif payload_status in {"stopped", "manual_takeover"}:
@@ -499,20 +453,12 @@ class CooperativeLoop:
                 proposal.proposal_id,
                 decision=kind,
                 request_id=request_id,
-                discarded_steps=(
-                    len(proposal.actions)
-                    if kind == "correct"
-                    else len(proposal.actions) - len(actions)
-                ),
+                discarded_steps=(len(proposal.actions) if kind == "correct" else len(proposal.actions) - len(actions)),
                 execution=execution,
                 error=str(execution.get("error", "execution did not complete")),
             )
         result_payload = execution.get("result")
-        actual_steps = (
-            result_payload.get("executed_steps")
-            if isinstance(result_payload, Mapping)
-            else None
-        )
+        actual_steps = result_payload.get("executed_steps") if isinstance(result_payload, Mapping) else None
         execution_evidence_unknown = (
             isinstance(actual_steps, bool)
             or not isinstance(actual_steps, int)
@@ -529,9 +475,7 @@ class CooperativeLoop:
             observation_error = f"post-execution observation failed: {error}"
         outcome_status = "completed"
         outcome_error = (
-            "execution evidence did not include a valid executed_steps count"
-            if execution_evidence_unknown
-            else None
+            "execution evidence did not include a valid executed_steps count" if execution_evidence_unknown else None
         )
         if post_observation is None:
             outcome_status = "post_observation_pending"
@@ -546,11 +490,7 @@ class CooperativeLoop:
             decision=kind,
             request_id=request_id,
             executed_steps=actual_steps,
-            discarded_steps=(
-                len(proposal.actions)
-                if kind == "correct"
-                else len(proposal.actions) - actual_steps
-            ),
+            discarded_steps=(len(proposal.actions) if kind == "correct" else len(proposal.actions) - actual_steps),
             execution=execution,
             post_observation=post_observation,
             error=outcome_error,
@@ -591,24 +531,30 @@ def _observation_is_after(baseline: Observation, current: Observation) -> bool:
         return False
     baseline_sequence = baseline.payload.get("sequence")
     current_sequence = current.payload.get("sequence")
-    if baseline_sequence is not None and current_sequence is not None:
-        if (
+    if (
+        baseline_sequence is not None
+        and current_sequence is not None
+        and (
             isinstance(baseline_sequence, (int, float))
             and not isinstance(baseline_sequence, bool)
             and isinstance(current_sequence, (int, float))
             and not isinstance(current_sequence, bool)
-        ):
-            return current_sequence > baseline_sequence
+        )
+    ):
+        return current_sequence > baseline_sequence
     baseline_timestamp = baseline.payload.get("published_timestamp_ns")
     current_timestamp = current.payload.get("published_timestamp_ns")
-    if baseline_timestamp is not None and current_timestamp is not None:
-        if (
+    if (
+        baseline_timestamp is not None
+        and current_timestamp is not None
+        and (
             isinstance(baseline_timestamp, (int, float))
             and not isinstance(baseline_timestamp, bool)
             and isinstance(current_timestamp, (int, float))
             and not isinstance(current_timestamp, bool)
-        ):
-            return current_timestamp > baseline_timestamp
+        )
+    ):
+        return current_timestamp > baseline_timestamp
     return True
 
 
@@ -640,15 +586,11 @@ def _call_correction_mapper(
 def _declared_feature_names(metadata: Mapping[str, Any]) -> tuple[str, ...]:
     value = metadata.get("feature_names")
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
-        raise ValueError(
-            "proposal metadata must declare feature_names for the binding action space"
-        )
+        raise ValueError("proposal metadata must declare feature_names for the binding action space")
     return tuple(value)
 
 
-def _resolve_execution_control_hz(
-    actions: Sequence[Mapping[str, Any]], *, requested: float | None
-) -> float | None:
+def _resolve_execution_control_hz(actions: Sequence[Mapping[str, Any]], *, requested: float | None) -> float | None:
     """Honor an explicitly declared public fixed-rate correction schedule."""
 
     declared: list[float] = []
@@ -659,21 +601,14 @@ def _resolve_execution_control_hz(
         if metadata.get("duration_semantics") != "public_control_hz_step":
             continue
         rate = metadata.get("control_hz")
-        if (
-            isinstance(rate, bool)
-            or not isinstance(rate, (int, float))
-            or not math.isfinite(float(rate))
-            or rate <= 0
-        ):
+        if isinstance(rate, bool) or not isinstance(rate, (int, float)) or not math.isfinite(float(rate)) or rate <= 0:
             raise ValueError("correction action must declare a finite positive control_hz")
         declared.append(float(rate))
     if not declared:
         return requested
     if any(not math.isclose(rate, declared[0], rel_tol=1e-9, abs_tol=1e-9) for rate in declared[1:]):
         raise ValueError("correction actions declare conflicting control_hz values")
-    if requested is not None and not math.isclose(
-        float(requested), declared[0], rel_tol=1e-9, abs_tol=1e-9
-    ):
+    if requested is not None and not math.isclose(float(requested), declared[0], rel_tol=1e-9, abs_tol=1e-9):
         raise ValueError("session control_hz conflicts with correction action control_hz")
     return declared[0]
 

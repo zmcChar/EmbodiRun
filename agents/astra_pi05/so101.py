@@ -10,8 +10,8 @@ kinematic mapping.
 from __future__ import annotations
 
 import base64
-from collections.abc import Callable, Mapping, Sequence
 import math
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -29,11 +29,7 @@ class SO101ReviewPacketError(ValueError):
 
 
 def _finite_state(value: Any) -> list[float]:
-    if (
-        not isinstance(value, Sequence)
-        or isinstance(value, (str, bytes))
-        or len(value) != 12
-    ):
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or len(value) != 12:
         raise SO101ReviewPacketError("SO101 state extractor must return 12 values")
     result = [float(item) for item in value]
     if any(not math.isfinite(item) for item in result):
@@ -60,9 +56,7 @@ class BiSO101ActionEncoder:
     ) -> None:
         names = tuple(feature_names)
         if names != tuple(BI_SO101_POSITION_FEATURES):
-            raise ValueError(
-                "BiSO101ActionEncoder requires the declared BI_SO101_POSITION_FEATURES order"
-            )
+            raise ValueError("BiSO101ActionEncoder requires the declared BI_SO101_POSITION_FEATURES order")
         if not isinstance(action_space, str) or not action_space.strip():
             raise ValueError("action_space must be a non-empty string")
         self.feature_names = names
@@ -87,9 +81,7 @@ class BiSO101ActionEncoder:
         if len(row) != len(self.feature_names):
             raise ValueError("BiSO101ActionEncoder rows must contain 12 values")
         if metadata.get("joint_position_unit") != "degrees":
-            raise ValueError(
-                "BiSO101ActionEncoder accepts only proposals explicitly declared in degrees"
-            )
+            raise ValueError("BiSO101ActionEncoder accepts only proposals explicitly declared in degrees")
         values = [float(item) for item in row]
         if any(not math.isfinite(item) for item in values):
             raise ValueError("BiSO101ActionEncoder rows must contain finite values")
@@ -124,9 +116,7 @@ class BiSO101ActionEncoder:
             "left",
             "right",
         }:
-            raise ValueError(
-                "BiSO101ActionEncoder expects the public type/left/right action shape"
-            )
+            raise ValueError("BiSO101ActionEncoder expects the public type/left/right action shape")
         if values["type"] != "joint_position":
             raise ValueError("BiSO101ActionEncoder only accepts joint_position actions")
         row: list[float] = []
@@ -138,14 +128,8 @@ class BiSO101ActionEncoder:
             }:
                 raise ValueError(f"BiSO101ActionEncoder {side} target is invalid")
             joints = arm["joint_positions_deg"]
-            if (
-                not isinstance(joints, Sequence)
-                or isinstance(joints, (str, bytes))
-                or len(joints) != 5
-            ):
-                raise ValueError(
-                    f"BiSO101ActionEncoder {side} target requires five joints"
-                )
+            if not isinstance(joints, Sequence) or isinstance(joints, (str, bytes)) or len(joints) != 5:
+                raise ValueError(f"BiSO101ActionEncoder {side} target requires five joints")
             row.extend(float(item) for item in joints)
             row.append(float(arm["gripper_position"]))
         # Reuse the same bounds as the encoder so proposal normalization cannot
@@ -163,15 +147,11 @@ def extract_bi_so101_state(observation: Observation) -> list[float]:
 
     value = observation.robot
     if not isinstance(value, Mapping):
-        raise SO101ReviewPacketError(
-            "public SO101 observation.robot must contain named values"
-        )
+        raise SO101ReviewPacketError("public SO101 observation.robot must contain named values")
     try:
         state = [value[name] for name in BI_SO101_POSITION_FEATURES]
     except KeyError as error:
-        raise SO101ReviewPacketError(
-            "public SO101 observation.robot is missing a configured feature"
-        ) from error
+        raise SO101ReviewPacketError("public SO101 observation.robot is missing a configured feature") from error
     return _finite_state(state)
 
 
@@ -187,22 +167,11 @@ def _media_bytes(response: Any, role: str) -> tuple[bytes, str | None]:
             # frame payload: {"observation_id": ..., "media": [{...}]}.
             # Match the declared role so a server returning several frames can
             # never silently feed the wrong camera to the reviewer.
-            if (
-                not isinstance(media, Sequence)
-                or isinstance(media, (str, bytes))
-            ):
-                raise SO101ReviewPacketError(
-                    f"public media {role} has an invalid media list"
-                )
-            candidates = [
-                item
-                for item in media
-                if isinstance(item, Mapping) and item.get("name") == role
-            ]
+            if not isinstance(media, Sequence) or isinstance(media, (str, bytes)):
+                raise SO101ReviewPacketError(f"public media {role} has an invalid media list")
+            candidates = [item for item in media if isinstance(item, Mapping) and item.get("name") == role]
             if len(candidates) != 1:
-                raise SO101ReviewPacketError(
-                    f"public media response does not contain exactly one {role!r} frame"
-                )
+                raise SO101ReviewPacketError(f"public media response does not contain exactly one {role!r} frame")
             value = candidates[0]
         if isinstance(value, Mapping):
             media_type = value.get("mime_type", value.get("media_type"))
@@ -295,9 +264,7 @@ class SO101ReviewPacketBuilder:
         output.mkdir()
         paths: dict[str, str] = {}
         for role in self._roles:
-            data, media_type = _media_bytes(
-                self._fetch(observation.observation_id, role), role
-            )
+            data, media_type = _media_bytes(self._fetch(observation.observation_id, role), role)
             path = output / f"{role}{_suffix(media_type)}"
             path.write_bytes(data)
             paths[role] = str(path)

@@ -63,9 +63,7 @@ class _Statistics:
     _OPTIONAL_NOOP_PROCESSORS = ("delta_actions_processor", "absolute_actions_processor")
 
     @classmethod
-    def load(
-        cls, root: Path, pipeline: str, registry: str, feature: str, kind: str
-    ) -> _Statistics:
+    def load(cls, root: Path, pipeline: str, registry: str, feature: str, kind: str) -> _Statistics:
         payload = json.loads((root / f"policy_{pipeline}.json").read_text())
         steps = payload["steps"]
         allowed = {
@@ -80,18 +78,12 @@ class _Statistics:
             name = step["registry_name"]
             if name in cls._OPTIONAL_NOOP_PROCESSORS:
                 if (step.get("config") or {}).get("enabled"):
-                    raise ValueError(
-                        f"SGLang LeRobot compatibility does not support an enabled {name}"
-                    )
+                    raise ValueError(f"SGLang LeRobot compatibility does not support an enabled {name}")
                 continue
             if name not in allowed:
                 raise ValueError(f"unsupported LeRobot processor: {name}")
-            if name == "rename_observations_processor" and step["config"].get(
-                "rename_map"
-            ):
-                raise ValueError(
-                    "SGLang LeRobot serving requires already named input features"
-                )
+            if name == "rename_observations_processor" and step["config"].get("rename_map"):
+                raise ValueError("SGLang LeRobot serving requires already named input features")
         matches = [step for step in steps if step["registry_name"] == registry]
         if len(matches) != 1:
             raise ValueError(f"checkpoint must contain exactly one {registry}")
@@ -100,20 +92,15 @@ class _Statistics:
         mode = config["norm_map"].get(kind)
         if mode not in cls.SUPPORTED_MODES:
             raise ValueError(
-                f"SGLang LeRobot compatibility requires {kind} in "
-                f"{list(cls.SUPPORTED_MODES)}, got {mode!r}"
+                f"SGLang LeRobot compatibility requires {kind} in {list(cls.SUPPORTED_MODES)}, got {mode!r}"
             )
-        if (
-            pipeline == "preprocessor"
-            and config["norm_map"].get("VISUAL") != "IDENTITY"
-        ):
+        if pipeline == "preprocessor" and config["norm_map"].get("VISUAL") != "IDENTITY":
             raise ValueError("SGLang LeRobot compatibility requires VISUAL=IDENTITY")
         filename = step["state_file"]
         if not isinstance(filename, str) or Path(filename).name != filename:
             raise ValueError("processor statistics must name a checkpoint file")
         path = root / filename
         stats = load_file(str(path))
-        mean, std = stats[f"{feature}.mean"].float(), stats[f"{feature}.std"].float()
         shape = tuple(config["features"][feature]["shape"])
         eps = float(config.get("eps", 1e-8))
         if not np.isfinite(eps) or eps <= 0:
@@ -124,11 +111,7 @@ class _Statistics:
             std = stats[f"{feature}.std"].float()
             if mean.shape != shape or std.shape != shape or len(shape) != 1:
                 raise ValueError(f"invalid normalization dimensions for {feature}")
-            if (
-                not torch.isfinite(mean).all()
-                or not torch.isfinite(std).all()
-                or (std < 0).any()
-            ):
+            if not torch.isfinite(mean).all() or not torch.isfinite(std).all() or (std < 0).any():
                 raise ValueError(f"invalid normalization statistics for {feature}")
             return cls(mean, std, eps, mode)
 
@@ -137,8 +120,7 @@ class _Statistics:
             q99 = stats[f"{feature}.q99"].float()
         except KeyError as error:
             raise ValueError(
-                f"QUANTILES normalization requires {feature}.q01 / {feature}.q99 "
-                f"statistics: {error}"
+                f"QUANTILES normalization requires {feature}.q01 / {feature}.q99 statistics: {error}"
             ) from error
         if q01.shape != shape or q99.shape != shape or len(shape) != 1:
             raise ValueError(f"invalid normalization dimensions for {feature}")
@@ -161,11 +143,7 @@ class _Statistics:
 
     def denormalize(self, values: Any) -> torch.Tensor:
         tensor = torch.as_tensor(values, dtype=torch.float32, device="cpu")
-        if (
-            tensor.ndim < 1
-            or tensor.shape[-1] != self.mean.numel()
-            or not torch.isfinite(tensor).all()
-        ):
+        if tensor.ndim < 1 or tensor.shape[-1] != self.mean.numel() or not torch.isfinite(tensor).all():
             raise ValueError("actions do not match checkpoint normalization statistics")
         if self.mode == "QUANTILES":
             return (tensor + 1.0) * self.std / 2.0 + self.mean
@@ -178,18 +156,10 @@ class _LeRobotPolicyModel(Pi05PolicyModel):
         manifest = Pi05PolicyModel._inspect_checkpoint(model_path, config)
         root = Path(model_path)
         index = root / "model.safetensors.index.json"
-        names = (
-            set(json.loads(index.read_text())["weight_map"].values())
-            if index.is_file()
-            else {"model.safetensors"}
-        )
+        names = set(json.loads(index.read_text())["weight_map"].values()) if index.is_file() else {"model.safetensors"}
         files = [str(root / name) for name in sorted(names)]
-        if any(Path(name).name != name for name in names) or any(
-            not Path(path).is_file() for path in files
-        ):
-            raise ValueError(
-                "checkpoint model safetensors are missing or outside the checkpoint"
-            )
+        if any(Path(name).name != name for name in names) or any(not Path(path).is_file() for path in files):
+            raise ValueError("checkpoint model safetensors are missing or outside the checkpoint")
         return replace(manifest, safetensor_files=files)
 
 
@@ -214,11 +184,7 @@ class _LeRobotPostprocess(VLAActionPostprocessStage):
         for payload in output.output:
             actions = payload["actions"]
             restored = self.statistics.denormalize(actions)
-            payload["actions"] = (
-                restored.numpy()
-                if isinstance(actions, np.ndarray)
-                else restored.tolist()
-            )
+            payload["actions"] = restored.numpy() if isinstance(actions, np.ndarray) else restored.tolist()
         return output
 
 
@@ -227,21 +193,15 @@ class LeRobotPi05Pipeline(Pi05Pipeline):
 
     pipeline_name = "LeRobotPi05Pipeline"
 
-    def load_modules(
-        self, server_args: Any, loaded_modules: Any = None
-    ) -> dict[str, Any]:
+    def load_modules(self, server_args: Any, loaded_modules: Any = None) -> dict[str, Any]:
         """Load model safetensors only; processor tensors are not model parameters."""
         if loaded_modules is not None:
             return loaded_modules
         config = server_args.pipeline_config
         if config.prefix_parallel_strategy == config.action_parallel_strategy == "tp":
             raise ValueError("VLA action expert must not share the prefix TP layout")
-        config.offload_prefix_image_encoder |= bool(
-            server_args.image_encoder_cpu_offload
-        )
-        config.offload_prefix_token_embedding |= bool(
-            server_args.text_encoder_cpu_offload
-        )
+        config.offload_prefix_image_encoder |= bool(server_args.image_encoder_cpu_offload)
+        config.offload_prefix_token_embedding |= bool(server_args.text_encoder_cpu_offload)
         model = _LeRobotPolicyModel.from_pretrained(self.model_path, config)
         # LeRobot exports may already list the empty cameras in input_features.
         config.image_keys = tuple(dict.fromkeys(config.image_keys))
@@ -251,19 +211,13 @@ class LeRobotPi05Pipeline(Pi05Pipeline):
         """Read the checkpoint's pre/postprocessor statistics without LeRobot imports."""
         super().initialize_pipeline(server_args)
         root = Path(self.get_module("policy_model").model_path)
-        state = _Statistics.load(
-            root, "preprocessor", "normalizer_processor", "observation.state", "STATE"
-        )
-        self.action_statistics = _Statistics.load(
-            root, "postprocessor", "unnormalizer_processor", "action", "ACTION"
-        )
+        state = _Statistics.load(root, "preprocessor", "normalizer_processor", "observation.state", "STATE")
+        self.action_statistics = _Statistics.load(root, "postprocessor", "unnormalizer_processor", "action", "ACTION")
         self.preprocessor = _LeRobotPreprocessor(self.preprocessor, state)
 
     def create_pipeline_stages(self, server_args: Any) -> None:
         """Retain SGLang's prefix/denoising stages and restore action units last."""
-        self.add_stage(
-            VLAObservationPreprocessStage(self.preprocessor), "pi05_preprocess"
-        )
+        self.add_stage(VLAObservationPreprocessStage(self.preprocessor), "pi05_preprocess")
         self.add_stage(
             VLAPrefixEncodingStage(self.get_module("policy_model"), self.prefix_cache),
             "pi05_prefix",

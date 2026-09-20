@@ -7,6 +7,7 @@ The operator must keep the robot in sight. Use dualsense_input first.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import math
 import signal
@@ -59,8 +60,11 @@ class DriveMapping:
     @property
     def speed(self):
         return (
-            min(self.level * 0.05, self.max_linear,
-                TETHERED_MAX_LINEAR_M_S if self.motion_profile == "tethered" else float("inf")),
+            min(
+                self.level * 0.05,
+                self.max_linear,
+                TETHERED_MAX_LINEAR_M_S if self.motion_profile == "tethered" else float("inf"),
+            ),
             0.0 if self.motion_profile == "tethered" else min(self.level * 10, self.max_angular),
         )
 
@@ -87,8 +91,7 @@ class DriveMapping:
             return enable, dict(ZERO)
         linear, angular = self.speed
         # DualSense up/left are negative; base forward/left yaw are positive.
-        return enable, {"x.vel": -sample.sticks[1] * linear,
-                        "theta.vel": -sample.sticks[2] * angular}
+        return enable, {"x.vel": -sample.sticks[1] * linear, "theta.vel": -sample.sticks[2] * angular}
 
 
 class HeadTiltMapping:
@@ -125,8 +128,9 @@ class HeadTiltMapping:
         if self.target is None or not 0 < dt <= STALE_SECONDS:
             raise RuntimeError("相机俯仰未初始化或输入延迟")
         if "r1" in sample.buttons:
-            self.target = max(self.low, min(self.high, self.target - sample.sticks[3]
-                                           * self.speed * min(dt, 0.1) * self.sign))
+            self.target = max(
+                self.low, min(self.high, self.target - sample.sticks[3] * self.speed * min(dt, 0.1) * self.sign)
+            )
         return {self.joint: self.target}
 
     def accept(self, applied):
@@ -142,8 +146,7 @@ def check_feedback(feedback, expected_keys=None):
         raise RuntimeError("底盘拒绝动作: " + str(feedback.get("errors", [])))
     applied = feedback.get("applied_action", {})
     if set(applied) != (set(ZERO) if expected_keys is None else set(expected_keys)) or any(
-        isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
-        for v in applied.values()
+        isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in applied.values()
     ):
         raise RuntimeError("底盘动作回执不完整")
 
@@ -201,9 +204,7 @@ class BaseSession:
         # RemoteRobot(scope="base").stop() maps to /robot/stop with the
         # base scope. It never calls stop_all and therefore leaves arms alone.
         result = self.robot.stop()
-        if (not isinstance(result, dict)
-                or result.get("stop_confirmed") is not True
-                or result.get("errors")):
+        if not isinstance(result, dict) or result.get("stop_confirmed") is not True or result.get("errors"):
             raise RuntimeError("接管前底盘停止未确认，请先检查机器人反馈: " + str(result))
         self.owns = self.enable_uncertain = False
         if self.recording:
@@ -215,12 +216,12 @@ class BaseSession:
             raise RuntimeError("尚未启用底盘")
         self.command_index += 1
         if self.recording:
-            self.recording.emit("command_requested", command_index=self.command_index,
-                                action=action, input_sample=input_sample)
+            self.recording.emit(
+                "command_requested", command_index=self.command_index, action=action, input_sample=input_sample
+            )
         feedback = self.robot.command(action)
         if self.recording:
-            self.recording.emit("command_feedback", command_index=self.command_index,
-                                feedback=feedback)
+            self.recording.emit("command_feedback", command_index=self.command_index, feedback=feedback)
         check_feedback(feedback, action)
         return feedback["applied_action"]
 
@@ -229,10 +230,8 @@ class BaseSession:
             result = self.robot.release()
             # Control release happens before any possibly failed recording I/O.
             if self.recording:
-                try:
+                with contextlib.suppress(RuntimeError):
                     self.recording.emit("release_result", feedback=result)
-                except RuntimeError:
-                    pass
             if result.get("control_owned") is not False and result.get("stop_confirmed") is not True:
                 raise RuntimeError("底盘停止未确认，请现场检查: " + str(result))
             self.owns = self.enable_uncertain = False
@@ -243,8 +242,7 @@ def run(args):
     if url.scheme != "http" or url.hostname not in ("127.0.0.1", "localhost", "::1"):
         raise ValueError("请在 AGX 本机使用回环 robot URL")
     token = args.token_file.read_text().strip()
-    robot = RemoteRobot(args.robot_url, token,
-                        timeout=0.25, scope="base")
+    robot = RemoteRobot(args.robot_url, token, timeout=0.25, scope="base")
     robot.connect()
     motion_profile = resolve_motion_profile(takeover=args.takeover, profile=args.motion_profile)
     mapping = DriveMapping(robot.metadata, motion_profile=motion_profile)
@@ -255,10 +253,14 @@ def run(args):
     last_display = 0
     try:
         if args.output is not None:
-            recording = DemoRecording(args.output, args.task, args.robot_url, token,
-                                      {**robot.metadata, "takeover": args.takeover,
-                                       "motion_profile": motion_profile},
-                                      max_seconds=args.max_seconds)
+            recording = DemoRecording(
+                args.output,
+                args.task,
+                args.robot_url,
+                token,
+                {**robot.metadata, "takeover": args.takeover, "motion_profile": motion_profile},
+                max_seconds=args.max_seconds,
+            )
             session.recording = recording
             recording.wait_ready()
             recording.emit("ready", metadata=robot.metadata)
@@ -270,16 +272,17 @@ def run(args):
         mapping.update(sample)
         last_tick = time.monotonic()
         profile_hint = (
-            "当前为 tethered：仅直行、速度不超过 0.025 m/s；每次按住 R1 最多 2 秒，"
-            "停车后必须松开再按住 R1。"
+            "当前为 tethered：仅直行、速度不超过 0.025 m/s；每次按住 R1 最多 2 秒，停车后必须松开再按住 R1。"
             if motion_profile == "tethered"
             else "当前为 free：使用服务公布的底盘速度和相机俯仰上限。"
         )
-        print("底盘尚未启用。请保持小车在视线内；摇杆归中并松开所有键，然后按住 R1。\n"
-              "左杆前后、右杆左右转向、右杆上下相机俯仰；松 R1 停车/保持镜头；\n"
-              "↑/↓切换速度；×/○ 停止并释放底盘。\n"
-              + profile_hint + "\n"
-              "只控制底盘，不会启动机器人服务或修改双臂。", flush=True)
+        print(
+            "底盘尚未启用。请保持小车在视线内；摇杆归中并松开所有键，然后按住 R1。\n"
+            "左杆前后、右杆左右转向、右杆上下相机俯仰；松 R1 停车/保持镜头；\n"
+            "↑/↓切换速度；×/○ 停止并释放底盘。\n" + profile_hint + "\n"
+            "只控制底盘，不会启动机器人服务或修改双臂。",
+            flush=True,
+        )
         if not head.joint:
             print("当前服务未启用相机俯仰，右杆上下无效。", flush=True)
         takeover_pending = args.takeover
@@ -299,18 +302,17 @@ def run(args):
             if not session.owns and enable:
                 if takeover_pending:
                     takeover_result = session.takeover()
-                    print("已停止原底盘控制并确认接管窗口: "
-                          + json.dumps(takeover_result, ensure_ascii=False), flush=True)
+                    print(
+                        "已停止原底盘控制并确认接管窗口: " + json.dumps(takeover_result, ensure_ascii=False), flush=True
+                    )
                     takeover_pending = False
                     # The stop request can block for the full control timeout.
                     # Never arm from the pre-stop R1 packet.
                     sample = fresh_input(device)
-                    if (sample.buttons != {"r1"} or any(sample.sticks)
-                            or max(sample.triggers) >= 0.05):
+                    if sample.buttons != {"r1"} or any(sample.sticks) or max(sample.triggers) >= 0.05:
                         mapping.require_new_enable_edge()
                         last_tick = time.monotonic()
-                        print("停止期间已松开 R1 或输入不再中立；本次未接管，请松开后重新按住 R1。",
-                              flush=True)
+                        print("停止期间已松开 R1 或输入不再中立；本次未接管，请松开后重新按住 R1。", flush=True)
                         continue
                 try:
                     enable_result = session.enable()
@@ -320,8 +322,9 @@ def run(args):
                         raise
                     if recording:
                         recording.emit("enable_refused", feedback=refused)
-                    print("本次启用被拒绝（未运动）: " + str(exc)
-                          + "；松开所有键后，可重新按 R1 手动尝试。", flush=True)
+                    print(
+                        "本次启用被拒绝（未运动）: " + str(exc) + "；松开所有键后，可重新按 R1 手动尝试。", flush=True
+                    )
                     mapping = DriveMapping(robot.metadata, motion_profile=motion_profile)
                     fresh_input(device)
                     last_tick = time.monotonic()
@@ -329,8 +332,7 @@ def run(args):
                 head.reset(enable_result)
                 # Enabling hardware can block; never use a pre-enable stick value.
                 sample = fresh_input(device)
-                if (sample.buttons != {"r1"} or any(sample.sticks)
-                        or max(sample.triggers) >= 0.05):
+                if sample.buttons != {"r1"} or any(sample.sticks) or max(sample.triggers) >= 0.05:
                     raise RuntimeError("启用过程中请保持摇杆归中且按住 R1；本次已取消")
                 last_tick = time.monotonic()
                 action = dict(ZERO)
@@ -345,8 +347,7 @@ def run(args):
                         hold_started = None
                         sample = fresh_input(device)
                         last_tick = time.monotonic()
-                        print("tethered 单次保持已到 2 秒；已停车，请松开并重新按住 R1。",
-                              flush=True)
+                        print("tethered 单次保持已到 2 秒；已停车，请松开并重新按住 R1。", flush=True)
                         continue
                 elif "r1" not in sample.buttons:
                     hold_started = None
@@ -355,17 +356,24 @@ def run(args):
             elif recording:
                 recording.emit("input", input_sample=input_record(sample), enabled=False)
             if now - last_display >= 1:
-                print(json.dumps({"enabled": session.owns, "r1": "r1" in sample.buttons,
-                                  "speed_level": mapping.level, "speed_limits": mapping.speed,
-                                  "requested_action": action if session.owns else ZERO}), flush=True)
+                print(
+                    json.dumps(
+                        {
+                            "enabled": session.owns,
+                            "r1": "r1" in sample.buttons,
+                            "speed_level": mapping.level,
+                            "speed_limits": mapping.speed,
+                            "requested_action": action if session.owns else ZERO,
+                        }
+                    ),
+                    flush=True,
+                )
                 last_display = now
             time.sleep(max(0, 0.05 - (time.monotonic() - last_tick)))
     except BaseException as exc:
         if recording:
-            try:
+            with contextlib.suppress(RuntimeError):
                 recording.emit("control_exit", error=f"{type(exc).__name__}: {exc}")
-            except RuntimeError:
-                pass
         raise
     finally:
         try:

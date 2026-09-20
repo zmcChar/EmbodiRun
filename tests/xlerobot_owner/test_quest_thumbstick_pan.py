@@ -1,6 +1,7 @@
 from dataclasses import replace
 
 import pytest
+
 from embodirun_xlerobot_owner.control import MappingConfig, QuestMapper
 
 from .test_mapping_regression import _frame, _state

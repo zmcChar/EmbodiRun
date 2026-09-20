@@ -1,0 +1,17 @@
+version: 2
+
+# Simplified Chinese build. Read the Docs serves this as a translation of the
+# `embodirun` project, from the same repository and branch, selected by the
+# "Build configuration file" field under Admin -> Settings. Paths below are
+# relative to the repository root, not to this file.
+build:
+  os: ubuntu-24.04
+  tools:
+    python: "3.12"
+
+mkdocs:
+  configuration: mkdocs.zh.yml
+
+python:
+  install:
+    - requirements: docs/requirements.txt

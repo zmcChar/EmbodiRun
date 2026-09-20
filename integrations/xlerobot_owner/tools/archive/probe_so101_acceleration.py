@@ -47,10 +47,7 @@ def _assert_safe(profile: dict[str, dict[str, object]]) -> None:
         if fields["Torque_Enable"] != 0:
             failures.append(f"{name}: Torque_Enable={fields['Torque_Enable']!r}")
         if fields["Present_Velocity"] != 0 or fields["Moving"] != 0:
-            failures.append(
-                f"{name}: moving velocity={fields['Present_Velocity']!r} "
-                f"flag={fields['Moving']!r}"
-            )
+            failures.append(f"{name}: moving velocity={fields['Present_Velocity']!r} flag={fields['Moving']!r}")
     if failures:
         raise RuntimeError("refusing volatile profile write: " + "; ".join(failures))
 
@@ -82,9 +79,7 @@ def main() -> int:
         known = {name for side in ("left", "right") for name in ARM_NAMES[side]}
         unknown_disable = set(args.disable_torque) - known
         if unknown_disable:
-            raise ValueError(
-                "unknown --disable-torque motors: " + ", ".join(sorted(unknown_disable))
-            )
+            raise ValueError("unknown --disable-torque motors: " + ", ".join(sorted(unknown_disable)))
         for name in args.disable_torque:
             record = before[name]
             fields = record["fields"]
@@ -95,9 +90,7 @@ def main() -> int:
             side = "left" if name.startswith("left_") else "right"
             robot._buses[side].write("Torque_Enable", name, 0, normalize=False)
             time.sleep(args.delay_s)
-            actual, error = robot._read_register(
-                robot._buses[side], "Torque_Enable", name
-            )
+            actual, error = robot._read_register(robot._buses[side], "Torque_Enable", name)
             writes = output["writes"]
             assert isinstance(writes, list)
             writes.append(
@@ -136,9 +129,7 @@ def main() -> int:
                     failures.append(f"{name}: invalid position feedback: {exc}")
                     continue
                 if fields["Torque_Enable"] == 1 and not name.endswith("_gripper") and abs(goal - present) > 16:
-                    failures.append(
-                        f"{name}: Goal_Position={goal} differs from Present_Position={present}"
-                    )
+                    failures.append(f"{name}: Goal_Position={goal} differs from Present_Position={present}")
                 if fields["Torque_Enable"] == 1:
                     goals[name] = goal
             if failures:
@@ -168,9 +159,9 @@ def main() -> int:
             output["snapshot"] = str(snapshot_path)
         if args.target is not None:
             _assert_safe(before)
-            selected = set(args.motor) if args.motor else {
-                name for side in ("left", "right") for name in ARM_NAMES[side]
-            }
+            selected = (
+                set(args.motor) if args.motor else {name for side in ("left", "right") for name in ARM_NAMES[side]}
+            )
             unknown = selected - known
             if unknown:
                 raise ValueError("unknown motors: " + ", ".join(sorted(unknown)))
@@ -199,9 +190,7 @@ def main() -> int:
                         if error is None and int(actual) == args.target:
                             break
                     else:
-                        raise RuntimeError(
-                            f"{name}: acceleration remained {actual!r}; read_error={error}"
-                        )
+                        raise RuntimeError(f"{name}: acceleration remained {actual!r}; read_error={error}")
             output["after"] = _read_profile(robot)
         print(json.dumps(output, ensure_ascii=False, indent=2))
         return 0

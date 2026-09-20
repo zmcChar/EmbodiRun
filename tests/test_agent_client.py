@@ -549,9 +549,14 @@ def test_real_http_control_and_non_vvla_sglang_proposal_execute_reobserve(
         )
         assert executed["status"] == "completed"
         assert client.inspect("sglang-execute")["status"] == "completed"
-        deadline = time.monotonic() + 2.0
+        # The observation producer samples the robot on its own schedule, so a
+        # new observation can still carry a sample taken before the action was
+        # applied.  Wait for the reflected state, not merely for a new ID.
         after = client.observe(include_robot=True, max_age_ns=2_000_000_000)
-        while after.observation_id == before.observation_id and time.monotonic() < deadline:
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            if after.observation_id != before.observation_id and after.robot["state_native"] == [0.25] * 6:
+                break
             time.sleep(0.05)
             after = client.observe(include_robot=True, max_age_ns=2_000_000_000)
         assert after.observation_id != before.observation_id

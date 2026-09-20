@@ -10,7 +10,6 @@ from importlib import import_module
 from typing import Any
 
 from .adapter import RobotAction, RobotAdapter, RobotObservation, RobotPreparationRefused
-from .profile import RobotProfile
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +66,5 @@ __all__ = [
     "RobotDefinition",
     "RobotObservation",
     "RobotPreparationRefused",
-    "RobotProfile",
     "robot_definition",
 ]
