@@ -73,7 +73,7 @@ From the EmbodiRun root, prepare a dedicated environment with package access:
 python3.12 -m venv .venv-microduck
 source .venv-microduck/bin/activate
 python -m pip install -e .
-python -m pip install -e './integrations/microduck_vln[service,test]'
+python -m pip install -e './integrations/microduck_vln[full,test]'
 cp examples/microduck_vln/config.env.example examples/microduck_vln/config.env
 ```
 

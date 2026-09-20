@@ -25,7 +25,7 @@ from embodirun.model_services.contracts import ImagePayload, PolicyObservation, 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "integrations/microduck_vln/src"))
 
-from embodirun_microduck.assets import md5, verify_manifest  # noqa: E402
+from embodirun_microduck.assets import asset_files, md5, verify_manifest  # noqa: E402
 from embodirun_microduck.process import managed_service  # noqa: E402
 from embodirun_microduck.protocol import ACTION_SPACE, IMAGE_FIELD, decode_actions  # noqa: E402
 from embodirun_microduck.service import ActiveVLNAdapter  # noqa: E402
@@ -171,6 +171,34 @@ class FakeClient:
 
     def close(self, session_id):
         self.closed.append(session_id)
+
+
+class AssetInventoryTests(unittest.TestCase):
+    def test_inference_inventory_includes_non_python_runtime_files(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            project = root / "project"
+            vvla = root / "inference"
+            checkpoint = root / "checkpoint"
+            (project / "src/robots_assets/mjcf_assets").mkdir(parents=True)
+            (project / "data/train").mkdir(parents=True)
+            (project / "data").mkdir(exist_ok=True)
+            (vvla / "vvla").mkdir(parents=True)
+            checkpoint.mkdir()
+            (project / "src/robots_assets/alpha_walking.onnx").write_bytes(b"onnx")
+            (project / "src/robots_assets/mjcf_assets/robot_allcollisions.xml").write_text("<mujoco/>")
+            (project / "data/train/eval_val2_40_valid.jsonl").write_text("{}\n")
+            (project / "data/demo_microduck_vln.jsonl").write_text("{}\n")
+            (vvla / "vvla/model_config.json").write_text("{}")
+            (checkpoint / "config.json").write_text("{}")
+            (checkpoint / "model.safetensors.index.json").write_text(
+                json.dumps({"weight_map": {"layer.safetensors": "layer.safetensors"}})
+            )
+            (checkpoint / "layer.safetensors").write_bytes(b"weights")
+
+            files = asset_files({"project": project, "vvla": vvla, "checkpoint": checkpoint})
+
+            self.assertIn("vvla/vvla/model_config.json", files)
 
 
 class ExecutionTests(unittest.TestCase):

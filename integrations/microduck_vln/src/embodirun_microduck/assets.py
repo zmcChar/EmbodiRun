@@ -36,8 +36,6 @@ def asset_files(roots: dict[str, Path]) -> dict[str, Path]:
             for file in files:
                 if not file.is_file() or "__pycache__" in file.parts or file.name.startswith("."):
                     continue
-                if label == "vvla" and file.suffix != ".py":
-                    continue
                 result[f"{label}/{file.relative_to(roots[label]).as_posix()}"] = file
     required = [
         "checkpoint/config.json",

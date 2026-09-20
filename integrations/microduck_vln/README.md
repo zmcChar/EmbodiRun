@@ -37,6 +37,11 @@ validation commands are in the linked recipe. This package follows the
 repository's [Apache-2.0 license](../../LICENSE) and [NOTICE](../../NOTICE); external checkpoints, scenes, robot
 meshes and SDK sources retain their own licenses and are not bundled here.
 
+The base package installs only the EmbodiRun client and protocol dependency.
+Install `simulation` for MuJoCo/MPC/video execution, `service` for the
+ActiveVLN inference process, or `full` for both profiles. The `test` extra
+contains the CPU test dependencies.
+
 The distribution is named `embodirun-microduck`, the Python package is
 `embodirun_microduck`, and its service entrypoint is `embodirun-microduck-serve`.
 EmbodiInfer is the upstream distribution name; its public Python namespace and
