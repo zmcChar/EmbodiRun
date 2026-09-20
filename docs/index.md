@@ -1,6 +1,8 @@
 <div class="hero" markdown>
 
-# EmbodiRun
+<h1 class="hero-title">
+  <img src="assets/logo.png" alt="EmbodiRun" class="hero-logo">
+</h1>
 
 **Embodied AI, Ready to Run.**
 
