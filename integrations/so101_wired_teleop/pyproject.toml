@@ -8,16 +8,20 @@ version = "0.1.0"
 description = "Optional wired multi-leader SO-101 teleoperation and episode collection"
 requires-python = ">=3.10"
 license = "Apache-2.0"
+# Deliberately no `embodirun` requirement: this package imports nothing from the
+# runtime. It talks to the arms and to its peers over UDP, so a follower node on
+# a Pi needs the arm stack and a camera, not the deployment runtime.
 dependencies = [
   "PyYAML>=6,<7",
 ]
 
 [project.optional-dependencies]
-# The arm stack is only needed on the nodes that actually drive hardware; the
-# controller and the config tooling stay importable without it.
+# Each node installs only what it drives: a leader host needs no camera, and a
+# follower host needs no simulation or inference stack.
 hardware = ["lerobot>=0.6,<0.7"]
-camera = ["opencv-python-headless>=4.10,<5", "numpy>=1.26,<3"]
-collect = ["paramiko>=3.4,<5"]
+camera = ["opencv-python-headless>=4.10,<5"]
+# The operator console reaches remote followers through the system ssh client,
+# so there is no embedded SSH dependency to install.
 test = ["pytest>=8,<9"]
 
 [project.scripts]

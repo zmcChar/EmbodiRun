@@ -7,7 +7,7 @@ while recording episodes on the follower side.
 It is installed separately from EmbodiRun:
 
 ```bash
-pip install -e 'integrations/so101_wired_teleop[hardware,camera,collect,test]'
+pip install -e 'integrations/so101_wired_teleop[hardware,camera,test]'
 ```
 
 ## Why the port is the group key
@@ -25,7 +25,7 @@ is a configuration edit:
 | A leader driving nothing | do not reference it |
 | Every arm on one leader | give every follower the same `leader` |
 
-`configs/example.yaml` is the two-leaders-two-each case. It contains
+`config.example.yaml` is the two-leaders-two-each case. It contains
 `<PLACEHOLDER>` values on purpose: hosts, adapter serials and calibration paths
 differ per site and must not be committed. `load_config` parses such a file, and
 `TeleopConfig.require_resolved()` refuses to run while any placeholder remains,

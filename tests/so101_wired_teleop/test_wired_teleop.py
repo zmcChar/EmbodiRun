@@ -20,7 +20,7 @@ from embodirun_so101_wired_teleop.follower import clamp_target
 from embodirun_so101_wired_teleop.protocol import JOINTS, ProtocolError, decode, encode
 from embodirun_so101_wired_teleop.recorder import EpisodeRecorder, role_names
 
-EXAMPLE = Path(__file__).parents[2] / "integrations" / "so101_wired_teleop" / "configs" / "example.yaml"
+EXAMPLE = Path(__file__).parents[2] / "integrations" / "so101_wired_teleop" / "config.example.yaml"
 
 
 def _leader(identifier: str, port: int = 55101) -> dict:

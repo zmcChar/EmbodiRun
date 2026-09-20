@@ -2,7 +2,7 @@
 
 A leader owns one arm, one UDP port and the followers that obey it. Because the
 port is the group key, moving a follower between leaders is a configuration edit
-rather than a code change. See ``configs/example.yaml`` for the layout schema.
+rather than a code change. See ``config.example.yaml`` for the layout schema.
 """
 
 from __future__ import annotations
