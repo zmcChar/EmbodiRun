@@ -4,7 +4,8 @@ Three SO-101 arms driven from three separate rollout processes against one
 π0.5 inference service, configured for `batch_size = 3`. Each device is a
 different computer: one Jetson Orin NX and two Raspberry Pi 4B boards.
 
-<video controls muted playsinline preload="metadata" width="720">
+<video controls muted playsinline preload="metadata" width="720"
+       poster="https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/v0.1/multi_robot_serving.jpg">
   <source src="https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/v0.1/multi_robot_serving.mp4" type="video/mp4">
   Your browser does not support the video tag.
 </video>
@@ -12,7 +13,9 @@ different computer: one Jetson Orin NX and two Raspberry Pi 4B boards.
 *74 s. Six camera views: the three front cameras on the top row, the three wrist
 cameras below, one column per device. The columns are three separate
 recordings, aligned at their own start points, so the side-by-side layout shows
-the three runs together even though they were not captured on a shared clock.*
+the three runs together even though they were not captured on a shared clock.
+The title burned into the video says "3 devices rolling out concurrently"; see
+[Limitations](#limitations) for what these three recordings do and do not show.*
 
 ## What it shows
 

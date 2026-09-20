@@ -4,7 +4,8 @@ One arm, one task, one checkpoint, one Wi-Fi link. Four engine and transport
 combinations run the same task on real hardware, with per-chunk inference and
 communication latency annotated in the video.
 
-<video controls muted playsinline preload="metadata" width="720">
+<video controls muted playsinline preload="metadata" width="720"
+       poster="https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/v0.1/engine_e2e_contrast.jpg">
   <source src="https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/v0.1/engine_e2e_contrast.mp4" type="video/mp4">
   Your browser does not support the video tag.
 </video>
@@ -12,6 +13,11 @@ communication latency annotated in the video.
 *29 s. Four columns: EmbodiInfer over WirelessComm, EmbodiInfer over HTTP,
 SGLang, and the native LeRobot reference. Every column runs 15 chunks and is cut
 after its own 8th, so the faster engines freeze first.*
+
+The video labels the two EmbodiInfer columns `vvla-wireless` and `vvla`, after
+the engine's former name. The `inference` and `comm` values burned into each
+column are that column's own chunk, so they move from chunk to chunk; the table
+below reports the median over all 15 chunks of a run.
 
 Both the engine and its transport vary here, so the four columns are not a
 single-variable experiment. Columns 1 and 2 isolate the transport — same engine,
