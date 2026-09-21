@@ -104,9 +104,7 @@ def _require_control_services_stopped(
     )
     if running:
         raise SyncError(
-            "control services are running: "
-            f"{', '.join(running)}; run `embodirun ... down --target control` "
-            "before sync"
+            f"control services are running: {', '.join(running)}; run `embodirun ... down --target control` before sync"
         )
 
 

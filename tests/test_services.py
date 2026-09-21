@@ -1973,7 +1973,9 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
         "sources/inference/.venv-vvla/bin/vvla-http-serve"
     )
     assert any(value.endswith("/thor-so101-pi05/generated/pi05-01.adapter.json") for value in model_request["argv"])
-    control_request = next(request for request in start_requests if request["argv"][0].endswith("embodirun-control-serve"))
+    control_request = next(
+        request for request in start_requests if request["argv"][0].endswith("embodirun-control-serve")
+    )
     assert control_request["cwd"] == active_source
     assert control_request["environment"]["PYTHONPATH"].endswith("/overlays/deploy/current/src")
     adapter_path, (adapter_content, adapter_mode) = next(
