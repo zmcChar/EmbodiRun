@@ -36,17 +36,46 @@ Click a preview to watch the video and explore its setup and measurements.
 
 ## Why EmbodiRun?
 
-- **Deploy from one configuration.** Describe the nodes, environments, devices,
-  and model bindings once. The Host CLI prepares environments and manages
-  service startup, inspection, and shutdown.
-- **Share inference across devices.** Each device runs its own control loop and
-  connects to a model endpoint over HTTP or WirelessComm.
-- **Give agents a robot interface.** Observe, propose, execute, inspect, and
-  cancel through a dependency-free Python client. Your agent keeps its planner;
-  the runtime handles device ownership and execution.
-- **Reuse the execution machinery.** Observation capture, recording, action
-  validation, and manual takeover live in the runtime. Robot-specific adapters
-  and policy bindings handle the hardware details.
+Keep control close to the robot. Share compute where it counts.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<h3>🌐 One config, multiple machines</h3>
+<p>Place robot control on the edge and inference on a GPU host. One YAML describes the nodes, environments, devices, and bindings; the Host CLI handles preparation and service lifecycle.</p>
+<a href="docs/architecture.md">Deployment architecture →</a>
+</td>
+<td width="50%" valign="top">
+<h3>🦾 Multiple robots, shared inference</h3>
+<p>Connect independent device loops to a shared model endpoint. Each robot keeps its own session and execution flow while using the same inference service.</p>
+<a href="docs/demos/multi-robot-serving.md">See three SO-101 arms in action →</a>
+</td>
+</tr>
+<tr>
+<td valign="top">
+<h3>🔌 Two transports, one contract</h3>
+<p>Choose HTTP or WirelessComm for inference without changing the model-facing observation and action contract. Session and step semantics stay consistent across transports.</p>
+<a href="docs/inference-transport.md">Transport design and measurements →</a>
+</td>
+<td valign="top">
+<h3>📷 Capture once, reuse across consumers</h3>
+<p>Shared camera and state snapshots feed inference, agent observations, and recording. The runtime owns device connections, so each consumer does not need to open the hardware again.</p>
+<a href="docs/architecture.md">Device and observation ownership →</a>
+</td>
+</tr>
+<tr>
+<td valign="top">
+<h3>🧩 Your planner, a ready robot API</h3>
+<p>Observe, request policy proposals, execute actions, inspect jobs, and cancel through a dependency-free Python client. Bring your own planning loop; reuse the runtime underneath.</p>
+<a href="agents/CLIENT.md">Agent client →</a>
+</td>
+<td valign="top">
+<h3>🎛️ Execution with operator control</h3>
+<p>Action validation, execution arbitration, and manual takeover sit between policy output and hardware. Robot adapters and policy bindings keep motion details out of application code.</p>
+<a href="docs/safety.md">Execution controls and hardware setup →</a>
+</td>
+</tr>
+</table>
 
 ## How it works
 
@@ -111,35 +140,53 @@ For hardware, choose a combination from the [support matrix](docs/support-matrix
 configure its devices and calibration, and read [Safety](docs/safety.md)
 before execution.
 
-## Supported integrations
+## Support at a glance
 
-### Robots and simulators
+✓ **Software-tested** · ◐ **Experimental** · ○ **Planned**
 
-| Target | Policy | Inference backend | Available integration |
-|---|---|---|---|
-| SO-101 | π0.5 | EmbodiInfer | [Deployment config](configs/http-wireless-inference/http.yaml), software tests, [real-robot demos](#demos) |
-| Bi-SO-101 | π0.5 | EmbodiInfer | [Dual-arm deployment](docs/pi05-bi-so101.md), software tests |
-| Franka FR3 | π0.5 | Policy-service API | Adapter and binding, software tests |
-| ARX5 | DM0.5 | EmbodiInfer | Experimental adapter and binding |
-| Unitree Go2 | StreamVLN | EmbodiInfer | Experimental robot agent and binding |
-| LIBERO | π0.5 | EmbodiInfer / SGLang | [Deployment configs](configs/simulation/), software tests |
-| VLABench | π0.5 | EmbodiInfer | Experimental [deployment config](configs/simulation/vlabench-pi05-vvla.yaml) |
-| Habitat | StreamVLN | EmbodiInfer | Experimental [deployment config](configs/simulation/habitat-streamvln-vvla.yaml) |
-| Isaac Sim | StreamVLN | EmbodiInfer | Experimental [deployment config](configs/simulation/isaac-streamvln-vvla.yaml) |
+<table>
+<tr>
+<th align="left">🧪 Simulators</th>
+<th align="left">🦾 Robots</th>
+<th align="left">🧠 Models</th>
+</tr>
+<tr>
+<td valign="top">
+<p>✓ <b>LIBERO</b></p>
+<p>◐ VLABench<br>◐ Habitat<br>◐ Isaac Sim</p>
+<a href="docs/support-matrix.md#simulators">Simulator setup →</a>
+</td>
+<td valign="top">
+<p>✓ <b>SO-101</b> · real-robot demos<br>✓ <b>Bi-SO-101</b><br>✓ <b>Franka FR3</b></p>
+<p>◐ ARX5<br>◐ Unitree Go2<br>◐ XLeRobot</p>
+<a href="docs/support-matrix.md#robots">Robot setup →</a>
+</td>
+<td valign="top">
+<p>✓ <b>π0.5</b></p>
+<p>◐ DM0.5 · ARX5 binding<br>◐ StreamVLN · navigation<br>◐ LightNav-0 · external binding</p>
+<a href="docs/support-matrix.md#models">Model connections →</a>
+</td>
+</tr>
+</table>
 
-The [full support matrix](docs/support-matrix.md) lists hardware requirements,
-optional dependencies, and test coverage for each combination. SO-101 shared
-inference uses independent single-arm clients; Bi-SO-101 uses a coordinated
-dual-arm policy.
+These are EmbodiRun integration statuses. Choose a model–device pairing in the
+[deployment recipes](docs/support-matrix.md#deployment-recipes).
+For the inference engine's broader model catalog, see
+[EmbodiInfer](https://github.com/BUAA-CI-LAB/EmbodiInfer#supported-models).
 
-### Agents and external services
+**Bring your own application:** use the [Python client](agents/CLIENT.md),
+the experimental [RPent adapter](docs/rpent-integration.md), or connect an
+[external inference service](docs/http_api.md).
 
-| Integration | Connect through | Guide |
-|---|---|---|
-| Your own agent or planner | Python client: observe, propose, execute, inspect, cancel | [Agent workflow](docs/agent-workflow.md) |
-| RPent | Experimental agent adapter | [RPent integration](docs/rpent-integration.md) |
-| External inference service | Versioned policy API and provider configuration | [Inference contract](docs/http_api.md), [configuration](docs/configuration.md) |
-| XLeRobot | Experimental, separately installed hardware-owner package | [Owner integration](integrations/xlerobot_owner/README.md) |
+### Planned support
+
+- [ ] 🦾 **AgileX PiperX** — robot adapter and policy binding.
+- [ ] 🧠 **SmolVLA** — inference adapter and deployment integration.
+- [ ] 🧠 **OpenVLA** — base-model support, separate from the existing OpenVLA-OFT inference adapter.
+- [ ] 🧪 **More simulators** — next targets to be selected.
+
+Implementation steps and integration ownership are tracked in the
+[roadmap](docs/support-matrix.md#roadmap).
 
 ## Documentation
 

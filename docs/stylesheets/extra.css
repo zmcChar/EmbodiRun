@@ -67,3 +67,14 @@
 .md-typeset .grid.cards > ul > li > p:last-child {
   margin-bottom: 0;
 }
+
+/* Keep the three support categories together on desktop; stack on mobile. */
+.md-typeset .grid.support-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 60em) {
+  .md-typeset .grid.support-grid {
+    grid-template-columns: 1fr;
+  }
+}

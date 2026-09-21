@@ -33,10 +33,46 @@
 
 ## 为什么使用 EmbodiRun？
 
-- **一份配置管理部署。** 集中描述节点、环境、设备与模型绑定，由 Host CLI 准备环境、启动服务、查看状态并关闭部署。
-- **多个设备共享推理服务。** 各设备运行独立控制循环，通过 HTTP 或 WirelessComm 连接模型端点。
-- **为 Agent 提供机器人接口。** 通过无额外依赖的 Python 客户端观测、请求策略建议、执行、查询和取消；Agent 保留自己的规划器，运行时负责设备所有权与执行。
-- **复用执行能力。** 观测采集、录制、动作校验和人工接管由运行时统一处理，硬件差异交给机器人适配器和策略绑定。
+控制留在机器人身边，推理算力按需共享。
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<h3>🌐 一份配置，跨机部署</h3>
+<p>机器人控制运行在边缘端，推理部署到 GPU 主机。一份 YAML 描述节点、环境、设备与绑定，Host CLI 负责环境准备和服务生命周期。</p>
+<a href="docs/architecture.md">部署架构 →</a>
+</td>
+<td width="50%" valign="top">
+<h3>🦾 多台机器人，共享推理</h3>
+<p>多个独立设备循环连接同一个模型端点。每台机器人保留自己的会话与执行流程，共享同一推理服务。</p>
+<a href="docs/demos/multi-robot-serving.md">观看三台 SO-101 协同使用推理服务 →</a>
+</td>
+</tr>
+<tr>
+<td valign="top">
+<h3>🔌 两种传输，同一接口</h3>
+<p>在 HTTP 与 WirelessComm 之间选择，无需改变面向模型的观测与动作协议。不同传输保持一致的会话和步进语义。</p>
+<a href="docs/inference-transport.md">传输设计与性能测量 →</a>
+</td>
+<td valign="top">
+<h3>📷 一次采集，多方复用</h3>
+<p>共享相机与状态快照供推理、Agent 观测和录制使用。运行时统一持有设备连接，各个消费者无需重复打开硬件。</p>
+<a href="docs/architecture.md">设备与观测管理 →</a>
+</td>
+</tr>
+<tr>
+<td valign="top">
+<h3>🧩 自带规划器，复用机器人 API</h3>
+<p>通过无额外依赖的 Python 客户端获取观测、请求策略建议、执行动作、查询和取消任务。保留自己的规划循环，复用底层运行时。</p>
+<a href="agents/CLIENT.md">Agent 客户端 →</a>
+</td>
+<td valign="top">
+<h3>🎛️ 从策略输出到可控执行</h3>
+<p>动作校验、执行仲裁和人工接管衔接模型输出与硬件执行。机器人适配器和策略绑定承接运动细节，让应用专注于任务。</p>
+<a href="docs/safety.md">执行控制与硬件配置 →</a>
+</td>
+</tr>
+</table>
 
 ## 工作原理
 
@@ -87,33 +123,49 @@ uv run python examples/run_shared_device_fake.py
 继续阅读[快速开始](docs/zh/quickstart.md)了解部署 CLI。使用硬件前，先从[支持矩阵](docs/support-matrix.md)选择组合，
 配置设备与标定，并阅读[安全说明](docs/safety.md)。
 
-## 支持的集成
+## 支持概览
 
-### 机器人与仿真器
+✓ **软件测试覆盖** · ◐ **实验性** · ○ **计划支持**
 
-| 设备或环境 | 策略 | 推理后端 | 集成情况 |
-|---|---|---|---|
-| SO-101 | π0.5 | EmbodiInfer | [部署配置](configs/http-wireless-inference/http.yaml)、软件测试、[真机演示](#演示) |
-| Bi-SO-101 | π0.5 | EmbodiInfer | [双臂部署](docs/pi05-bi-so101.md)、软件测试 |
-| Franka FR3 | π0.5 | 策略服务 API | 适配器与绑定、软件测试 |
-| ARX5 | DM0.5 | EmbodiInfer | 实验性适配器与绑定 |
-| Unitree Go2 | StreamVLN | EmbodiInfer | 实验性机器人 Agent 与绑定 |
-| LIBERO | π0.5 | EmbodiInfer / SGLang | [部署配置](configs/simulation/)、软件测试 |
-| VLABench | π0.5 | EmbodiInfer | 实验性[部署配置](configs/simulation/vlabench-pi05-vvla.yaml) |
-| Habitat | StreamVLN | EmbodiInfer | 实验性[部署配置](configs/simulation/habitat-streamvln-vvla.yaml) |
-| Isaac Sim | StreamVLN | EmbodiInfer | 实验性[部署配置](configs/simulation/isaac-streamvln-vvla.yaml) |
+<table>
+<tr>
+<th align="left">🧪 仿真器</th>
+<th align="left">🦾 机器人</th>
+<th align="left">🧠 模型</th>
+</tr>
+<tr>
+<td valign="top">
+<p>✓ <b>LIBERO</b></p>
+<p>◐ VLABench<br>◐ Habitat<br>◐ Isaac Sim</p>
+<a href="docs/support-matrix.md#simulators">仿真器接入 →</a>
+</td>
+<td valign="top">
+<p>✓ <b>SO-101</b> · 含真机演示<br>✓ <b>Bi-SO-101</b><br>✓ <b>Franka FR3</b></p>
+<p>◐ ARX5<br>◐ Unitree Go2<br>◐ XLeRobot</p>
+<a href="docs/support-matrix.md#robots">机器人接入 →</a>
+</td>
+<td valign="top">
+<p>✓ <b>π0.5</b></p>
+<p>◐ DM0.5 · ARX5 绑定<br>◐ StreamVLN · 导航<br>◐ LightNav-0 · 外部绑定</p>
+<a href="docs/support-matrix.md#models">模型接入 →</a>
+</td>
+</tr>
+</table>
 
-[完整支持矩阵](docs/support-matrix.md)列出各组合的硬件要求、可选依赖与测试覆盖。
-SO-101 共享推理使用独立单臂客户端；Bi-SO-101 使用协同控制的双臂策略。
+以上为 EmbodiRun 的集成状态，模型与设备的具体搭配见[部署组合](docs/support-matrix.md#deployment-recipes)。
+推理引擎支持的完整模型列表见 [EmbodiInfer](https://github.com/BUAA-CI-LAB/EmbodiInfer#supported-models)。
 
-### Agent 与外部服务
+**接入自己的应用：** 使用 [Python 客户端](agents/CLIENT.md)、实验性 [RPent 适配器](docs/rpent-integration.md)，
+或连接[外部推理服务](docs/http_api.md)。
 
-| 集成 | 接入方式 | 指南 |
-|---|---|---|
-| 自有 Agent 或规划器 | Python 客户端：观测、策略建议、执行、查询、取消 | [Agent 执行流程](docs/agent-workflow.md) |
-| RPent | 实验性 Agent 适配器 | [RPent 集成](docs/rpent-integration.md) |
-| 外部推理服务 | 版本化策略 API 与 provider 配置 | [推理协议](docs/http_api.md)、[配置](docs/configuration.md) |
-| XLeRobot | 实验性、单独安装的硬件所有者包 | [Owner 集成](integrations/xlerobot_owner/README.md) |
+### 计划支持
+
+- [ ] 🦾 **松灵 AgileX PiperX** — 机器人适配器与策略绑定。
+- [ ] 🧠 **SmolVLA** — 推理适配器与部署集成。
+- [ ] 🧠 **OpenVLA** — 原始模型接入，与已有的 OpenVLA-OFT 推理适配器区分。
+- [ ] 🧪 **更多仿真器** — 具体接入目标待选。
+
+实现步骤及两个项目的职责划分见[路线图](docs/support-matrix.md#roadmap)。
 
 ## 文档
 
