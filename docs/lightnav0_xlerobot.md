@@ -13,10 +13,11 @@ action validation, velocity limits, stop feedback and episode metrics.
 
 ## Dependencies and inference service
 
-Use a matching EmbodiInfer revision with the `lightnav0` policy and its HTTP
-serving adapter. The `third_party/embodiinfer` submodule pin does not yet include
-that policy, so the inference service must be provisioned separately. Follow
-EmbodiInfer's `docs/proposals/0008-lightnav0-adapter.md` for server setup.
+This binding requires an external inference service implementing the LightNav-0
+contract below. The published EmbodiInfer model list does not include a
+`lightnav0` policy, and this repository does not provide a complete server setup
+recipe. The binding cannot currently be reproduced from the two public
+quickstarts alone.
 
 ```bash
 uv sync --frozen --no-dev --group binding-lightnav0
@@ -56,9 +57,8 @@ timeouts and model stop trigger the existing bounded stop/cleanup paths.
 
 The binding is implemented and covered at the CPU level, but it is not yet
 registered in Host configuration and not integrated with the unified control
-arbitration path. The matching EmbodiInfer adapter still delegates to the
-upstream engine; completing the model computation inside EmbodiInfer is
-outstanding.
+arbitration path. A publicly documented, compatible model service remains a
+prerequisite for an end-to-end deployment.
 
 CPU tests cover local-frame transforms, curvature-preserving velocity limits,
 stale observations, authorization, cleanup and HTTP client validation. The

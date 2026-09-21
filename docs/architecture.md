@@ -66,8 +66,9 @@ change since initialization.
 Control talks to inference over a versioned, model-neutral API
 ([`http_api.md`](http_api.md)). A session carries a stable `session_id`,
 monotonic `step_id`, and unique `request_id`. Repeated request IDs are
-idempotent. No checkpoint, tokenizer, prompt, or raw token crosses the
-boundary. The same schemas are carried by HTTP and WirelessComm; image bytes
+idempotent while their responses remain cached. Requests include a task
+instruction; checkpoint loading, model-specific prompt construction, and
+tokenization belong to the inference service. The same schemas are carried by HTTP and WirelessComm; image bytes
 are separate payload segments rather than base64.
 
 ## Execution path
