@@ -1,43 +1,51 @@
 # Inference API v1
 
+This is the contract between EmbodiRun and the EmbodiInfer policy service.
+Requests carry encoded images, robot state, a task instruction, and session
+identifiers. Responses contain model-native actions; the runtime's binding
+maps them into device commands.
+
+The Control API used by agents is a separate interface. For observation,
+proposal, execution, and job inspection, see [Agent execution workflow](agent-workflow.md)
+and the [public client reference](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/agents/CLIENT.md).
+
 !!! note "Wire schema names"
     The wire schemas keep the `vvla.policy.*` prefix. `vvla` was the former name
     of the inference engine (now [EmbodiInfer](https://github.com/BUAA-CI-LAB/EmbodiInfer)),
     and the prefix is retained so that existing deployments keep working. The
     `vvla` Python package name and CLI aliases are kept for the same reason.
 
-## Agent proposal API
+## Control and inference sessions
 
-The Control API also exposes `POST /v1/propose` for one non-executing policy
-step over a retained shared observation. The JSON body is:
+An agent calls Control's `/v1/propose` to obtain a non-executing proposal from
+a retained observation. Control invokes the inference service and applies the
+runtime binding; the agent later submits an execution request to Control.
+A proposal is not an execution receipt.
 
-```json
-{
-  "request_id": "proposal-1",
-  "observation_id": "service:1:42",
-  "instruction": "move to the table",
-  "runtime_id": "runtime-a",
-  "timeout_s": 10
-}
-```
+The task instruction crosses the inference boundary as text. Model-specific
+prompt construction, tokenization, and checkpoint loading remain inside
+EmbodiInfer. Agent sessions and inference sessions are distinct: the current
+proposal path uses a temporary inference session. Stateful navigation requires
+a path that retains the model session across steps.
 
-The server checks caller/session authorization and observation freshness, then
-uses the selected runtime binding and existing `InferenceClient` session to
-return both the raw policy result and binding-mapped `RobotAction` proposals.
-The requested observation is read from the shared store; the proposal path
-does not recapture cameras, prepare a robot, or submit an action to the
-arbiter. It closes only its temporary policy session. The response status is
-`proposed`, and this is not a job or an execution receipt. A later
-`POST /v1/execute` with a new request ID is required to submit selected rows.
+## HTTP endpoints
 
-Missing/expired observations, unsupported device-only runtimes, invalid
-runtime IDs, authorization failures, and inference errors are rejected; no
-action is sent when proposal generation fails. `request_id` correlates the
-proposal request and policy step, but does not create a persistent job.
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/healthz` | Check service health. |
+| GET | `/v1/capabilities` | Inspect adapter capabilities and action space. |
+| POST | `/v1/sessions` | Open a policy session. |
+| POST | `/v1/sessions/{session_id}/steps` | Infer one ordered step. |
+| POST | `/v1/sessions/{session_id}/reset` | Clear session state and restart step numbering. |
+| DELETE | `/v1/sessions/{session_id}` | Close the session. |
 
-EmbodiRun treats the inference service as a remote policy service. The API is
-model-neutral and may be carried by HTTP or WirelessComm:
-no checkpoint, tokenizer, prompt, or raw token fields cross the boundary.
+When authentication is configured, send `Authorization: Bearer <token>` on
+requests other than the health check. Server setup and error semantics are
+documented in [EmbodiInfer Serving](https://github.com/BUAA-CI-LAB/EmbodiInfer/blob/main/docs/serving.md).
+
+Open a session with JSON containing `schema: vvla.policy.session.v1`, a
+`robot_id`, the adapter's `action_space`, and optional `metadata`. Use the
+returned `session_id` for subsequent operations.
 
 ## Session ordering
 
@@ -51,6 +59,17 @@ session state only once.
 
 - `metadata`: `application/json`, schema `vvla.policy.step.v1`
 - `image_0..N`: encoded JPEG/PNG bytes
+
+Send `Idempotency-Key` equal to the metadata's `request_id`. The metadata
+contains `session_id`, `request_id`, a non-negative `step_id`, a non-empty
+`instruction`, a `state` object, an `images` list, and optional `metadata`.
+Each image declaration has `name` and `mime_type`; its position corresponds
+to `image_0`, `image_1`, and so on. The body and URL session IDs must match.
+
+Start with `step_id: 0`. After a successful step, increment it by one. On a
+transport failure, retry the same request with the same ID and content;
+do not advance the counter on an unconfirmed result. Cached responses are
+bounded, so an old retry can be rejected after its response has been evicted.
 
 ## Step response
 

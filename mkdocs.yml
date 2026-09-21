@@ -50,7 +50,7 @@ nav:
   - Operating:
       - Control: control.md
       - Safety: safety.md
-      - Support matrix: support-matrix.md
+      - Platforms and roadmap: support-matrix.md
   - Integrating:
       - Inference API v1: http_api.md
       - Agent execution workflow: agent-workflow.md
@@ -68,8 +68,8 @@ nav:
   - Reference:
       - Python API: api.md
   - Demos:
-      - Multi-robot serving: demos/multi-robot-serving.md
-      - Engine end-to-end contrast: demos/engine-e2e-contrast.md
+      - Three robots, one service: demos/multi-robot-serving.md
+      - Inference engines on SO-101: demos/engine-e2e-contrast.md
       - XLeRobot snack delivery: demos/xlerobot-snack-delivery.md
   - Project:
       - Contributing: contributing.md
@@ -95,6 +95,8 @@ markdown_extensions:
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.details
+  - pymdownx.tasklist:
+      custom_checkbox: true
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg

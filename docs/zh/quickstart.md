@@ -12,7 +12,6 @@
 git clone https://github.com/BUAA-CI-LAB/EmbodiRun.git
 cd EmbodiRun
 uv sync --frozen
-uv run pytest -q
 ```
 
 能力分组与 optional extras 见[安装（英文）](https://embodirun.readthedocs.io/en/latest/installation/)。
@@ -27,6 +26,7 @@ CONFIG=examples/shared-device-fake.yaml
 
 uv run embodirun --config "$CONFIG" validate
 uv run embodirun --config "$CONFIG" init
+uv run embodirun --config "$CONFIG" sync --source .
 uv run embodirun --config "$CONFIG" up
 
 uv run embodirun --config "$CONFIG" describe \
@@ -67,9 +67,13 @@ uv run embodirun --config my-deployment.yaml up      # 启动服务
 
 ## 4. 跑一个任务
 
+下列命令使用所复制双臂配置的 `bi-so101-pi05`，可能驱动两台机械臂。
+先完成[双臂配置](https://embodirun.readthedocs.io/en/latest/pi05-bi-so101/)
+并阅读[安全说明](https://embodirun.readthedocs.io/en/latest/safety/)。
+
 ```bash
 uv run embodirun --config my-deployment.yaml run \
-  --runtime so101-1-runtime \
+  --runtime bi-so101-pi05 \
   --prompt "Pick up the cube and put it into the bowl." \
   --chunk-steps 10 \
   --max-steps 1
@@ -85,7 +89,7 @@ uv run embodirun --config my-deployment.yaml run \
 | `--control-hz` | 动作回放频率（默认 5）。 |
 | `--request-timeout` | 单次推理请求的超时（默认 60 s）。 |
 
-π0.5 的响应里没有任务完成信号，所以 chunk 数量上限永远是停机条件。
+π0.5 的响应里没有任务完成信号；达到 chunk 数量上限会结束本次运行，错误或取消也可能提前结束。
 请求的 chunk 长度超过 binding 上限时，会在连接机器人之前就被拒绝。
 
 ## 5. 停止
@@ -100,8 +104,8 @@ uv run embodirun --config my-deployment.yaml down
 ## 疑难排查
 
 - **`uv` 版本报错** —— 安装 uv 0.12.x，仓库锁定了这个版本区间。
-- **`validate` 报某个路径失败** —— 替换掉每一个 `REPLACE_*` 占位符；
-  缺失的相机或标定路径会在执行任何动作之前就被报出来。
+- **配置校验失败** —— 检查必填字段和引用，替换 `REPLACE_*` 占位符。
+  静态校验通过不代表远程设备、标定文件或模型实际可用。
 - **`up` 拒绝运行** —— 先跑 `init`，或者 YAML 改过之后重新跑 `init`。
 - **服务不健康** —— 查看 `up` 打印的每个服务的日志路径；
   模型健康并不保证一次推理请求一定能成功。
