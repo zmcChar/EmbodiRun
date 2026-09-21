@@ -36,7 +36,7 @@ def test_host_builds_real_device_only_service_from_yaml() -> None:
     assert len(plan.services) == 1
     service = plan.services[0]
     assert service.kind == "control"
-    assert service.command.argv == ("rlinf-control-serve",)
+    assert service.command.argv == ("embodirun-control-serve",)
     runtime = plan.runtimes[0]
     assert runtime.model is None
     assert runtime.binding is None

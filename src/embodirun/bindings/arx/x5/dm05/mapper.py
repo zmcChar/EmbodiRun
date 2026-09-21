@@ -155,7 +155,7 @@ class DM05ARX5Mapper:
         if values.get("representation") != ACTION_REPRESENTATION:
             raise DM05ARX5MapperError(f"action representation must be {ACTION_REPRESENTATION!r}")
         if values.get("output_transform_applied") is not True:
-            raise DM05ARX5MapperError("DM0.5 output transform must be applied by RLinf Inference")
+            raise DM05ARX5MapperError("DM0.5 output transform must be applied by EmbodiInfer")
         if values.get("internal_action_dim_exposed", False) is not False:
             raise DM05ARX5MapperError("DM0.5 internal flow state must not cross the service boundary")
         data = values.get("data")

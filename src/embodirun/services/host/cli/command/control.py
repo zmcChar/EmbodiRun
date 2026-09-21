@@ -363,7 +363,7 @@ def _resolve_runtime(context: CommandContext, runtime_id: str) -> RuntimeSpec:
     except (OSError, StateError, ValueError) as error:
         raise ControlCommandError(f"cannot read initialized deployment state: {error}") from error
     if state is None:
-        raise ControlCommandError("deployment is not initialized; run `rlinf-deploy ... init`")
+        raise ControlCommandError("deployment is not initialized; run `embodirun ... init`")
     try:
         digest = config_digest(context.config)
     except (OSError, ValueError) as error:
@@ -377,7 +377,7 @@ def _resolve_runtime(context: CommandContext, runtime_id: str) -> RuntimeSpec:
         raise ControlCommandError(f"environment {runtime.environment_id!r} is not ready; run init again")
     service = state.services.get(runtime.service_id)
     if service is None or service.status != "running":
-        raise ControlCommandError(f"control service {runtime.service_id!r} is not running; run `rlinf-deploy ... up`")
+        raise ControlCommandError(f"control service {runtime.service_id!r} is not running; run `embodirun ... up`")
     if service.node != runtime.node or service.endpoint != runtime.service_endpoint:
         raise ControlCommandError(f"runtime service {runtime.service_id!r} does not match the configured runtime")
     if runtime.node not in state.nodes:
