@@ -59,13 +59,6 @@ the real HTTP server/client and session lifecycle with a fake model core.
 | Scene / limits | `val_2`, default spawn `(6.5, 13.8, 0)`, at most 60 primitive actions |
 | Success | STOP and the last three action endpoints strictly inside a 1.0 m radius |
 
-The earlier integration, before migration to the public package names and
-inference revision, completed two recorded demo episodes and a 40-episode A800
-evaluation on 2026-09-20. Its 40-episode SR and Euclidean SPL were 0.000, with mean
-final distance 7.5646 m. Those are **historical measurements**, not validation of
-the current public-source GPU profile. This migration has not rerun GPU/model
-evaluation or changed the A800 deployment.
-
 To validate the current profile, configure assets and run the launcher above;
 use the recipe's 40-episode command for an evaluation. Record the versions and
 generated `results.json` with the outcome. `status=complete` reports a completed

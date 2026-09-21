@@ -266,8 +266,7 @@ def run_episode(args, sim, client, record, index, output, ffmpeg):
             intro = canvas(
                 [
                     "MicroDuck VLN / SFT-v3 / EmbodiRun HTTP + ActiveVLN + MPC",
-                    "Historical 40-episode baseline: SR = 0.000, SPL = 0.000",
-                    "Navigation behavior demo; success is not guaranteed.",
+                    "First-person observations, model actions, and MPC execution.",
                     "Playback follows simulation time; inference pauses are omitted.",
                 ]
             )
@@ -375,6 +374,7 @@ def run_episode(args, sim, client, record, index, output, ffmpeg):
         result.update(status="failed", error=f"{type(exc).__name__}: {exc}")
         raise
     finally:
+        primary_error = sys.exc_info()[1]
         sim.callback = None
         result["session_cleared"] = False
         if session is not None:
@@ -388,8 +388,10 @@ def run_episode(args, sim, client, record, index, output, ffmpeg):
             if video:
                 video.close()
         except BaseException as exc:
-            result.update(status="failed", error=f"{type(exc).__name__}: {exc}")
-            raise
+            result.update(status="failed", video_cleanup_error=f"{type(exc).__name__}: {exc}")
+            if primary_error is None:
+                raise
+            logging.exception("Video cleanup also failed; preserving the episode error")
         finally:
             atomic_json(output / f"{prefix}.json", result)
     if result["status"] == "failed":
@@ -439,12 +441,6 @@ def main():
             "max_steps_unit": "primitive action, including STOP",
             "spl": "Euclidean approximation; no geodesic ground truth; not standard benchmark SPL",
             "history": "HTTP session per episode; DELETE clears recurrent state; no periodic context reset",
-        },
-        "historical_baseline": {
-            "sr": 0.0,
-            "spl": 0.0,
-            "episodes": 40,
-            "source": "provided deployment requirements; not a new measurement",
         },
         "records": [],
     }

@@ -229,7 +229,7 @@ class EpisodeVideo:
         )
         draw.text(
             (10, 371),
-            f"sim {sim_time:.1f}s | inference {inference_ms:.0f}ms | historical SR/SPL: 0.000 / 0.000",
+            f"sim {sim_time:.1f}s | inference {inference_ms:.0f}ms",
             font=self.font,
             fill="#a5b4fc",
         )

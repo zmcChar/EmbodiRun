@@ -254,6 +254,26 @@ class ExecutionTests(unittest.TestCase):
         self.assertTrue(result["session_cleared"])
         self.assertEqual(sim.executed, [])
 
+    def test_video_cleanup_preserves_the_original_transport_failure(self):
+        args = SimpleNamespace(no_video=False, fps=10, max_steps=1, success_radius=1.0, success_hold_steps=1)
+        record = {"instruction": "Stop", "start": [0, 0, 0], "goal": [0.5, 0]}
+        sim = FakeSimulation()
+        sim.render = Mock(return_value=np.zeros((2, 2, 3), dtype=np.uint8))
+        client = FakeClient([[0, 0], [-1, 0], [-1, 0]])
+        client.step = Mock(side_effect=TimeoutError("transport timeout"))
+        video = Mock()
+        video.close.side_effect = RuntimeError("encoder cleanup failed")
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            patch("embodirun_microduck.runtime.EpisodeVideo", return_value=video),
+        ):
+            with self.assertRaisesRegex(TimeoutError, "transport timeout"):
+                runner.run_episode(args, sim, client, record, 0, Path(folder), "")
+            result = json.loads((Path(folder) / "episode_000.json").read_text())
+        self.assertIn("transport timeout", result["error"])
+        self.assertIn("encoder cleanup failed", result["video_cleanup_error"])
+        self.assertEqual(client.closed, ["session-1"])
+
     def test_integrity_detects_same_size_change(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

@@ -179,8 +179,6 @@ length are recorded; the robot is not teleported to predicted targets.
 Success requires model STOP and the last three action endpoints strictly within
 1.0 m of the goal. `sr` is the successful-episode fraction; `spl_euclidean` uses
 straight-line start-to-goal distance and is **not standard geodesic SPL**.
-The earlier SFT-v3 reference run had SR 0.000; the video labels it as historical.
-Successful program completion does not imply successful navigation.
 
 Every run creates a new `artifacts/microduck_vln/<timestamp>_<job>_<pid>/` directory.
 An existing `--output` directory is rejected. Outputs include:
