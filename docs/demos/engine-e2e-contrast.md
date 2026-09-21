@@ -1,66 +1,114 @@
-# Engine end-to-end contrast
+# Comparing inference engines on SO-101
 
-One arm, one task, one checkpoint, one network — only the inference engine
-changes. Four engines run the same task on real hardware, with per-chunk
-inference and communication latency annotated in the video.
+How much does faster inference change a robot's control loop? This demo runs
+the same π0.5 pick-and-place task with EmbodiInfer, SGLang, and native LeRobot
+on a Jetson AGX Thor. With EmbodiInfer over WirelessComm, median inference
+latency falls from **1,061 ms to 162 ms**, and a complete chunk takes
+**2.66 seconds instead of 3.59 seconds**.
 
-<video controls muted playsinline preload="metadata" width="720">
+<video controls muted playsinline preload="metadata" width="720"
+       poster="https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/v0.1/engine_e2e_contrast.jpg">
   <source src="https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/v0.1/engine_e2e_contrast.mp4" type="video/mp4">
   Your browser does not support the video tag.
 </video>
 
-*29 s. Four columns: EmbodiInfer over WirelessComm, EmbodiInfer over HTTP,
-SGLang, and the native LeRobot reference. Every column runs the same 15 chunks
-and is cut after its own 8th, so the faster engines freeze first.*
+*Left to right: EmbodiInfer over WirelessComm, EmbodiInfer over HTTP, SGLang,
+and native LeRobot. The 29-second edit shows the first eight chunks of each
+run; each panel freezes after its eighth chunk.*
 
-## Setup
+## Task and hardware
 
-| | |
+A single SO-101 arm follows the instruction **“Pick up the cube and place it in
+the bowl.”** All runs use the same arm, cameras, checkpoint, and Wi-Fi network.
+The cube is reset by hand before each run.
+
+| Component | Configuration |
 |---|---|
-| Task | `Pick up the cube and place it in the bowl.` |
-| Controlled variable | the inference engine only |
-| Arm | SO-101 follower, 5 DoF + gripper |
-| Control | 20 Hz, 50-step chunks — 2.45 s of fixed playback per chunk |
-| Cameras | front + wrist, 640×480 at 20 Hz |
-| Network | Wi-Fi, both machines on the same access point |
-| Model | π0.5 on the SO-101 four-arm checkpoint, 10 denoising steps |
+| Robot | SO-101 follower: five arm joints and a gripper |
+| Cameras | Front and wrist, 640 × 480 MJPG, configured at 20 fps |
+| Control host | Raspberry Pi 4 Model B, 8 GB; runs control and recording |
+| Inference host | Jetson AGX Thor Developer Kit, aarch64, CUDA 13 |
+| Network | Both hosts connected to the same Wi-Fi access point |
+| Policy | π0.5, SO-101 four-arm checkpoint, 10 denoising steps |
+| Model input | Two images, six-dimensional joint/gripper state, and instruction |
+| Model output | 50 × 6 action chunk; quantile state/action normalization |
+| Execution | 50 action steps at a nominal 20 Hz |
+| Measurement | One run of 15 chunks per configuration, after warmup on camera frames |
 
-## Measurements
+## Engine and transport settings
 
-Median over 15 chunks per run:
+EmbodiInfer is measured with both transports. SGLang and native LeRobot use
+HTTP, giving four configurations:
 
-| Engine | Inference | Comm + queue | Playback, fixed | Chunk period |
-|---|---|---|---|---|
-| **EmbodiInfer, WirelessComm** | **162 ms** | 42 ms | 2455 ms | **2660 ms** |
-| EmbodiInfer, HTTP | 170 ms | 45 ms | 2453 ms | 2666 ms |
-| SGLang | 194 ms | 65 ms | 2453 ms | 2713 ms |
-| Native LeRobot, reference | 1061 ms | 82 ms | 2453 ms | 3592 ms |
+| Engine | Transport | Execution settings |
+|---|---|---|
+| EmbodiInfer | WirelessComm | BF16, Inductor, prefix and denoising CUDA graphs, Triton attention |
+| EmbodiInfer | HTTP | Same model and engine settings as the WirelessComm run |
+| SGLang | HTTP | Upstream defaults; enabling `--enable-torch-compile` gave no improvement in the setup check |
+| Native LeRobot | HTTP | LeRobot `PI05Policy` and its processors, eager execution |
 
-## Reading it honestly
+WirelessComm and HTTP both use the same physical Wi-Fi link. The transport
+comparison is between application protocols, not between wireless and Ethernet.
 
-This is a **tuned-versus-out-of-the-box** comparison, not an equal-effort one:
+## Inference latency and full-loop results
 
-- EmbodiInfer runs its full set of optimisations: bfloat16, `inductor`
-  compilation, prefix and denoising CUDA graphs, and Triton attention.
-- SGLang runs upstream defaults. The one remaining candidate,
-  `--enable-torch-compile`, was measured and gave no benefit.
-- Native LeRobot deliberately runs plain eager, with no CUDA graph and no
-  `torch.compile`. It is the reference point, and its 1061 ms can be compressed
-  further.
+The table reports the median over all 15 chunks in each run.
 
-Two observations matter more than the headline ratio:
+| Engine | Transport | Inference | Communication + queueing | Action playback | Full chunk |
+|---|---|---:|---:|---:|---:|
+| **EmbodiInfer** | WirelessComm | **162 ms** | 42 ms | 2,455 ms | **2,660 ms** |
+| EmbodiInfer | HTTP | 170 ms | 45 ms | 2,453 ms | 2,666 ms |
+| SGLang | HTTP | 194 ms | 65 ms | 2,453 ms | 2,713 ms |
+| Native LeRobot | HTTP | 1,061 ms | 82 ms | 2,453 ms | 3,592 ms |
 
-- **Communication is not the difference.** 42–82 ms is 1.6–3% of a 2660 ms
-  chunk, so almost the entire gap between engines is inference.
-- **Playback dominates.** The 2.45 s of physical execution is 92% of the chunk
-  period and identical across all four engines. Optimising the engine can only
-  move the remaining fraction; making the task itself faster means changing the
-  chunk length or the control rate, not the engine.
+Compared with native LeRobot, EmbodiInfer over WirelessComm delivers **6.5×
+faster inference** and reduces the full chunk time by **932 ms, or 26%**.
+The two EmbodiInfer transports have similar full-loop times: 2,660 and 2,666 ms.
 
-## Reproducing it
+The cube reaches the bowl within the first eight chunks of every run.
 
-The four engines were served side by side on one GPU host, with the control
-stack on the robot side selecting a transport and a policy per run. See
-[Inference API v1](../http_api.md) for the wire contract the benchmark uses and
-[Configuration](../configuration.md) for how a deployment selects a model and a
-transport.
+## Why playback dominates the faster runs
+
+Each chunk captures an observation, runs inference, validates the returned
+actions, and plays them back before starting the next chunk.
+
+```mermaid
+flowchart LR
+  observe["Capture images<br/>and joint state"]
+  infer["Infer<br/>50 × 6 actions"]
+  validate["Map actions<br/>and check limits"]
+  execute["Play back<br/>at 20 Hz"]
+  observe --> infer --> validate --> execute
+  execute --> observe
+```
+
+Fifty action samples contain 49 intervals at 20 Hz, or 2.45 seconds between
+the first and last sample. This matches the measured playback time, which
+stays almost unchanged across the four configurations.
+
+Playback accounts for about **92%** of the fastest chunk, compared with
+**68%** for native LeRobot. Faster inference removes most of the waiting before
+motion; the arm still needs the same time to execute each action block.
+Communication and queueing account for roughly 2% of the full chunk in these runs.
+
+<details markdown="1">
+<summary>Video annotations</summary>
+
+The labels `vvla-wireless` and `vvla` refer to EmbodiInfer under its former name.
+The `inference` and `comm` overlays show the current chunk's values, while the
+table above summarizes all 15 chunks. Each panel stops after its own eighth
+chunk, so the faster configurations freeze earlier in the video.
+
+</details>
+
+## Compare your own deployment
+
+Keep the checkpoint, camera mapping, action chunk length, and playback rate
+fixed when changing engines. Warm up each configuration with camera frames
+before timing, then record inference, communication, and action playback
+separately.
+
+[Configuration](../configuration.md) describes model and transport selection;
+[Inference API v1](../http_api.md) defines the request/response contract.
+For a focused HTTP/WirelessComm measurement, see the
+[inference transport experiment](../inference-transport.md).

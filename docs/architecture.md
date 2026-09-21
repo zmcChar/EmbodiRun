@@ -6,16 +6,22 @@ running service. It does not own models or inference optimizations.
 
 ## Process boundaries
 
-```text
-Operator machine                     Compute node                 Robot node
-┌──────────────┐   SSH    ┌──────────────────────┐   HTTP    ┌──────────────┐
-│ Host / CLI   │ ───────► │ Inference service    │ ◄──────── │ Control      │
-│ (embodirun)  │          │ (EmbodiInfer/SGLang) │           │ service      │
-└──────────────┘          └──────────────────────┘           └──────┬───────┘
-        │                                                          │
-        └──────────── HTTP through SSH ────────────────────────────┘
-                                                                   ▼
-                                                            robot / sensors
+```mermaid
+flowchart LR
+  subgraph operator["Operator machine"]
+    host["Host / CLI<br/>(embodirun)"]
+  end
+  subgraph compute["Compute node"]
+    inference["Inference service<br/>(EmbodiInfer / SGLang)"]
+  end
+  subgraph robotnode["Robot node"]
+    control["Control service"]
+    hardware["robot / sensors"]
+  end
+  host -- "SSH: plan, prepare, start, stop" --> inference
+  host -- "HTTP through an SSH tunnel" --> control
+  control -- "HTTP or WirelessComm" --> inference
+  control --> hardware
 ```
 
 - **Host** runs only on the operator machine. It resolves configuration into a
@@ -60,23 +66,22 @@ change since initialization.
 Control talks to inference over a versioned, model-neutral API
 ([`http_api.md`](http_api.md)). A session carries a stable `session_id`,
 monotonic `step_id`, and unique `request_id`. Repeated request IDs are
-idempotent. No checkpoint, tokenizer, prompt, or raw token crosses the
-boundary. The same schemas are carried by HTTP and WirelessComm; image bytes
+idempotent while their responses remain cached. Requests include a task
+instruction; checkpoint loading, model-specific prompt construction, and
+tokenization belong to the inference service. The same schemas are carried by HTTP and WirelessComm; image bytes
 are separate payload segments rather than base64.
 
 ## Execution path
 
-```text
-Observation
-    ↓  Control reads the robot and mapped sensors
-Inference request
-    ↓  model service returns a policy action chunk
-Action mapping / validation
-    ↓  binding maps policy rows to RobotAction and checks limits
-Bounded execution
-    ↓  the arbiter plays the chunk, or manual input takes over
-Execution feedback
-    ↓  job state, timing, and the next observation
+```mermaid
+flowchart TB
+  observation["Observation<br/>Control reads the robot and mapped sensors"]
+  request["Inference request<br/>the model service returns a policy action chunk"]
+  mapping["Action mapping and validation<br/>the binding maps policy rows to RobotAction and checks limits"]
+  execution["Bounded execution<br/>the arbiter plays the chunk, or manual input takes over"]
+  feedback["Execution feedback<br/>job state, timing, and the next observation"]
+  observation --> request --> mapping --> execution --> feedback
+  feedback -. "next chunk" .-> observation
 ```
 
 An execution receipt describes execution state. It is not a statement that the

@@ -2,208 +2,213 @@
   <img src="https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/logo.png" alt="EmbodiRun" width="440">
 </p>
 
-**English** | [简体中文](README.zh-CN.md)
-
-**Deploy Models. Accelerate Inference. Run Robots.**
+<h3 align="center">From model predictions to robot actions.</h3>
+<p align="center">
+  <a href="https://embodirun.readthedocs.io/">Documentation</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#demos">Demos</a> ·
+  <a href="#performance">Performance</a> ·
+  <a href="docs/support-matrix.md">Support matrix</a> ·
+  <a href="README.zh-CN.md">简体中文</a>
+</p>
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
-[![Documentation Status](https://readthedocs.org/projects/embodirun/badge/?version=latest)](https://embodirun.readthedocs.io/en/latest/?badge=latest)
-[![Contributing](https://img.shields.io/badge/contributing-guide-brightgreen.svg)](CONTRIBUTING.md)
-[![Code of Conduct](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
+[![Documentation](https://readthedocs.org/projects/embodirun/badge/?version=latest)](https://embodirun.readthedocs.io/)
 
-EmbodiRun is the deployment and execution runtime for embodied AI. Point it at a
-model, a compute node, and a robot or simulator, and it runs the whole loop —
-observation, inference, action mapping, bounded execution, feedback — from one
-configuration file.
+**EmbodiRun is a deployment and execution runtime for embodied AI.** Describe
+your devices, inference services, and compute nodes in YAML, then run the
+observation–inference–action loop through a shared runtime. Keep control beside
+the robot and place inference on a GPU host, or run both on one machine.
 
-Model inference is performed by
-[EmbodiInfer](https://github.com/BUAA-CI-LAB/EmbodiInfer), an independent engine
-that can also be used on its own. EmbodiRun does not own checkpoints, prompts,
-or model frameworks; it talks to inference over a versioned HTTP or
-WirelessComm API.
+Use [EmbodiInfer](https://github.com/BUAA-CI-LAB/EmbodiInfer) as the inference
+engine, connect an external model service, or bring an agent with its own
+planning loop.
 
-> **Build embodied applications, not integration code.**
+## Demos
 
-## Why EmbodiRun
+| Three robots, one inference service | Comparing inference engines on SO-101 |
+|---|---|
+| [![Three SO-101 recordings](https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/v0.1/multi_robot_serving.jpg)](https://embodirun.readthedocs.io/en/latest/demos/multi-robot-serving/) | [![Engine comparison on SO-101](https://raw.githubusercontent.com/BUAA-CI-LAB/misc/main/embodirun/v0.1/engine_e2e_contrast.jpg)](https://embodirun.readthedocs.io/en/latest/demos/engine-e2e-contrast/) |
+| Three SO-101 arms using a shared π0.5 inference service, with one rollout process per device. | π0.5 on a Jetson AGX Thor with an SO-101 arm: EmbodiInfer over HTTP and WirelessComm, SGLang, and native LeRobot. |
 
-- **Control lives beside the robot; compute lives where the GPUs are.** The
-  robot-facing Control process and the inference service are deployed
-  independently, on one machine or across nodes.
-- **The execution path is written once.** Action validation, control
-  arbitration, bounded execution, manual takeover, and a software stop are
-  shared by every robot and every agent.
-- **Agents keep their own planning loop.** A dependency-free client exposes the
-  runtime through `observe` / `propose` / `execute` / `inspect` / `cancel` /
-  `stop` without prescribing a planner.
-- **A deployment is a file.** Nodes, environments, services, robots, sensors,
-  and policy bindings are described in one YAML that the CLI validates,
-  prepares, starts, and stops.
+Click a preview to watch the video and explore its setup and measurements.
+
+## Why EmbodiRun?
+
+Keep control close to the robot. Share compute where it counts.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<h3>🌐 One config, multiple machines</h3>
+<p>Place robot control on the edge and inference on a GPU host. One YAML describes the nodes, environments, devices, and bindings; the Host CLI handles preparation and service lifecycle.</p>
+<a href="docs/architecture.md">Deployment architecture →</a>
+</td>
+<td width="50%" valign="top">
+<h3>🦾 Multiple robots, shared inference</h3>
+<p>Connect independent device loops to a shared model endpoint. Each robot keeps its own session and execution flow while using the same inference service.</p>
+<a href="docs/demos/multi-robot-serving.md">See three SO-101 arms in action →</a>
+</td>
+</tr>
+<tr>
+<td valign="top">
+<h3>🔌 Two transports, one contract</h3>
+<p>Choose HTTP or WirelessComm for inference without changing the model-facing observation and action contract. Session and step semantics stay consistent across transports.</p>
+<a href="docs/inference-transport.md">Transport design and measurements →</a>
+</td>
+<td valign="top">
+<h3>📷 Capture once, reuse across consumers</h3>
+<p>Shared camera and state snapshots feed inference, agent observations, and recording. The runtime owns device connections, so each consumer does not need to open the hardware again.</p>
+<a href="docs/architecture.md">Device and observation ownership →</a>
+</td>
+</tr>
+<tr>
+<td valign="top">
+<h3>🧩 Your planner, a ready robot API</h3>
+<p>Observe, request policy proposals, execute actions, inspect jobs, and cancel through a dependency-free Python client. Bring your own planning loop; reuse the runtime underneath.</p>
+<a href="agents/CLIENT.md">Agent client →</a>
+</td>
+<td valign="top">
+<h3>🎛️ Execution with operator control</h3>
+<p>Action validation, execution arbitration, and manual takeover sit between policy output and hardware. Robot adapters and policy bindings keep motion details out of application code.</p>
+<a href="docs/safety.md">Execution controls and hardware setup →</a>
+</td>
+</tr>
+</table>
+
+## How it works
+
+![Host deploys Control and inference; Control connects applications to robots and model services](docs/assets/runtime-overview.svg)
+
+**Host** prepares and launches the deployment. **Control** owns robot connections,
+observations, and action execution; **Simulation** serves simulator environments.
+**Inference** turns observations into predictions. These services can run on
+separate machines. See [Architecture](docs/architecture.md) for the full design.
+
+## Performance
+
+### π0.5 on a real SO-101 arm
+
+On a Jetson AGX Thor, the recorded comparison reduced median inference latency
+from **1,061 ms to 162 ms** and the complete control-loop chunk from
+**3,592 ms to 2,660 ms**. Faster inference shortens the loop; action playback
+still accounts for about 2.45 seconds per chunk.
+
+| Engine | Transport | Inference latency | Full chunk time |
+|---|---|---:|---:|
+| **EmbodiInfer** | WirelessComm | **162 ms** | **2,660 ms** |
+| EmbodiInfer | HTTP | 170 ms | 2,666 ms |
+| SGLang | HTTP | 194 ms | 2,713 ms |
+| Native LeRobot | HTTP | 1,061 ms | 3,592 ms |
+
+Medians over 15 chunks per run, with the same SO-101 checkpoint, 10 denoising
+steps, two cameras, and 50-step action chunks at 20 Hz. EmbodiInfer uses its
+optimized path, SGLang uses upstream defaults, and LeRobot uses eager execution.
+The [demo report](docs/demos/engine-e2e-contrast.md) describes the hardware,
+engine settings, and timing breakdown.
+
+For transport measurements, see the [HTTP/WirelessComm experiment](docs/inference-transport.md).
+For model-only benchmarks, see [EmbodiInfer](https://github.com/BUAA-CI-LAB/EmbodiInfer#performance).
 
 ## Quick start
 
-Install from source with [uv](https://docs.astral.sh/uv/):
+### Try the runtime on your laptop
+
+Install from source with Python 3.10+ and [uv](https://docs.astral.sh/uv/) 0.12.x:
 
 ```bash
 git clone https://github.com/BUAA-CI-LAB/EmbodiRun.git
 cd EmbodiRun
 uv sync --frozen
-uv run pytest -q          # CPU-only check of the checkout
 ```
 
-### Run it without a robot
-
-A robot-only Control service backed by simulated joints and a fake camera. It
-opens no hardware and serves the real API:
+Try the local simulated-device walkthrough:
 
 ```bash
-uv run embodirun --config examples/shared-device-fake.yaml validate
-uv run embodirun --config examples/shared-device-fake.yaml init
-uv run embodirun --config examples/shared-device-fake.yaml up
-uv run embodirun --config examples/shared-device-fake.yaml describe \
-  --runtime fake-device --caller-id example-agent --session-id example-session --json
-uv run embodirun --config examples/shared-device-fake.yaml down
+uv run python examples/run_shared_device_fake.py
 ```
 
-[`examples/README.md`](examples/README.md) walks through observation, media,
-execution, and recording.
+It starts a local Control service with simulated joints and a fake camera,
+exercises observation, execution, recording, and cancellation, and shuts the
+service down. No robot, model checkpoint, or GPU is required.
 
-For real policy inference in MuJoCo, the [MicroDuck VLN example](docs/microduck-vln.md)
-provides a one-command launcher, optional Slurm allocation, videos and episode
-metrics. It requires separately provisioned simulation assets and a checkpoint.
+### Connect your robot or simulator
 
-### Run it on a robot
+Continue with [Quick start](docs/quickstart.md) to use the deployment CLI.
+For hardware, choose a combination from the [support matrix](docs/support-matrix.md),
+configure its devices and calibration, and read [Safety](docs/safety.md)
+before execution.
 
-Copy a configuration from [`configs/`](configs), replace the device paths,
-calibration, checkpoint, and node addresses, then:
+## Support at a glance
 
-```bash
-uv run embodirun --config my-deployment.yaml validate   # static checks
-uv run embodirun --config my-deployment.yaml probe      # connectivity and tools
-uv run embodirun --config my-deployment.yaml init       # environments and sources
-uv run embodirun --config my-deployment.yaml up         # start services
-uv run embodirun --config my-deployment.yaml run \
-  --runtime so101-1-runtime \
-  --prompt "Pick up the cube and put it into the bowl." \
-  --chunk-steps 10
-uv run embodirun --config my-deployment.yaml down
-```
+✓ **Software-tested** · ◐ **Experimental** · ○ **Planned**
 
-Starting services does not connect or move the robot; `run` does. `--max-steps`,
-`--chunk-steps`, and `--control-hz` bound what is executed, and every returned
-row is still subject to the joint and gripper step limits in the configuration.
-Clipping is a per-row rate limit, not collision avoidance.
+<table>
+<tr>
+<th align="left">🧪 Simulators</th>
+<th align="left">🦾 Robots</th>
+<th align="left">🧠 Models</th>
+</tr>
+<tr>
+<td valign="top">
+<p>✓ <b>LIBERO</b></p>
+<p>◐ VLABench<br>◐ Habitat<br>◐ Isaac Sim</p>
+<a href="docs/support-matrix.md#simulators">Simulator setup →</a>
+</td>
+<td valign="top">
+<p>✓ <b>SO-101</b> · real-robot demos<br>✓ <b>Bi-SO-101</b><br>✓ <b>Franka FR3</b></p>
+<p>◐ ARX5<br>◐ Unitree Go2<br>◐ XLeRobot</p>
+<a href="docs/support-matrix.md#robots">Robot setup →</a>
+</td>
+<td valign="top">
+<p>✓ <b>π0.5</b></p>
+<p>◐ DM0.5 · ARX5 binding<br>◐ StreamVLN · navigation<br>◐ LightNav-0 · external binding</p>
+<a href="docs/support-matrix.md#models">Model connections →</a>
+</td>
+</tr>
+</table>
 
-> ⚠️ **Before the first physical run**, read [Control](docs/control.md) and
-> [Safety](docs/safety.md), keep an operator present, and keep the hardware
-> emergency stop within reach.
+These are EmbodiRun integration statuses. Choose a model–device pairing in the
+[deployment recipes](docs/support-matrix.md#deployment-recipes).
+For an experimental MuJoCo navigation workflow, see the
+[MicroDuck VLN recipe](docs/microduck-vln.md).
+For the inference engine's broader model catalog, see
+[EmbodiInfer](https://github.com/BUAA-CI-LAB/EmbodiInfer#supported-models).
 
-## How it works
+**Bring your own application:** use the [Python client](agents/CLIENT.md),
+the experimental [RPent adapter](docs/rpent-integration.md), or connect an
+[external inference service](docs/http_api.md).
 
-```text
-Application / agent
-        │  public client: observe · propose · execute · inspect · cancel · stop
-        ▼
-EmbodiRun
-├─ Deployment runtime — configuration, environments, nodes, lifecycle
-├─ Application runtime — jobs, proposals, execution coordination
-├─ Device runtime — connection ownership, shared observations, arbitration
-├─ Model services — versioned inference contracts and provider registry
-└─ Robot / simulator adapters + policy bindings
-        │  HTTP or WirelessComm (versioned policy API)
-        ▼
-EmbodiInfer, or an external backend such as SGLang
-```
+### Planned support
 
-Three processes, deliberately separated: **Host** runs on the operator machine,
-**Control** runs beside the robot and owns the hardware, and **Inference**
-performs model computation. They can share a machine or be split across nodes;
-placement comes from configuration, and automatic placement is future work.
+- [ ] 🦾 **AgileX PiperX** — robot adapter and policy binding.
+- [ ] 🧠 **SmolVLA** — inference adapter and deployment integration.
+- [ ] 🧠 **OpenVLA** — base-model support, separate from the existing OpenVLA-OFT inference adapter.
+- [ ] 🧪 **More simulators** — next targets to be selected.
 
-Only `execute` moves anything. `observe`, `propose`, `media`, and `inspect` are
-read-only, and an accepted request is never reported as task success — read the
-returned execution evidence and the next observation.
-
-## Support status
-
-Support is recorded per **complete combination**. A supported model, robot, or
-platform does not imply that arbitrary combinations work.
-
-| Combination | Status |
-|---|---|
-| π0.5 + SO-101 / Bi-SO-101 | Tested — software (CPU suite, offline action checks) |
-| LIBERO + π0.5 | Tested — software; closed loop needs a GPU and a checkpoint |
-| VLABench + π0.5, Habitat or Isaac Sim + StreamVLN | Experimental |
-| MicroDuck MuJoCo + ActiveVLN | Experimental; CPU regression tests, external GPU/assets required |
-| Multi-node shared inference | Tested — software benchmark |
-| RPent and Astra agent adapters, XLeRobot owner, LightNav-0 | Experimental, software only |
-
-**Tested — software** means the path is covered by automated tests in this
-repository. It does not mean a physical robot completed a task. Real-robot
-records are kept by the deployment owner.
-
-→ [Full support matrix](docs/support-matrix.md)
-
-## Performance
-
-One recorded π0.5 offline result on an RTX 4090 — B=1, BF16, 10 denoising
-steps, LIBERO-10, 1,600 observations:
-
-| Condition | Result |
-|---|---|
-| Mean end-to-end inference latency | **74.33 → 38.89 ms** |
-| Throughput | **13.45 → 25.71 observations/s** |
-
-Timing runs from decoded CPU input to CPU action output, and excludes camera
-capture, network communication, robot execution, model loading, and warm-up. It
-is a scoped, historical result for this configuration, not a claim about every
-device or task; the full conditions are recorded with the
-[EmbodiInfer benchmark](https://github.com/BUAA-CI-LAB/EmbodiInfer).
-
-## Integrate
-
-An agent keeps its own planning loop and calls the runtime through a
-dependency-free client:
-
-```python
-from embodirun.client import ControlClient
-
-client = ControlClient("http://127.0.0.1:8100")
-observation = client.observe(runtime="so101-1-runtime", session_id="task-1")
-proposal = client.propose(runtime="so101-1-runtime", session_id="task-1",
-                          prompt="Pick up the cube.")
-job = client.execute(runtime="so101-1-runtime", session_id="task-1",
-                     proposal_id=proposal.proposal_id, chunk_steps=10)
-result = client.inspect(job.job_id)
-```
-
-- [Public Agent client](agents/CLIENT.md) — the full request and response contract.
-- [Inference API v1](docs/http_api.md) — the versioned policy API, over HTTP or WirelessComm.
-- [RPent integration](docs/rpent-integration.md) — an agent framework wiring, with a reproducible software chain against a real π0.5 service.
-- Reference adapters live in [`agents/`](agents/README.md); they are software examples, outside the installed package.
+Implementation steps and integration ownership are tracked in the
+[roadmap](docs/support-matrix.md#roadmap).
 
 ## Documentation
 
-| | |
+| Task | Guide |
 |---|---|
-| Get started | [Installation](docs/installation.md) · [Quick start](docs/quickstart.md) · [Configuration](docs/configuration.md) |
-| Operate | [Control](docs/control.md) · [Safety](docs/safety.md) · [Support matrix](docs/support-matrix.md) |
-| Integrate | [Inference API v1](docs/http_api.md) · [RPent integration](docs/rpent-integration.md) · [π0.5 with two SO-101](docs/pi05-bi-so101.md) |
-| Understand | [Architecture](docs/architecture.md) · [Experiments](docs/experiments.md) |
-| Project | [Contributing](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Security](SECURITY.md) · [License and relicensing](docs/license.md) |
-
-Full documentation: **https://embodirun.readthedocs.io/**
+| Install and run | [Installation](docs/installation.md) · [Quick start](docs/quickstart.md) |
+| Configure a deployment | [Configuration](docs/configuration.md) |
+| Operate devices | [Control](docs/control.md) · [Safety](docs/safety.md) |
+| Extend the runtime | [Architecture](docs/architecture.md) · [Python API](docs/api.md) |
+| Review evidence | [Support matrix](docs/support-matrix.md) · [Experiments](docs/experiments.md) |
 
 ## Contributing
 
-Contributions are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) covers the
-development setup and what a pull request must satisfy;
-[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) covers community expectations. Report
-vulnerabilities privately per [`SECURITY.md`](SECURITY.md), never in a public
-issue.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and checks.
+Use [GitHub issues](https://github.com/BUAA-CI-LAB/EmbodiRun/issues) for bugs and
+feature requests, and follow [SECURITY.md](SECURITY.md) for private vulnerability
+reports. Community participation follows our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
-Apache License 2.0 — see [`LICENSE`](LICENSE), [`NOTICE`](NOTICE), and
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). Model checkpoints, datasets,
-robot SDKs, and simulators keep their own licenses and are not distributed here.
+Apache-2.0. See [LICENSE](LICENSE), [NOTICE](NOTICE), and
+[third-party notices](THIRD_PARTY_NOTICES.md). Model weights, datasets, robot
+SDKs, and simulators retain their own licenses.
