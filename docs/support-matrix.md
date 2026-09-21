@@ -87,6 +87,7 @@ EmbodiRun additionally requires a compatible service and device binding.
     | ARX5 | DM0.5 binding | [Binding](https://github.com/BUAA-CI-LAB/EmbodiRun/tree/main/src/embodirun/bindings/arx/x5/dm05) |
     | Unitree Go2 | StreamVLN navigation | [Robot integration](https://github.com/BUAA-CI-LAB/EmbodiRun/tree/main/src/embodirun/robots/unitree/go2) |
     | XLeRobot | External hardware owner | [Integration package](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/integrations/xlerobot_owner/README.md) |
+    | SO-101 (wired teleoperation) | Multi-leader UDP fan-out, follower-side episode collection | [Integration package](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/integrations/so101_wired_teleop/README.md) |
 
     SO-101 deployments need calibrated arms, camera mappings, and a checkpoint
     trained for the selected binding. FR3 needs its robot SDK; ARX5 needs the
@@ -153,6 +154,9 @@ EmbodiRun additionally requires a compatible service and device binding.
 
 ## Agents and extensions
 
+- **Wired SO-101 teleoperation:** an experimental, separately installed
+  [multi-leader integration](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/integrations/so101_wired_teleop/README.md)
+  with UDP fan-out and follower-side recording.
 - **Your planner:** the [public Python client](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/agents/CLIENT.md)
   exposes observation, proposal, execution, inspection, and cancellation.
 - **RPent:** an experimental [agent integration](rpent-integration.md).
