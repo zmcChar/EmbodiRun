@@ -282,6 +282,7 @@ class _CameraWorker:
         self._thread: threading.Thread | None = None
         self._frame: bytes | None = None
         self._timestamp_ns: int | None = None
+        self._capture_mono_ns: int | None = None
         self._error: str | None = None
         self._error_timestamp_ns: int | None = None
 
@@ -320,6 +321,8 @@ class _CameraWorker:
                         capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
                         capture.set(cv2.CAP_PROP_FPS, 25)
                         capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    capture_started_ns = time.monotonic_ns()
+                    capture_started_wall_ns = time.time_ns()
                     ok, frame = capture.read()
                     if not ok or frame is None:
                         raise RuntimeError("capture failed; reconnecting")
@@ -329,7 +332,8 @@ class _CameraWorker:
                     payload = encoded.tobytes() if hasattr(encoded, "tobytes") else bytes(encoded)
                     with self._lock:
                         self._frame = payload
-                        self._timestamp_ns = time.time_ns()
+                        self._timestamp_ns = capture_started_wall_ns
+                        self._capture_mono_ns = capture_started_ns
                         self._error = None
                         self._error_timestamp_ns = None
                 except Exception as exc:  # noqa: BLE001 -- camera failure must not stop the other views
@@ -353,17 +357,19 @@ class _CameraWorker:
                 except Exception as exc:  # noqa: BLE001 - driver cleanup must remain bounded
                     self._set_error(f"camera {self.name!r} release failed: {exc}")
 
-    def snapshot(self) -> tuple[bytes | None, int | None, str | None, int | None, bool]:
+    def snapshot(self, *, with_age: bool = False):
         now_ns = time.time_ns()
         with self._lock:
             frame = self._frame
             timestamp_ns = self._timestamp_ns
             error = self._error
             error_timestamp_ns = self._error_timestamp_ns
+            age_ns = None if self._capture_mono_ns is None else time.monotonic_ns() - self._capture_mono_ns
         stale = timestamp_ns is None or now_ns - timestamp_ns > self.stale_after_ns
         if stale:
             error = error or f"camera {self.name!r} frame is stale or unavailable"
-        return frame if not stale else None, timestamp_ns, error, error_timestamp_ns, not stale
+        result = (frame if not stale else None, timestamp_ns, error, error_timestamp_ns, not stale)
+        return (*result, age_ns) if with_age else result
 
     def close(self, timeout_s: float) -> bool:
         self._stop.set()
@@ -2105,6 +2111,7 @@ class HardwareRobot:
 
             cameras: dict[str, bytes] = {}
             camera_timestamps_ns: dict[str, int | None] = {}
+            camera_ages_ns: dict[str, int | None] = {}
             camera_status: dict[str, dict[str, Any]] = {}
             for name in self._camera_paths:
                 worker = self._camera_workers.get(name)
@@ -2117,7 +2124,11 @@ class HardwareRobot:
                         "error_timestamp_ns": None,
                     }
                     continue
-                frame, timestamp_ns, error, error_timestamp_ns, fresh = worker.snapshot()
+                if isinstance(worker, _CameraWorker):
+                    frame, timestamp_ns, error, error_timestamp_ns, fresh, age_ns = worker.snapshot(with_age=True)
+                    camera_ages_ns[name] = age_ns
+                else:
+                    frame, timestamp_ns, error, error_timestamp_ns, fresh = worker.snapshot()
                 camera_timestamps_ns[name] = timestamp_ns
                 if frame is not None and fresh:
                     cameras[name] = frame
@@ -2130,11 +2141,51 @@ class HardwareRobot:
                     "error_timestamp_ns": error_timestamp_ns,
                 }
 
+            # Passive feedback never clears a latched stop fault.  A confirmed
+            # stop also requires the owner's earlier active stop procedure.
+            wheel_stationary = (
+                bool(self.config.get("enable_base"))
+                and all(
+                    raw.get(name, {}).get("Present_Velocity") == 0 and raw.get(name, {}).get("Moving") == 0
+                    for name in WHEEL_NAMES
+                )
+                and not errors
+            )
+            base_stopped = wheel_stationary and "base" not in self._active_scopes
+            base_stop_confirmed = (
+                base_stopped
+                and "base" in self._stopped_scopes
+                and not self._stop_uncertain
+                and not self._torque_ownership_uncertain
+            )
             observation = {
+                "state_age_ns": max(0, int((time.monotonic() - self._last_state_read_mono) * 1e9)),
+                "safety": {
+                    "base_control_ready": bool(
+                        self._allow_motion
+                        and not self._motion_config_error
+                        and not self._stop_uncertain
+                        and not self._torque_ownership_uncertain
+                        and not errors
+                        and self._base_directions is not None
+                    ),
+                    "stopped": base_stopped,
+                    "stop_confirmed": base_stop_confirmed,
+                    "arms_stop_confirmed": (
+                        "arms" in self._stopped_scopes
+                        and "arms" not in self._active_scopes
+                        and not self._stop_uncertain
+                        and not self._torque_ownership_uncertain
+                        and not errors
+                    ),
+                    "stop_unconfirmed": self._stop_uncertain,
+                },
+                "navigation": {"zero_velocity": wheel_stationary},
                 "state": state,
                 "source_timestamp_ns": source_timestamp_ns,
                 "state_timestamp_ns": state_timestamp_ns,
                 "camera_timestamps_ns": camera_timestamps_ns,
+                "camera_ages_ns": camera_ages_ns,
                 "camera_status": camera_status,
                 "raw": raw,
                 "raw_fields": raw,

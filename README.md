@@ -34,6 +34,9 @@ planning loop.
 
 Click a preview to watch the video and explore its setup and measurements.
 
+**Build a complete task:** the experimental [XLeRobot snack-delivery recipe](docs/xlerobot-snack-delivery.md)
+connects recorded base routes, π0.5 grasp proposals, and operator-confirmed handover.
+
 ## Why EmbodiRun?
 
 Keep control close to the robot. Share compute where it counts.
