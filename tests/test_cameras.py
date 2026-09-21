@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from embodirun.robots.sensors.cameras import (
     RealSenseCameraConfig,
     RealSenseCameraSource,
@@ -92,6 +94,38 @@ class ProfiledCapture(FakeCapture):
 class ProfiledCv2(FakeCv2):
     def __init__(self) -> None:
         self.capture = ProfiledCapture()
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [(None, 2), ("4", 4), ("1", 1), ("0", 2), ("not-a-number", 2)],
+)
+def test_v4l2_camera_requests_two_buffers_by_default(monkeypatch, configured, expected) -> None:
+    """One V4L2 buffer drops every other frame; the default must be two."""
+    if configured is None:
+        monkeypatch.delenv("RLINF_DEPLOY_CAMERA_BUFFERSIZE", raising=False)
+    else:
+        monkeypatch.setenv("RLINF_DEPLOY_CAMERA_BUFFERSIZE", configured)
+    cv2 = FakeCv2()
+
+    source = V4L2CameraSource(
+        (
+            V4L2CameraConfig(
+                name="observation.images.front",
+                device="/dev/video0",
+                width=640,
+                height=480,
+                fps=30.0,
+            ),
+        ),
+        cv2_module=cv2,
+        clock_ns=lambda: 1,
+    )
+    source.capture()
+    source.close()
+
+    requested = [value for name, value in cv2.capture.settings if name == FakeCv2.CAP_PROP_BUFFERSIZE]
+    assert requested == [expected]
 
 
 def test_v4l2_camera_produces_neutral_frame_and_releases_device() -> None:

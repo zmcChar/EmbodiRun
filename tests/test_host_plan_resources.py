@@ -89,7 +89,7 @@ def test_xlerobot_external_owner_builds_control_plan(scope: str, tmp_path: Path)
     assert len(robot_resources) == 1
     assert robot_resources[0]["external_owner"] is True
     assert robot_resources[0]["owner"] == "teleop-owner"
-    assert control.command.argv == ("rlinf-control-serve",)
+    assert control.command.argv == ("embodirun-control-serve",)
 
 
 def test_unsupported_external_owner_still_fails_plan(tmp_path: Path) -> None:

@@ -93,7 +93,7 @@ def _up(
     store = StateStore(context.state_path)
     state = store.load()
     if state is None:
-        raise UpError("deployment is not initialized; run `rlinf-deploy ... init`")
+        raise UpError("deployment is not initialized; run `embodirun ... init`")
     if state.config_digest != config_digest(context.config):
         raise UpError("configuration changed since init; run init again")
     missing_nodes = set(context.config.nodes) - state.nodes.keys()

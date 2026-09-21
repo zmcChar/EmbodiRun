@@ -35,9 +35,32 @@ from embodirun.model_services.backends.sglang import (
 
 @dataclass(frozen=True)
 class _Statistics:
+    """Checkpoint normalization statistics for one feature.
+
+    ``mean``/``std`` keep their historical names, but hold the mode's offset and
+    scale so that the two supported modes share one code path:
+
+        mode="MEAN_STD"    mean = mean,  std = std
+        mode="QUANTILES"   mean = q01,   std = q99 - q01  (``eps`` substituted
+                           where the two quantiles coincide)
+
+    Both formulas mirror ``lerobot.processor.normalize_processor`` exactly, so the
+    SGLang path stays numerically identical to the LeRobot path.
+    """
+
     mean: torch.Tensor
     std: torch.Tensor
     eps: float
+    mode: str = "MEAN_STD"
+
+    SUPPORTED_MODES = ("MEAN_STD", "QUANTILES")
+
+    # Delta-action processors are training/export artefacts. LeRobot emits them
+    # with ``enabled: false`` when the checkpoint's actions are already absolute,
+    # which makes them pure no-ops. An *enabled* delta processor changes action
+    # semantics, and this adapter has nowhere to apply the inverse, so it stays
+    # unsupported rather than silently producing wrong commands.
+    _OPTIONAL_NOOP_PROCESSORS = ("delta_actions_processor", "absolute_actions_processor")
 
     @classmethod
     def load(cls, root: Path, pipeline: str, registry: str, feature: str, kind: str) -> _Statistics:
@@ -52,17 +75,25 @@ class _Statistics:
             "device_processor",
         }
         for step in steps:
-            if step["registry_name"] not in allowed:
-                raise ValueError(f"unsupported LeRobot processor: {step['registry_name']}")
-            if step["registry_name"] == "rename_observations_processor" and step["config"].get("rename_map"):
+            name = step["registry_name"]
+            if name in cls._OPTIONAL_NOOP_PROCESSORS:
+                if (step.get("config") or {}).get("enabled") is not False:
+                    raise ValueError(f"SGLang LeRobot compatibility requires explicitly disabled {name}")
+                continue
+            if name not in allowed:
+                raise ValueError(f"unsupported LeRobot processor: {name}")
+            if name == "rename_observations_processor" and step["config"].get("rename_map"):
                 raise ValueError("SGLang LeRobot serving requires already named input features")
         matches = [step for step in steps if step["registry_name"] == registry]
         if len(matches) != 1:
             raise ValueError(f"checkpoint must contain exactly one {registry}")
         step = matches[0]
         config = step["config"]
-        if config["norm_map"].get(kind) != "MEAN_STD":
-            raise ValueError(f"SGLang LeRobot compatibility currently requires {kind}=MEAN_STD")
+        mode = config["norm_map"].get(kind)
+        if mode not in cls.SUPPORTED_MODES:
+            raise ValueError(
+                f"SGLang LeRobot compatibility requires {kind} in {list(cls.SUPPORTED_MODES)}, got {mode!r}"
+            )
         if pipeline == "preprocessor" and config["norm_map"].get("VISUAL") != "IDENTITY":
             raise ValueError("SGLang LeRobot compatibility requires VISUAL=IDENTITY")
         filename = step["state_file"]
@@ -70,16 +101,35 @@ class _Statistics:
             raise ValueError("processor statistics must name a checkpoint file")
         path = root / filename
         stats = load_file(str(path))
-        mean, std = stats[f"{feature}.mean"].float(), stats[f"{feature}.std"].float()
         shape = tuple(config["features"][feature]["shape"])
         eps = float(config.get("eps", 1e-8))
-        if mean.shape != shape or std.shape != shape or len(shape) != 1:
-            raise ValueError(f"invalid normalization dimensions for {feature}")
-        if not torch.isfinite(mean).all() or not torch.isfinite(std).all() or (std < 0).any():
-            raise ValueError(f"invalid normalization statistics for {feature}")
         if not np.isfinite(eps) or eps <= 0:
             raise ValueError("normalizer eps must be finite and positive")
-        return cls(mean, std, eps)
+
+        if mode == "MEAN_STD":
+            mean = stats[f"{feature}.mean"].float()
+            std = stats[f"{feature}.std"].float()
+            if mean.shape != shape or std.shape != shape or len(shape) != 1:
+                raise ValueError(f"invalid normalization dimensions for {feature}")
+            if not torch.isfinite(mean).all() or not torch.isfinite(std).all() or (std < 0).any():
+                raise ValueError(f"invalid normalization statistics for {feature}")
+            return cls(mean, std, eps, mode)
+
+        try:
+            q01 = stats[f"{feature}.q01"].float()
+            q99 = stats[f"{feature}.q99"].float()
+        except KeyError as error:
+            raise ValueError(
+                f"QUANTILES normalization requires {feature}.q01 / {feature}.q99 statistics: {error}"
+            ) from error
+        if q01.shape != shape or q99.shape != shape or len(shape) != 1:
+            raise ValueError(f"invalid normalization dimensions for {feature}")
+        if not torch.isfinite(q01).all() or not torch.isfinite(q99).all() or (q99 < q01).any():
+            raise ValueError(f"invalid normalization statistics for {feature}")
+        # lerobot substitutes eps only where the quantiles coincide.
+        width = q99 - q01
+        scale = torch.where(width == 0, torch.full_like(width, eps), width)
+        return cls(q01, scale, eps, mode)
 
     def normalize(self, values: Any) -> torch.Tensor:
         tensor = torch.as_tensor(values, dtype=torch.float32, device="cpu")
@@ -87,12 +137,16 @@ class _Statistics:
             raise ValueError("state dimensions do not match checkpoint statistics")
         if not torch.isfinite(tensor).all():
             raise ValueError("state must contain only finite values")
+        if self.mode == "QUANTILES":
+            return 2.0 * (tensor - self.mean) / self.std - 1.0
         return (tensor - self.mean) / (self.std + self.eps)
 
     def denormalize(self, values: Any) -> torch.Tensor:
         tensor = torch.as_tensor(values, dtype=torch.float32, device="cpu")
         if tensor.ndim < 1 or tensor.shape[-1] != self.mean.numel() or not torch.isfinite(tensor).all():
             raise ValueError("actions do not match checkpoint normalization statistics")
+        if self.mode == "QUANTILES":
+            return (tensor + 1.0) * self.std / 2.0 + self.mean
         return tensor * self.std + self.mean
 
 
@@ -135,7 +189,7 @@ class _LeRobotPostprocess(VLAActionPostprocessStage):
 
 
 class LeRobotPi05Pipeline(Pi05Pipeline):
-    """Native SGLang Pi05 execution with LeRobot MEAN_STD processors."""
+    """Native SGLang Pi05 execution with LeRobot MEAN_STD / QUANTILES processors."""
 
     pipeline_name = "LeRobotPi05Pipeline"
 

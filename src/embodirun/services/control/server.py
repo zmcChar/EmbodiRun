@@ -367,7 +367,7 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
 def main(argv: Sequence[str] | None = None) -> int:
     """Load one generated runtime and serve it until the supervisor stops us."""
 
-    parser = argparse.ArgumentParser(prog="rlinf-control-serve")
+    parser = argparse.ArgumentParser(prog="embodirun-control-serve")
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument(
         "--state-dir",

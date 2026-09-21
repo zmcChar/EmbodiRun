@@ -168,7 +168,7 @@ def _validate_service_id(service_id: str) -> None:
 
 
 def _agent_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="rlinf-deploy-supervisor")
+    parser = argparse.ArgumentParser(prog="embodirun-supervisor")
     parser.add_argument("action", choices=("start", "status", "stop"))
     parser.add_argument("--service-id", required=True)
     parser.add_argument("--run-root", required=True)

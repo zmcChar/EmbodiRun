@@ -419,10 +419,10 @@ class ControlService:
                             # opened only for an explicit control request.  It
                             # is never used by the observation path.
                             _connect_robot(robot, prepare=True)
-                            robot._rlinf_prepared_on_connect = True
+                            robot._embodirun_prepared_on_connect = True
                         else:
                             _connect_robot(robot, prepare=False)
-                            robot._rlinf_prepared_on_connect = False
+                            robot._embodirun_prepared_on_connect = False
                     except BaseException:
                         with contextlib.suppress(BaseException):
                             robot.close()
@@ -475,7 +475,9 @@ class ControlService:
             with self._control_lock:
                 self._robot = robot
                 self._current_arbiter = arbiter
-                self._robot_prepared = not external_owner or bool(getattr(robot, "_rlinf_prepared_on_connect", False))
+                self._robot_prepared = not external_owner or bool(
+                    getattr(robot, "_embodirun_prepared_on_connect", False)
+                )
                 stopped = self._estop_latched or self._closed
             if stopped:
                 arbiter.emergency_stop()
@@ -1471,7 +1473,7 @@ def _supports_prepare_operation(robot: Any) -> bool:
 def _prepare_adapter(value: Any) -> None:
     """Prepare a connected adapter, preserving the legacy explicit-connect path."""
 
-    if getattr(value, "_rlinf_prepared_on_connect", False):
+    if getattr(value, "_embodirun_prepared_on_connect", False):
         return
     prepare = getattr(value, "prepare", None)
     if not callable(prepare):
@@ -1686,10 +1688,12 @@ def _shutdown_client(client: Any) -> None:
 def _package_version() -> str:
     """Report installed package metadata without inventing a source hash."""
 
-    try:
-        return package_version("rlinf-deploy")
-    except PackageNotFoundError:  # editable/source checkouts may lack metadata
-        return "unknown"
+    for distribution in ("embodirun", "rlinf-deploy"):
+        try:
+            return package_version(distribution)
+        except PackageNotFoundError:  # editable/source checkouts may lack metadata
+            continue
+    return "unknown"
 
 
 def _payload_mapping(value: object, name: str) -> Mapping[str, Any]:
