@@ -1068,10 +1068,20 @@ async def robot_endpoint(request: web.Request) -> web.Response:
                     if scope == "all"
                     else platform.robot_owners.get(scope) == owner and bool(owner)
                 )
+            observation = dict(platform.observation)
+            queued_age = max(0, int((time.monotonic() - platform.received_at) * 1e9))
+            observation["camera_ages_ns"] = {
+                name: age + queued_age
+                for name, age in observation.get("camera_ages_ns", {}).items()
+                if isinstance(age, int) and not isinstance(age, bool) and age >= 0
+            }
+            state_age = observation.get("state_age_ns")
+            if isinstance(state_age, int) and not isinstance(state_age, bool) and state_age >= 0:
+                observation["state_age_ns"] = state_age + max(0, int((time.monotonic() - platform.received_at) * 1e9))
             return web.json_response(
                 {
                     "observation": {
-                        **platform.observation,
+                        **observation,
                         "armed": platform.robot.armed,
                         "control_state": active,
                         "control_owned": owned,

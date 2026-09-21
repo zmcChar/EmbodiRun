@@ -154,6 +154,8 @@ EmbodiRun additionally requires a compatible service and device binding.
 
 ## Agents and extensions
 
+- **XLeRobot snack delivery:** an experimental [task recipe](xlerobot-snack-delivery.md)
+  combining recorded base routes, π0.5 arm proposals, and operator-confirmed handover.
 - **Wired SO-101 teleoperation:** an experimental, separately installed
   [multi-leader integration](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/integrations/so101_wired_teleop/README.md)
   with UDP fan-out and follower-side recording.

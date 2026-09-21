@@ -11,6 +11,7 @@ import http.client
 import json
 import math
 import secrets
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Mapping
@@ -18,21 +19,7 @@ from typing import Any
 
 from ...adapter import RobotAction, RobotAdapter, RobotObservation, RobotPreparationRefused
 from .config import XLeRobotConfig
-
-XLEROBOT_ACTION_SPACE = "lerobot.xlerobot.external_owner.v1"
-_ARM_KEYS = {
-    f"{side}_arm_{joint}.pos"
-    for side in ("left", "right")
-    for joint in (
-        "shoulder_pan",
-        "shoulder_lift",
-        "elbow_flex",
-        "wrist_flex",
-        "wrist_roll",
-        "gripper",
-    )
-}
-_BASE_KEYS = {"x.vel", "theta.vel"}
+from .units import validate_action
 
 
 def _json_value(value: Any) -> Any:
@@ -154,6 +141,7 @@ class XLeRobotAdapter(RobotAdapter):
         self._cleanup_pending = False
 
     def observe(self) -> RobotObservation:
+        request_started_ns = time.monotonic_ns()
         result = self._request("observe")
         observation = result.get("observation")
         if not isinstance(observation, Mapping):
@@ -176,13 +164,25 @@ class XLeRobotAdapter(RobotAdapter):
         if self.prepared and observation.get("control_owned") is not True:
             self.prepared = False
             self._cleanup_pending = True
+        # The owner reports elapsed state age, measured on its own monotonic
+        # clock. Subtracting it from the local request start conservatively
+        # includes the entire HTTP round trip; reception is never capture time.
+        age = observation.get("state_age_ns")
+        local_capture = None
+        if isinstance(age, int) and not isinstance(age, bool) and 0 <= age <= request_started_ns:
+            local_capture = request_started_ns - age
         return RobotObservation(
             timestamp_s=timestamp_s,
             values=values,
             metadata={
                 **_json_value(self.metadata),
-                "clock_domain": "remote_robot_wall",
-                "captured_timestamp_ns": timestamp_ns,
+                "clock_domain": "host_monotonic_ns" if local_capture is not None else "remote_robot_wall",
+                "captured_timestamp_ns": local_capture if local_capture is not None else timestamp_ns,
+                "remote_state_timestamp_ns": timestamp_ns,
+                "owner_state_age_ns": age,
+                "safety": _json_value(observation.get("safety")),
+                "navigation": _json_value(observation.get("navigation")),
+                "task_evidence": _json_value(observation.get("task_evidence")),
                 "source_timestamp_ns": source_timestamp_ns,
                 "state_timestamp_ns": timestamp_ns,
                 "camera_timestamps_ns": _json_value(observation.get("camera_timestamps_ns")),
@@ -203,27 +203,15 @@ class XLeRobotAdapter(RobotAdapter):
         if not isinstance(action.values, Mapping):
             raise ValueError("XLeRobot action must be a mapping")
         values = dict(action.values)
-        units = action.metadata.get("units", {}) if isinstance(action.metadata, Mapping) else {}
-        if action.metadata.get("action_space") != XLEROBOT_ACTION_SPACE:
-            raise ValueError("unsupported XLeRobot action_space")
-        allowed = _ARM_KEYS if self.config.scope == "arms" else _BASE_KEYS
-        if self.config.scope == "base" and set(values) != _BASE_KEYS:
-            raise ValueError("base action requires both x.vel and theta.vel")
-        if not values or not set(values) <= allowed:
-            raise ValueError("action contains keys outside the selected XLeRobot scope")
+        metadata = action.metadata if isinstance(action.metadata, Mapping) else {}
+        # The canonical action space, scope, and per-field units live in one
+        # shared contract so the recipe, the adapter, and the tests cannot
+        # drift apart.  A missing unit or a base/arms mismatch is refused
+        # before any owner command is sent.
+        validate_action(values, metadata, scope=self.config.scope)
         for key, value in values.items():
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
                 raise ValueError(f"{key} must be finite numeric")
-            if key.endswith("gripper.pos"):
-                expected, aliases = "range_0_100", {"range_0_100", "percent"}
-            elif key.endswith(".pos"):
-                expected, aliases = "degrees", {"degrees"}
-            elif key == "x.vel":
-                expected, aliases = "metres-per-sec", {"metres-per-sec", "m/s"}
-            else:
-                expected, aliases = "angular-degrees-per-sec", {"angular-degrees-per-sec", "deg/s"}
-            if not isinstance(units, Mapping) or units.get(key) not in aliases:
-                raise ValueError(f"unsupported unit for {key}: expected {expected}")
         try:
             receipt = self._request("command", method="POST", payload={"action": values})
         except (XLeRobotTransportError, XLeRobotProtocolError):

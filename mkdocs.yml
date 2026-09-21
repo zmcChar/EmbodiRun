@@ -64,11 +64,13 @@ nav:
       - Camera-only capture: camera-only-experiments.md
       - Transport candidates: transport-experiments.md
       - LightNav-0 with XLeRobot: lightnav0_xlerobot.md
+      - XLeRobot snack delivery recipe: xlerobot-snack-delivery.md
   - Reference:
       - Python API: api.md
   - Demos:
       - Three robots, one service: demos/multi-robot-serving.md
       - Inference engines on SO-101: demos/engine-e2e-contrast.md
+      - XLeRobot snack delivery: demos/xlerobot-snack-delivery.md
   - Project:
       - Contributing: contributing.md
       - Code of Conduct: code-of-conduct.md
