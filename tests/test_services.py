@@ -194,7 +194,7 @@ def test_simulation_plan_preserves_backend_and_environment_boundaries(tmp_path, 
 
     model_service, simulation_service = build_plan(config).services
     assert model_service.command.argv[0] == ("sglang" if backend == "sglang" else f"vvla-{transport}-serve")
-    assert simulation_service.command.argv[0] == "rlinf-simulation-serve"
+    assert simulation_service.command.argv[0] == "embodirun-simulation-serve"
     runtime = SimulationServiceConfig.from_json(simulation_service.simulation_config_json)
     assert runtime.inference_backend == backend
     assert runtime.inference_transport == transport
@@ -592,7 +592,7 @@ def test_single_node_environment_and_runtime() -> None:
     assert {runtime.runtime_id for runtime in plan.runtimes} == {"so101-1-runtime"}
     assert {runtime.model_endpoint for runtime in plan.runtimes} == {"http://127.0.0.1:8000"}
     assert control_service.service_id == "control-so101-1-runtime"
-    assert control_service.command.argv == ("rlinf-control-serve",)
+    assert control_service.command.argv == ("embodirun-control-serve",)
     assert control_service.health_endpoint == "http://127.0.0.1:8100/healthz"
     control_config = json.loads(control_service.control_config_json)
     assert control_config["schema"] == "rlinf.control.config.v1"
@@ -1973,7 +1973,7 @@ def test_cli_init_then_up_uses_persisted_initialized_state(tmp_path, capsys) -> 
         "sources/inference/.venv-vvla/bin/vvla-http-serve"
     )
     assert any(value.endswith("/thor-so101-pi05/generated/pi05-01.adapter.json") for value in model_request["argv"])
-    control_request = next(request for request in start_requests if request["argv"][0].endswith("rlinf-control-serve"))
+    control_request = next(request for request in start_requests if request["argv"][0].endswith("embodirun-control-serve"))
     assert control_request["cwd"] == active_source
     assert control_request["environment"]["PYTHONPATH"].endswith("/overlays/deploy/current/src")
     adapter_path, (adapter_content, adapter_mode) = next(

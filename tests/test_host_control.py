@@ -94,9 +94,9 @@ def test_host_control_client_routes_and_identity_headers() -> None:
     assert len(executor.calls) == 7
     headers = executor.calls[0][4]
     assert headers == {
-        "X-RLinf-Caller-Id": "caller-a",
-        "X-RLinf-Session-Id": "session-a",
-        "X-RLinf-Token": "token-a",
+        "X-EmbodiRun-Caller-Id": "caller-a",
+        "X-EmbodiRun-Session-Id": "session-a",
+        "X-EmbodiRun-Token": "token-a",
     }
     assert "/v1/observe?runtime_id=fake-device&observation_id=obs+one" in executor.calls[1][1]
     assert "include_robot=true" in executor.calls[1][1]
@@ -257,8 +257,15 @@ def test_host_control_client_uses_real_local_fake_http_boundary() -> None:
         application.close()
 
     assert received_headers
-    assert all(headers.get("X-Rlinf-Caller-Id") == "caller-http" for headers in received_headers)
-    assert all(headers.get("X-Rlinf-Session-Id") == "session-http" for headers in received_headers)
+
+    def _header_value(headers: dict[str, str], name: str) -> str | None:
+        # Transport stacks may re-case header names (urllib title-cases each
+        # dash-separated word); HTTP header names are case-insensitive.
+        lowered = {key.lower(): value for key, value in headers.items()}
+        return lowered.get(name.lower())
+
+    assert all(_header_value(headers, "X-EmbodiRun-Caller-Id") == "caller-http" for headers in received_headers)
+    assert all(_header_value(headers, "X-EmbodiRun-Session-Id") == "session-http" for headers in received_headers)
 
 
 def test_json_execute_command_emits_only_result_and_keeps_original_id(

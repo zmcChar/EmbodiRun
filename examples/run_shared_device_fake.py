@@ -452,7 +452,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             run_smoke(args.config, args.state_dir)
         return 0
-    with tempfile.TemporaryDirectory(prefix="rlinf-shared-device-fake-") as directory:
+    with tempfile.TemporaryDirectory(prefix="embodirun-shared-device-fake-") as directory:
         state_dir = Path(directory)
         if args.serve:
             with local_fake_service(args.config, state_dir) as (deployment, service, _control, _state):

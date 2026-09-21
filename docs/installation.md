@@ -70,7 +70,9 @@ Two helpers cover the common cases:
 - `requirements/install.sh` installs a standalone environment at a chosen path
   and Python version, with optional component extras and a selectable PyTorch
   version. Run `bash requirements/install.sh --help` for the full option list.
-  `EMBODIRUN_ENV_ROOT` and `EMBODIRUN_PYTORCH_INDEX` override its defaults.
+  `EMBODIRUN_ENV_ROOT` and `EMBODIRUN_PYTORCH_INDEX` override its defaults
+  (the legacy `RLINF_ENV_ROOT` and `RLINF_PYTORCH_INDEX` names are still
+  honored).
 
 ## Extras
 
