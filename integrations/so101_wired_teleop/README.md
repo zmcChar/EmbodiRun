@@ -72,7 +72,8 @@ embodirun-so101-collect --config teleop.yaml --task "pick up the block"
 ```
 
 Before touching hardware, both ends can prove the path with `--network-test`,
-which sends or waits for neutral packets and never opens an arm.
+which sends or waits for diagnostic packets and never opens an arm. Diagnostic
+packets have a separate wire marker and are rejected by the motion receiver.
 
 ## Safety
 
@@ -87,6 +88,11 @@ The follower owns every limit, because the sender is not trusted to respect them
 | queue drain | — | a burst is collapsed to its newest datagram, so stale targets are never replayed |
 
 `--direct` bypasses `max_step` and `max_lead` and is for bench debugging only.
+
+Duplicate and out-of-order sequence numbers are rejected, including across the
+32-bit counter wrap. When restarting a leader process, restart its followers
+as well to establish a new sequence baseline. Use a trusted, isolated wired
+network: source-address filtering is not authentication.
 
 ## What an episode contains
 

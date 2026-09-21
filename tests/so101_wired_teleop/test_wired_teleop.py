@@ -17,7 +17,7 @@ from embodirun_so101_wired_teleop.config import (
     parse_config,
 )
 from embodirun_so101_wired_teleop.follower import clamp_target
-from embodirun_so101_wired_teleop.protocol import JOINTS, ProtocolError, decode, encode
+from embodirun_so101_wired_teleop.protocol import JOINTS, MAGIC, PACKET, ProtocolError, decode, encode, is_newer
 from embodirun_so101_wired_teleop.recorder import EpisodeRecorder, role_names
 
 EXAMPLE = Path(__file__).parents[2] / "integrations" / "so101_wired_teleop" / "config.example.yaml"
@@ -203,6 +203,51 @@ def test_packets_reject_a_short_or_foreign_datagram() -> None:
 def test_encode_reports_a_missing_joint() -> None:
     with pytest.raises(ProtocolError, match="missing joint"):
         encode(0, {"shoulder_pan.pos": 0.0})
+
+
+def test_network_probe_cannot_be_decoded_as_an_arm_command() -> None:
+    packet = encode(0, dict.fromkeys(JOINTS, 0.0), probe=True)
+    assert decode(packet, probe=True)[0] == 0
+    with pytest.raises(ProtocolError, match="magic"):
+        decode(packet)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
+def test_nonfinite_targets_and_safety_limits_are_rejected(value) -> None:
+    with pytest.raises(ProtocolError, match="finite"):
+        encode(0, dict.fromkeys(JOINTS, value))
+    with pytest.raises(ProtocolError, match="finite"):
+        decode(PACKET.pack(MAGIC, 0, *([value] * 6)))
+    follower = _follower("a", "l")
+    follower["max_step"] = value
+    with pytest.raises(ConfigError, match="max_step"):
+        parse_config({"leaders": [_leader("l")], "followers": [follower]})
+
+
+def test_sequence_order_rejects_stale_packets_and_allows_wraparound() -> None:
+    assert is_newer(0, -1)
+    assert is_newer(0, 0xFFFFFFFF)
+    assert is_newer(12, 10)
+    assert not is_newer(10, 10)
+    assert not is_newer(9, 10)
+    assert not is_newer(0xFFFFFFFF, 0)
+
+
+def test_console_only_selects_the_requested_follower(monkeypatch) -> None:
+    from embodirun_so101_wired_teleop.cli import _Endpoint
+
+    config = parse_config({"leaders": [_leader("l")], "followers": [_follower("a", "l")]})
+    endpoint = _Endpoint(config.followers[0])
+    monkeypatch.setattr(
+        endpoint,
+        "_shell",
+        lambda _: (
+            "11 /bin/python /bin/embodirun-so101-follower --follower a --config layout.yaml\n"
+            "12 /bin/embodirun-so101-follower --follower ab --config layout.yaml\n"
+            "13 /bin/embodirun-so101-follower --follower=b --config layout.yaml\n"
+        ),
+    )
+    assert endpoint.processes() == [11]
 
 
 # --------------------------------------------------------------------------- #

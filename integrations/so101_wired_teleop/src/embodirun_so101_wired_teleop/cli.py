@@ -26,6 +26,7 @@ import sys
 import termios
 import time
 import tty
+from pathlib import Path
 
 from .config import ConfigError, FollowerConfig, TeleopConfig, load_config
 from .follower import FollowerNode
@@ -68,7 +69,7 @@ def leader_main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--network-test",
         action="store_true",
-        help="send neutral packets instead of reading an arm",
+        help="send diagnostic packets that cannot command an arm",
     )
     parser.add_argument("--seconds", type=float, default=None, help="stop after N seconds")
     args = parser.parse_args(argv)
@@ -134,8 +135,24 @@ class _Endpoint:
         ).stdout
 
     def processes(self) -> list[int]:
-        out = self._shell("pgrep -f '[e]mbodirun-so101-follower' || true")
-        return [int(line) for line in out.split() if line.isdigit()]
+        out = self._shell("ps -eo pid=,args=")
+        matches = []
+        for line in out.splitlines():
+            try:
+                pid, command = line.strip().split(maxsplit=1)
+                args = shlex.split(command)
+            except ValueError:
+                continue
+            if not any(Path(arg).name == "embodirun-so101-follower" for arg in args[:2]):
+                continue
+            selected = any(
+                arg == f"--follower={self.follower.id}"
+                or (arg == "--follower" and args[index + 1 : index + 2] == [self.follower.id])
+                for index, arg in enumerate(args)
+            )
+            if selected and pid.isdigit():
+                matches.append(int(pid))
+        return matches
 
     def start(self, config_path: str) -> int:
         existing = self.processes()
@@ -147,7 +164,7 @@ class _Endpoint:
         log = f"/tmp/embodirun-so101-{self.follower.id}.log"
         command = (
             f"nohup embodirun-so101-follower --config {shlex.quote(config_path)} "
-            f"--follower {shlex.quote(self.follower.id)} > {log} 2>&1 < /dev/null & echo $!"
+            f"--follower {shlex.quote(self.follower.id)} > {shlex.quote(log)} 2>&1 < /dev/null & echo $!"
         )
         out = self._shell(command).strip()
         self.pid = int(out) if out.isdigit() else None
@@ -206,6 +223,8 @@ def collect_main(argv: list[str] | None = None) -> int:
     leader = _select(config, "leader", leader_id)
     follower_id = args.follower or _choose("选择从臂：", {f.id: f"{f.id}  ->  {f.leader}" for f in config.followers})
     follower = _select(config, "follower", follower_id)
+    if not follower.record_dir:
+        raise SystemExit("the selected follower needs record_dir for episode collection")
     if follower.leader != leader.id:
         print(f"注意：从臂 {follower.id} 配置跟随的是 {follower.leader}，不是 {leader.id}。")
 

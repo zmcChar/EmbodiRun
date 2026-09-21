@@ -116,10 +116,10 @@ class LeaderBroadcaster:
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
-            sock.bind(("", 0))
+            sock.bind((self.leader.advertise, 0))
             neutral = dict.fromkeys(JOINTS, 0.0)
             for sequence in range(packets):
-                packet = encode(sequence, neutral)
+                packet = encode(sequence, neutral, probe=True)
                 for destination in self.destinations:
                     sock.sendto(packet, (destination, self.leader.port))
                 time.sleep(0.03)

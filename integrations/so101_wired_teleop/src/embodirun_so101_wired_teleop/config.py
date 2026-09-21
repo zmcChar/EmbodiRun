@@ -15,6 +15,7 @@ on a machine without hardware.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -142,7 +143,7 @@ def _positive(value: Any, key: str, where: str, *, allow_zero: bool = False) -> 
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ConfigError(f"{where}.{key} must be a number")
     number = float(value)
-    if number < 0 or (number == 0 and not allow_zero):
+    if not math.isfinite(number) or number < 0 or (number == 0 and not allow_zero):
         raise ConfigError(f"{where}.{key} must be positive")
     return number
 
@@ -151,13 +152,16 @@ def _leader(raw: Any, index: int) -> LeaderConfig:
     where = f"leaders[{index}]"
     if not isinstance(raw, dict):
         raise ConfigError(f"{where} must be a mapping")
+    port = raw.get("port", DEFAULT_PORT)
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        raise ConfigError(f"{where}.port must be an integer between 1 and 65535")
     return LeaderConfig(
         id=str(_require(raw, "id", where)),
         serial=str(_require(raw, "serial", where)),
         arm_id=str(_require(raw, "arm_id", where)),
         calibration_dir=str(_require(raw, "calibration_dir", where)),
         advertise=str(_require(raw, "advertise", where)),
-        port=int(raw.get("port", DEFAULT_PORT)),
+        port=port,
         fps=_positive(raw.get("fps", DEFAULT_FPS), "fps", where),
     )
 
@@ -178,6 +182,8 @@ def _follower(raw: Any, index: int) -> FollowerConfig:
         )
     if roles and any(not isinstance(r, str) or not r.strip() for r in roles):
         raise ConfigError(f"{where}.camera_roles must be non-empty strings")
+    if roles and (len(set(roles)) != len(roles) or any(r in {".", ".."} or "/" in r or "\\" in r for r in roles)):
+        raise ConfigError(f"{where}.camera_roles must be unique directory names")
     record_dir = raw.get("record_dir")
     return FollowerConfig(
         id=str(_require(raw, "id", where)),

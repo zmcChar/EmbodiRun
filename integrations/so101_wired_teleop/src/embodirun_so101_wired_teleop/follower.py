@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import FollowerConfig, LeaderConfig, TeleopConfig
-from .protocol import PACKET, ProtocolError, decode
+from .protocol import PACKET, ProtocolError, decode, is_newer
 from .recorder import EpisodeRecorder
 
 _LOG = logging.getLogger(__name__)
@@ -99,7 +99,10 @@ class FollowerNode:
                     continue
                 if peer[0] != self.leader.advertise:
                     continue
-                sequence, action = decode(data)
+                try:
+                    sequence, action = decode(data, probe=True)
+                except ProtocolError:
+                    continue
                 print(f"NETWORK_OK follower={self.follower.id} seq={sequence} joints={len(action)} from={peer[0]}")
                 return 0
             print(f"NETWORK_TIMEOUT follower={self.follower.id}")
@@ -196,6 +199,12 @@ class FollowerNode:
                 if peer[0] != self.leader.advertise:
                     continue
 
+                try:
+                    sequence, action = decode(data)
+                except ProtocolError as error:
+                    _LOG.warning("discarding malformed datagram: %s", error)
+                    continue
+
                 # Drain whatever else arrived and keep the newest target, so a
                 # burst is never replayed as a sequence of stale positions.
                 sock.setblocking(False)
@@ -205,15 +214,15 @@ class FollowerNode:
                     except BlockingIOError:
                         break
                     if newer_peer[0] == self.leader.advertise:
-                        data = newer
+                        try:
+                            newer_sequence, newer_action = decode(newer)
+                        except ProtocolError:
+                            continue
+                        if is_newer(newer_sequence, sequence):
+                            sequence, action = newer_sequence, newer_action
                 sock.settimeout(0.10)
 
-                try:
-                    sequence, action = decode(data)
-                except ProtocolError as error:
-                    _LOG.warning("discarding malformed datagram: %s", error)
-                    continue
-                if sequence == last_sequence:
+                if not is_newer(sequence, last_sequence):
                     continue
                 last_sequence = sequence
                 last_rx = time.monotonic()
