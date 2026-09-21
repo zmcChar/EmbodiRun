@@ -117,7 +117,7 @@ class ControlClient:
     ``endpoint`` may include a path prefix but must identify the Control
     listener.  ``caller_id`` and ``session_id`` are sent as headers on every
     request.  A token is optional for trusted loopback deployments and is
-    sent in the Control service's ``X-RLinf-Token`` header when configured.
+    sent in the Control service's ``X-EmbodiRun-Token`` header when configured.
 
     ``describe``, ``observe``, ``media`` and ``inspect`` are read-only queries.
     ``propose`` computes against a retained snapshot but does not prepare or
@@ -400,9 +400,9 @@ class ControlClient:
                 timeout_s=self.timeout_s,
                 headers={
                     "Accept": "application/json",
-                    "X-RLinf-Caller-ID": self.caller_id,
-                    "X-RLinf-Session-ID": self.session_id,
-                    **({"X-RLinf-Token": self.token} if self.token is not None else {}),
+                    "X-EmbodiRun-Caller-ID": self.caller_id,
+                    "X-EmbodiRun-Session-ID": self.session_id,
+                    **({"X-EmbodiRun-Token": self.token} if self.token is not None else {}),
                 },
                 request_id=request_id,
                 accepted_statuses=frozenset(range(200, 300)),

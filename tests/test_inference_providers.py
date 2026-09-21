@@ -179,7 +179,7 @@ def test_device_only_init_up_down_does_not_prepare_or_launch_model(
         if len(command.argv) > 2 and command.argv[1].endswith("/supervisor.py") and command.argv[2] == "start"
     ]
     assert len(starts) == 1
-    assert starts[0]["argv"][0].endswith("/rlinf-control-serve")
+    assert starts[0]["argv"][0].endswith("/embodirun-control-serve")
 
 
 def test_external_init_up_down_never_checks_checkpoint_or_stops_external_service(
@@ -199,7 +199,7 @@ def test_external_init_up_down_never_checks_checkpoint_or_stops_external_service
         if len(command.argv) > 4 and command.argv[1].endswith("/supervisor.py") and command.argv[2] == "stop"
     ]
     assert len(starts) == len(stops) == 1
-    assert starts[0]["argv"][0].endswith("/rlinf-control-serve")
+    assert starts[0]["argv"][0].endswith("/embodirun-control-serve")
     assert all("9999" not in item for command in commands for item in command.argv)
 
 

@@ -376,7 +376,7 @@ def _device_control_service(
         environment_id=environment.environment_id,
         endpoint=endpoint,
         health_endpoint=f"{endpoint}/healthz",
-        command=Command(("rlinf-control-serve",)),
+        command=Command(("embodirun-control-serve",)),
         control_config_json=control_config.to_json(),
         owner_id=f"control:{robot.robot_id}",
         resource_ids=tuple(item["identity"] for item in _control_resources(config, runtime)),
@@ -445,7 +445,7 @@ def _control_service(
         environment_id=environment.environment_id,
         endpoint=endpoint,
         health_endpoint=f"{endpoint}/healthz",
-        command=Command(("rlinf-control-serve",)),
+        command=Command(("embodirun-control-serve",)),
         control_config_json=control_config_json,
         owner_id=f"control:{robot.robot_id}",
         resource_ids=tuple(item["identity"] for item in _control_resources(config, runtime)),
@@ -501,7 +501,7 @@ def _simulation_service(
         environment_id=environment.environment_id,
         endpoint=endpoint,
         health_endpoint=f"{endpoint}/healthz",
-        command=Command(("rlinf-simulation-serve",)),
+        command=Command(("embodirun-simulation-serve",)),
         simulation_config_json=service_config.to_json(),
     )
     return runtime_spec, service
