@@ -36,17 +36,46 @@ Click a preview to watch the video and explore its setup and measurements.
 
 ## Why EmbodiRun?
 
-- **Deploy from one configuration.** Describe the nodes, environments, devices,
-  and model bindings once. The Host CLI prepares environments and manages
-  service startup, inspection, and shutdown.
-- **Share inference across devices.** Each device runs its own control loop and
-  connects to a model endpoint over HTTP or WirelessComm.
-- **Give agents a robot interface.** Observe, propose, execute, inspect, and
-  cancel through a dependency-free Python client. Your agent keeps its planner;
-  the runtime handles device ownership and execution.
-- **Reuse the execution machinery.** Observation capture, recording, action
-  validation, and manual takeover live in the runtime. Robot-specific adapters
-  and policy bindings handle the hardware details.
+Keep control close to the robot. Share compute where it counts.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<h3>🌐 One config, multiple machines</h3>
+<p>Place robot control on the edge and inference on a GPU host. One YAML describes the nodes, environments, devices, and bindings; the Host CLI handles preparation and service lifecycle.</p>
+<a href="docs/architecture.md">Deployment architecture →</a>
+</td>
+<td width="50%" valign="top">
+<h3>🦾 Multiple robots, shared inference</h3>
+<p>Connect independent device loops to a shared model endpoint. Each robot keeps its own session and execution flow while using the same inference service.</p>
+<a href="docs/demos/multi-robot-serving.md">See three SO-101 arms in action →</a>
+</td>
+</tr>
+<tr>
+<td valign="top">
+<h3>🔌 Two transports, one contract</h3>
+<p>Choose HTTP or WirelessComm for inference without changing the model-facing observation and action contract. Session and step semantics stay consistent across transports.</p>
+<a href="docs/inference-transport.md">Transport design and measurements →</a>
+</td>
+<td valign="top">
+<h3>📷 Capture once, reuse across consumers</h3>
+<p>Shared camera and state snapshots feed inference, agent observations, and recording. The runtime owns device connections, so each consumer does not need to open the hardware again.</p>
+<a href="docs/architecture.md">Device and observation ownership →</a>
+</td>
+</tr>
+<tr>
+<td valign="top">
+<h3>🧩 Your planner, a ready robot API</h3>
+<p>Observe, request policy proposals, execute actions, inspect jobs, and cancel through a dependency-free Python client. Bring your own planning loop; reuse the runtime underneath.</p>
+<a href="agents/CLIENT.md">Agent client →</a>
+</td>
+<td valign="top">
+<h3>🎛️ Execution with operator control</h3>
+<p>Action validation, execution arbitration, and manual takeover sit between policy output and hardware. Robot adapters and policy bindings keep motion details out of application code.</p>
+<a href="docs/safety.md">Execution controls and hardware setup →</a>
+</td>
+</tr>
+</table>
 
 ## How it works
 
