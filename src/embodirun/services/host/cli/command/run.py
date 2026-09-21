@@ -109,7 +109,7 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
         progress.update(runtime.node, "Validating control service", detail=runtime.runtime_id)
         state = StateStore(context.state_path).load()
         if state is None:
-            raise RunError("deployment is not initialized; run `rlinf-deploy ... init`")
+            raise RunError("deployment is not initialized; run `embodirun ... init`")
         if state.config_digest != config_digest(context.config):
             raise RunError("configuration changed since init; run init again")
         if state.deploy_commit != context.deployment.deploy_commit:
@@ -120,7 +120,7 @@ def run(args: argparse.Namespace, context: CommandContext) -> int:
         service = state.services.get(runtime.service_id)
         if service is None or service.status != "running":
             raise RunError(
-                f"{runtime.target_kind} service {runtime.service_id!r} is not running; run `rlinf-deploy ... up`"
+                f"{runtime.target_kind} service {runtime.service_id!r} is not running; run `embodirun ... up`"
             )
         if service.node != runtime.node or service.endpoint != runtime.service_endpoint:
             raise RunError(

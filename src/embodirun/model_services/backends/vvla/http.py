@@ -167,7 +167,7 @@ class VvlaHttpClient:
 
 
 def _multipart(observation: PolicyObservation) -> tuple[bytes, str]:
-    boundary = f"rlinf-{uuid.uuid4().hex}"
+    boundary = f"embodirun-{uuid.uuid4().hex}"
     image_metadata = [{"name": image.name, "mime_type": image.mime_type} for image in observation.images]
     metadata = json.dumps(
         {

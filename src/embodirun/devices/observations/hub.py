@@ -45,7 +45,7 @@ class SharedSensorHub:
         self,
         state_reader: Callable[[], Any | None],
         *,
-        interval_s: float = 0.1,
+        interval_s: float | None = None,
         service_instance_id: str | None = None,
     ) -> None:
         self.producer = ObservationProducer(

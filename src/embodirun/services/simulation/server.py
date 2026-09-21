@@ -101,7 +101,7 @@ class SimulationRequestHandler(BaseHTTPRequestHandler):
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="rlinf-simulation-serve")
+    parser = argparse.ArgumentParser(prog="embodirun-simulation-serve")
     parser.add_argument("--config", required=True, type=Path)
     args = parser.parse_args(argv)
     try:

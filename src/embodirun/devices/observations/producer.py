@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import os
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping
@@ -23,6 +24,26 @@ from .values import (
 
 _CLOCK_DOMAIN = "host_monotonic_ns"
 _STATE_SOURCE_ID = "state"
+
+
+def default_interval_s() -> float:
+    """Return the observation poll interval in seconds.
+
+    A fixed 0.1 s poll caps every observation stream at 10 Hz regardless of the
+    configured control rate, which starves a 20 Hz control loop of fresh frames.
+    A poll costs roughly 20 ms on a Pi 4B, so 0.03 s yields a ~50 ms period and
+    reaches 20 Hz.
+
+    Override with ``RLINF_DEPLOY_OBSERVATION_INTERVAL_S``; invalid values fall
+    back to the default.
+    """
+
+    raw = os.environ.get("RLINF_DEPLOY_OBSERVATION_INTERVAL_S", "0.03")
+    try:
+        value = float(raw)
+    except ValueError:
+        return 0.03
+    return value if value > 0 and math.isfinite(value) else 0.03
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,7 +166,7 @@ class ObservationProducer:
         state_reader: Callable[[], Any] | None = None,
         camera_sources: Mapping[str, Any] | None = None,
         *,
-        interval_s: float = 0.1,
+        interval_s: float | None = None,
         source_timeout_s: float = 0.05,
         max_retained: int = 32,
         subscription_queue_size: int = 8,
@@ -156,6 +177,8 @@ class ObservationProducer:
         own_sources: bool = False,
         service_instance_id: str | None = None,
     ) -> None:
+        if interval_s is None:
+            interval_s = default_interval_s()
         if isinstance(interval_s, bool) or not isinstance(interval_s, (int, float)):
             raise TypeError("interval_s must be a number")
         if interval_s <= 0 or not math.isfinite(float(interval_s)):

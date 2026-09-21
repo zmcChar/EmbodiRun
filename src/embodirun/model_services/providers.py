@@ -251,8 +251,8 @@ def _register_builtins() -> None:
         # ``uv pip install`` independent of PyPI's Deploy release and avoids
         # dragging VVLA or its optional engine into the environment.
         # SGLang keeps its isolated environment under ``sources/inference``;
-        # these paths deliberately point at the active Deploy checkout beside
-        # it, rather than resolving a released ``rlinf-deploy`` from PyPI.
+        # these paths deliberately point at the active EmbodiRun checkout beside
+        # it, rather than resolving a released ``embodirun`` release from PyPI.
         return ("-e", "../deploy", "-e", "../deploy/integrations/sglang_pi05")
 
     def sglang_options(context: ProviderOptionsContext) -> Mapping[str, Any]:

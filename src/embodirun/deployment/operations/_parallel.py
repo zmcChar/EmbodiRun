@@ -23,7 +23,7 @@ def run_on_nodes(node_ids: Iterable[str], operation: Callable[[str], ResultT]) -
         return ParallelResults({}, {})
     values: dict[str, ResultT] = {}
     errors: dict[str, Exception] = {}
-    with ThreadPoolExecutor(max_workers=len(nodes), thread_name_prefix="rlinf-deploy-node") as pool:
+    with ThreadPoolExecutor(max_workers=len(nodes), thread_name_prefix="embodirun-node") as pool:
         futures = {pool.submit(operation, node_id): node_id for node_id in nodes}
         for future in as_completed(futures):
             node_id = futures[future]

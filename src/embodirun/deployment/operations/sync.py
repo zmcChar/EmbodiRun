@@ -88,7 +88,7 @@ def synchronize_deploy(source: Path, context: DeploymentContext) -> int:
 def _initialized_state(context: DeploymentContext) -> DeploymentState:
     state = StateStore(context.state_path).load()
     if state is None:
-        raise SyncError("deployment is not initialized; run `rlinf-deploy ... init`")
+        raise SyncError("deployment is not initialized; run `embodirun ... init`")
     return state
 
 
@@ -104,9 +104,7 @@ def _require_control_services_stopped(
     )
     if running:
         raise SyncError(
-            "control services are running: "
-            f"{', '.join(running)}; run `rlinf-deploy ... down --target control` "
-            "before sync"
+            f"control services are running: {', '.join(running)}; run `embodirun ... down --target control` before sync"
         )
 
 

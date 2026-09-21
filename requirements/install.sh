@@ -10,7 +10,7 @@ readonly UV_VERSION="${UV_VERSION:-0.12.7}"
 venv_path=""
 python_version=""
 pytorch="skip"
-pytorch_index="${RLINF_PYTORCH_INDEX:-auto}"
+pytorch_index="${EMBODIRUN_PYTORCH_INDEX:-${RLINF_PYTORCH_INDEX:-auto}}"
 recreate=false
 dry_run=false
 declare -a extra_deps=()
@@ -33,7 +33,9 @@ Options:
 
 Storage defaults may be overridden with UV_CACHE_DIR,
 UV_PYTHON_INSTALL_DIR, and UV_BIN_DIR. They default under $HOME/envs.
-RLINF_PYTORCH_INDEX sets the default for --pytorch-index.
+EMBODIRUN_PYTORCH_INDEX (legacy RLINF_PYTORCH_INDEX) sets the default
+for --pytorch-index, and EMBODIRUN_ENV_ROOT (legacy RLINF_ENV_ROOT) moves
+the storage root.
 EOF
 }
 
@@ -126,7 +128,7 @@ for requirement in "${requirement_files[@]}"; do
     [[ -f "$requirement" ]] || fail "requirement file not found: $requirement"
 done
 
-readonly ENV_ROOT="${RLINF_ENV_ROOT:-$DEFAULT_ENV_ROOT}"
+readonly ENV_ROOT="${EMBODIRUN_ENV_ROOT:-${RLINF_ENV_ROOT:-$DEFAULT_ENV_ROOT}}"
 export UV_CACHE_DIR="${UV_CACHE_DIR:-$ENV_ROOT/uvcache}"
 export UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-$ENV_ROOT/uvpython}"
 readonly UV_BIN_DIR="${UV_BIN_DIR:-$ENV_ROOT/bin}"

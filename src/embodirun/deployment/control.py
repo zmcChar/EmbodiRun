@@ -410,11 +410,11 @@ class HostControlClient(ControlClient):
 
     def _headers(self) -> dict[str, str]:
         headers = {
-            "X-RLinf-Caller-Id": self.caller_id,
-            "X-RLinf-Session-Id": self.session_id,
+            "X-EmbodiRun-Caller-Id": self.caller_id,
+            "X-EmbodiRun-Session-Id": self.session_id,
         }
         if self.token is not None:
-            headers["X-RLinf-Token"] = self.token
+            headers["X-EmbodiRun-Token"] = self.token
         return headers
 
 
