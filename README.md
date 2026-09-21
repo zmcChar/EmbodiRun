@@ -111,35 +111,53 @@ For hardware, choose a combination from the [support matrix](docs/support-matrix
 configure its devices and calibration, and read [Safety](docs/safety.md)
 before execution.
 
-## Supported integrations
+## Support at a glance
 
-### Robots and simulators
+✓ **Software-tested** · ◐ **Experimental** · ○ **Planned**
 
-| Target | Policy | Inference backend | Available integration |
-|---|---|---|---|
-| SO-101 | π0.5 | EmbodiInfer | [Deployment config](configs/http-wireless-inference/http.yaml), software tests, [real-robot demos](#demos) |
-| Bi-SO-101 | π0.5 | EmbodiInfer | [Dual-arm deployment](docs/pi05-bi-so101.md), software tests |
-| Franka FR3 | π0.5 | Policy-service API | Adapter and binding, software tests |
-| ARX5 | DM0.5 | EmbodiInfer | Experimental adapter and binding |
-| Unitree Go2 | StreamVLN | EmbodiInfer | Experimental robot agent and binding |
-| LIBERO | π0.5 | EmbodiInfer / SGLang | [Deployment configs](configs/simulation/), software tests |
-| VLABench | π0.5 | EmbodiInfer | Experimental [deployment config](configs/simulation/vlabench-pi05-vvla.yaml) |
-| Habitat | StreamVLN | EmbodiInfer | Experimental [deployment config](configs/simulation/habitat-streamvln-vvla.yaml) |
-| Isaac Sim | StreamVLN | EmbodiInfer | Experimental [deployment config](configs/simulation/isaac-streamvln-vvla.yaml) |
+<table>
+<tr>
+<th align="left">🧪 Simulators</th>
+<th align="left">🦾 Robots</th>
+<th align="left">🧠 Models</th>
+</tr>
+<tr>
+<td valign="top">
+<p>✓ <b>LIBERO</b></p>
+<p>◐ VLABench<br>◐ Habitat<br>◐ Isaac Sim</p>
+<a href="docs/support-matrix.md#simulators">Simulator setup →</a>
+</td>
+<td valign="top">
+<p>✓ <b>SO-101</b> · real-robot demos<br>✓ <b>Bi-SO-101</b><br>✓ <b>Franka FR3</b></p>
+<p>◐ ARX5<br>◐ Unitree Go2<br>◐ XLeRobot</p>
+<a href="docs/support-matrix.md#robots">Robot setup →</a>
+</td>
+<td valign="top">
+<p>✓ <b>π0.5</b></p>
+<p>◐ DM0.5 · ARX5 binding<br>◐ StreamVLN · navigation<br>◐ LightNav-0 · external binding</p>
+<a href="docs/support-matrix.md#models">Model connections →</a>
+</td>
+</tr>
+</table>
 
-The [full support matrix](docs/support-matrix.md) lists hardware requirements,
-optional dependencies, and test coverage for each combination. SO-101 shared
-inference uses independent single-arm clients; Bi-SO-101 uses a coordinated
-dual-arm policy.
+These are EmbodiRun integration statuses. Choose a model–device pairing in the
+[deployment recipes](docs/support-matrix.md#deployment-recipes).
+For the inference engine's broader model catalog, see
+[EmbodiInfer](https://github.com/BUAA-CI-LAB/EmbodiInfer#supported-models).
 
-### Agents and external services
+**Bring your own application:** use the [Python client](agents/CLIENT.md),
+the experimental [RPent adapter](docs/rpent-integration.md), or connect an
+[external inference service](docs/http_api.md).
 
-| Integration | Connect through | Guide |
-|---|---|---|
-| Your own agent or planner | Python client: observe, propose, execute, inspect, cancel | [Agent workflow](docs/agent-workflow.md) |
-| RPent | Experimental agent adapter | [RPent integration](docs/rpent-integration.md) |
-| External inference service | Versioned policy API and provider configuration | [Inference contract](docs/http_api.md), [configuration](docs/configuration.md) |
-| XLeRobot | Experimental, separately installed hardware-owner package | [Owner integration](integrations/xlerobot_owner/README.md) |
+### Planned support
+
+- [ ] 🦾 **AgileX PiperX** — robot adapter and policy binding.
+- [ ] 🧠 **SmolVLA** — inference adapter and deployment integration.
+- [ ] 🧠 **OpenVLA** — base-model support, separate from the existing OpenVLA-OFT inference adapter.
+- [ ] 🧪 **More simulators** — next targets to be selected.
+
+Implementation steps and integration ownership are tracked in the
+[roadmap](docs/support-matrix.md#roadmap).
 
 ## Documentation
 
