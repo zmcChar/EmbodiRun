@@ -102,7 +102,7 @@ models:
     environment: .venv-vvla-pi05
     source: /models/pi05-checkpoint
     server:
-      bind: 127.0.0.1
+      bind: 0.0.0.0          # reachable from the robot node on a trusted network
       port: 8000
     policy_kwargs:
       attention: eager
@@ -140,12 +140,13 @@ runtimes:
       port: 8100
     inputs:
       observation.images.front: front
-      observation.images.wrist: wrist
 ```
 
-A runtime binds one robot or simulator to one model and one policy binding,
-maps sensors to policy inputs, and exposes a loopback Control HTTP API for the
-Host. Wireless runtimes additionally declare `inference_client.bind` and
+A model-backed runtime binds a robot or simulator to a model and a policy
+binding, maps sensors to policy inputs, and exposes a Control HTTP API for the
+Host. Device-only runtimes can omit the model; see
+[`device-only.yaml`](https://github.com/BUAA-CI-LAB/EmbodiRun/blob/main/configs/examples/device-only.yaml).
+Wireless runtimes additionally declare `inference_client.bind` and
 `inference_client.port`, and each listener on a node must use a distinct port.
 
 ## Providers
@@ -159,6 +160,13 @@ deployment and execution path does not change.
 ## Portability
 
 Public examples use placeholders such as `REPLACE_ARM`, `/models/...`, and
-private RFC1918 addresses. Nothing is hard-coded in the source: replace the
-values in your YAML, not the code. A missing path or an unused port is reported
-before any action is submitted.
+private RFC1918 addresses. Replace these values for your deployment.
+The fragments on this page explain fields; use a complete checked-in example
+as the starting file. Every referenced camera must be declared, and its mapping
+must match the checkpoint. For remote inference, the model listener must be
+reachable from the Control node; a loopback listener only accepts local traffic.
+
+`validate` checks configuration structure and references. It does not prove
+that remote files exist, cameras work, checkpoints load, or a physical task can
+complete. Use `probe` for node connectivity, then inspect startup logs and
+observations before execution.
