@@ -77,8 +77,8 @@ class _Statistics:
         for step in steps:
             name = step["registry_name"]
             if name in cls._OPTIONAL_NOOP_PROCESSORS:
-                if (step.get("config") or {}).get("enabled"):
-                    raise ValueError(f"SGLang LeRobot compatibility does not support an enabled {name}")
+                if (step.get("config") or {}).get("enabled") is not False:
+                    raise ValueError(f"SGLang LeRobot compatibility requires explicitly disabled {name}")
                 continue
             if name not in allowed:
                 raise ValueError(f"unsupported LeRobot processor: {name}")
@@ -124,7 +124,7 @@ class _Statistics:
             ) from error
         if q01.shape != shape or q99.shape != shape or len(shape) != 1:
             raise ValueError(f"invalid normalization dimensions for {feature}")
-        if not torch.isfinite(q01).all() or not torch.isfinite(q99).all():
+        if not torch.isfinite(q01).all() or not torch.isfinite(q99).all() or (q99 < q01).any():
             raise ValueError(f"invalid normalization statistics for {feature}")
         # lerobot substitutes eps only where the quantiles coincide.
         width = q99 - q01

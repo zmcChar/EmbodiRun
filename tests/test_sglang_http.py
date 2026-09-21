@@ -104,7 +104,7 @@ def test_sglang_lerobot_statistics_preserve_quantiles_math():
         statistics.normalize([1.0])
 
 
-@pytest.mark.parametrize("delta_enabled", [False, True])
+@pytest.mark.parametrize("delta_enabled", [False, True, None])
 def test_sglang_lerobot_statistics_load_quantiles_checkpoint(tmp_path, delta_enabled):
     """QUANTILES loads from q01/q99; a disabled delta processor is a safe no-op."""
     pytest.importorskip("sglang.multimodal_gen")
@@ -141,9 +141,9 @@ def test_sglang_lerobot_statistics_load_quantiles_checkpoint(tmp_path, delta_ena
     ]
     (checkpoint / "policy_preprocessor.json").write_text(json.dumps({"steps": steps}))
 
-    if delta_enabled:
+    if delta_enabled is not False:
         # An enabled delta processor changes action semantics; refuse loudly.
-        with pytest.raises(ValueError, match="enabled delta_actions_processor"):
+        with pytest.raises(ValueError, match="explicitly disabled delta_actions_processor"):
             _Statistics.load(
                 checkpoint,
                 "preprocessor",
