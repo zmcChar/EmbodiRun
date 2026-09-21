@@ -1,15 +1,12 @@
 # Experiments
 
-These pages are engineering notes from opt-in hardware experiments. They record
-what was measured, under which configuration, and — explicitly — what the result
-does and does not establish.
+These experiments explore inference transport, camera capture, and robot
+integration. Each page describes the setup, measurements, and findings.
 
-!!! warning "Not user guides"
-    Nothing here is part of the supported surface. A result becomes supported
-    only when it also appears in the [Support matrix](support-matrix.md) with
-    the versions, configuration, hardware, checkpoint, exact command, and
-    observed result. Many of these experiments terminate actions in memory and
-    never move a device.
+For installation and operation, start with [Quick start](quickstart.md).
+The [support matrix](support-matrix.md) records verification by combination;
+the experiment pages provide measurement details. Some runs terminate actions
+in memory and do not exercise physical hardware.
 
 ## What each note covers
 
@@ -20,13 +17,8 @@ does and does not establish.
 | [Transport candidates](transport-experiments.md) | Do shared memory, raw frames, GStreamer, Zenoh, or NIXL/UCX reduce latency? | Implemented and locally tested as opt-in paths. None has yet demonstrated a speedup or better recovery on the tested hardware. |
 | [LightNav-0 with XLeRobot](lightnav0_xlerobot.md) | Can decoded local waypoints drive an XLeRobot base? | The binding and its CPU tests exist. Real-checkpoint evaluation, navigation success, and physical-robot validation are outstanding. |
 
-## How to read a result here
+## Comparing configurations
 
-- **Scope is local.** A number belongs to the exact hardware, revisions, and
-  load described on that page. Revising any of them invalidates it.
-- **A software result is not a robot result.** Unless a page says a physical
-  robot ran the loop, treat the evidence as software-only.
-- **Equal inputs are checked, not assumed.** Where a comparison claims parity,
-  the page states how input fingerprints were verified.
-- **Absence of a speedup is a result.** Several candidates were implemented,
-  measured, and found not to help; that is recorded rather than dropped.
+Use the hardware, software versions, and workload listed on each page as the
+starting point for your own measurements. Transport comparisons also record
+input fingerprints to check that both paths receive the same data.

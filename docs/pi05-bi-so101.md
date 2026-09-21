@@ -1,5 +1,31 @@
 # Pi0.5 with two SO-101 followers
 
+This configuration treats two followers as one dual-arm robot. It differs
+from the [multi-robot demo](demos/multi-robot-serving.md), where separate
+clients control individual arms.
+
+## Prerequisites
+
+Prepare two calibrated followers with distinct ports and calibration IDs,
+front and wrist cameras, and a CUDA host. The checkpoint must match the
+dual-arm state/action layout and the three camera inputs; the base model alone
+does not establish compatibility with this robot.
+
+## Configure and validate
+
+```bash
+cp configs/pi05/bi-so101-vvla.yaml my-deployment.yaml
+# Edit the deployment revision, devices, calibration, and checkpoint paths.
+uv run embodirun --config my-deployment.yaml validate
+uv run embodirun --config my-deployment.yaml probe
+```
+
+The example runtime is `bi-so101-pi05`. Follow [Quick start](quickstart.md)
+for preparation, startup, bounded execution, and shutdown. Read
+[Safety](safety.md) before connecting or moving the arms.
+
+## Action layout and failure behavior
+
 `lerobot.bi_so101` composes two existing calibrated SO-101 adapters. Each arm
 has its own serial port and calibration identity; state and action order is
 left six values followed by right six values, with grippers in the native

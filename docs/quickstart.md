@@ -9,7 +9,6 @@ shows the shape of a real deployment.
 git clone https://github.com/BUAA-CI-LAB/EmbodiRun.git
 cd EmbodiRun
 uv sync --frozen
-uv run pytest -q
 ```
 
 See [`installation.md`](installation.md) for capability groups and extras.
@@ -25,6 +24,7 @@ CONFIG=examples/shared-device-fake.yaml
 
 uv run embodirun --config "$CONFIG" validate
 uv run embodirun --config "$CONFIG" init
+uv run embodirun --config "$CONFIG" sync --source .
 uv run embodirun --config "$CONFIG" up
 
 uv run embodirun --config "$CONFIG" describe \
@@ -34,6 +34,7 @@ uv run embodirun --config "$CONFIG" observe \
 uv run embodirun --config "$CONFIG" down
 ```
 
+`sync --source .` overlays this checkout on the prepared local deployment.
 `describe` reports capabilities, `observe` returns one shared observation, and
 `media` fetches frame data for an observation ID. Execution goes through
 `execute` and is only meaningful when a model or action source is configured.
@@ -69,9 +70,13 @@ the arm.
 
 ## 4. Run a task
 
+This command uses the `bi-so101-pi05` runtime from the configuration copied
+above. It can move both arms. Complete the [dual-arm setup](pi05-bi-so101.md)
+and [operator safety checks](safety.md) before running it.
+
 ```bash
 uv run embodirun --config my-deployment.yaml run \
-  --runtime so101-1-runtime \
+  --runtime bi-so101-pi05 \
   --prompt "Pick up the cube and put it into the bowl." \
   --chunk-steps 10 \
   --max-steps 1
@@ -87,8 +92,8 @@ uv run embodirun --config my-deployment.yaml run \
 | `--control-hz` | Action playback rate (default 5). |
 | `--request-timeout` | Timeout for one inference request (default 60 s). |
 
-A π0.5 response has no task-complete signal, so the chunk bound is always the
-stopping condition. A requested chunk length above the binding maximum is
+A π0.5 response has no task-complete signal. The chunk bound limits the run;
+errors or cancellation can end it earlier. A requested chunk length above the binding maximum is
 rejected before connecting to the robot.
 
 ## 5. Stop
@@ -104,8 +109,9 @@ service kind.
 ## Troubleshooting
 
 - **`uv` version error** — install uv 0.12.x; the repository pins it.
-- **`validate` fails on a path** — replace every `REPLACE_*` placeholder; a
-  missing camera or calibration path is reported before any action.
+- **Configuration validation fails** — check required fields and references,
+  and replace `REPLACE_*` placeholders. Passing static validation does not
+  establish that remote devices, calibration files, or weights are available.
 - **`up` refuses to run** — run `init` first, or re-run `init` after the YAML
   changed.
 - **A service is not healthy** — check the per-service log path printed by
