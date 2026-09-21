@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -12,6 +13,27 @@ from recipes.xlerobot.snack_delivery import run as recipe
 from recipes.xlerobot.snack_delivery.evidence import ConfigEvidenceNormalizer
 
 from embodirun.robots.lerobot.xlerobot.units import XLEROBOT_ACTION_SPACE
+
+
+def test_observation_age_is_translated_to_the_recipe_clock(monkeypatch):
+    from recipes.xlerobot.snack_delivery import run
+
+    runtime = SimpleNamespace(
+        simulation=False,
+        runtime_id="remote",
+        observe=lambda: {
+            "observation_id": "remote:1",
+            "payload": {
+                "fresh": True,
+                "age_ns": 25,
+                "timestamps": {"source_timestamps_ns": {"state": 999_999_999}, "skew_ns": 5},
+            },
+        },
+    )
+    delivery = object.__new__(run.SnackDelivery)
+    monkeypatch.setattr(run.time, "monotonic_ns", lambda: 100)
+    assert delivery.observe(runtime)["capture_lower_bound_ns"] == 70
+
 
 BASE_VALUES = {"x.vel": 0.03, "theta.vel": 0.0}
 ARM_VALUES = {"right_arm_gripper.pos": 25.0}

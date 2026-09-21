@@ -561,6 +561,7 @@ class SnackDelivery:
         self.event("operator_confirmed", kind=kind, mode="interactive")
 
     def observe(self, runtime: Runtime) -> dict[str, Any]:
+        requested_ns = time.monotonic_ns()
         value = runtime.observe()
         if not isinstance(value, Mapping):
             raise RecipeError("runtime returned an invalid observation")
@@ -579,13 +580,28 @@ class SnackDelivery:
                 f"fresh observation is required before this recipe can act (runtime={runtime.runtime_id!r})"
             )
         self._last_payload = dict(payload)
-        return {"observation_id": observation_id, "payload": dict(payload)}
+        age_ns = payload.get("age_ns")
+        skew_ns = payload.get("timestamps", {}).get("skew_ns")
+        # Remote monotonic timestamps have a different epoch. Translate the
+        # reported elapsed age using our request start, conservatively including
+        # the entire round trip and source skew, so every source is newer.
+        capture_lower_bound_ns = (
+            requested_ns - age_ns - skew_ns
+            if all(isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in (age_ns, skew_ns))
+            and age_ns + skew_ns <= requested_ns
+            else None
+        )
+        return {
+            "observation_id": observation_id,
+            "payload": dict(payload),
+            "capture_lower_bound_ns": capture_lower_bound_ns,
+        }
 
     def post_observe(self, runtime: Runtime, previous_id: str, *, after_ns: int | None = None) -> dict[str, Any]:
         deadline = time.monotonic() + 2.0
         while True:
             observed = self.observe(runtime)
-            state_time = observed["payload"].get("timestamps", {}).get("source_timestamps_ns", {}).get("state")
+            state_time = observed.get("capture_lower_bound_ns")
             after_execution = after_ns is None or (
                 isinstance(state_time, int) and not isinstance(state_time, bool) and state_time >= after_ns
             )
